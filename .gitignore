@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Node
+node_modules/
+dist/
+.next/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Data — raw archives and trained models are large and reproducible; do not commit
+data/raw/
+data/interim/
+*.nc
+*.parquet
+models/*.pkl
+models/*.joblib
+
+# Local databases
+*.db
+*.sqlite3
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Agent scratch
+.scratch/
+
+# Local agent tooling — third-party skill library, not this project's work
+.claude/

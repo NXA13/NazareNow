@@ -1,0 +1,129 @@
+# NazaréNow
+
+A forecasting system that predicts when Praia do Norte in Nazaré, Portugal will produce
+giant waves, early enough for someone to book travel and witness them in person.
+
+## Language
+
+### The place
+
+**Praia do Norte**:
+The beach at Nazaré where the giant waves break. The only location this system forecasts.
+_Avoid_: Nazaré (the town, ambiguous), the spot, the break
+
+**Nazaré Canyon**:
+The submarine canyon that focuses incoming Atlantic swell onto Praia do Norte. The physical
+cause of the phenomenon, and the thing global forecast models are too coarse to represent.
+_Avoid_: North Canyon, the trench
+
+### Conditions
+
+**Offshore Conditions**:
+The state of the open ocean before the canyon acts on it — swell height, swell period, swell
+direction, wind speed and wind direction. Freely available from third-party forecast models
+and reanalysis. These are system inputs, never system outputs.
+_Avoid_: the weather, sea state, raw data
+
+**Amplification**:
+The transformation the canyon applies to Offshore Conditions to produce the waves seen at
+Praia do Norte. The relationship this system exists to learn.
+_Avoid_: focusing, magnification, the canyon effect
+
+**Face Height**:
+The height of a breaking wave at Praia do Norte as a human observer perceives it — the number
+quoted in news coverage and world records. Estimated from imagery by expert panels, never
+measured instrumentally, and therefore has no reliable historical archive.
+_Avoid_: wave height (ambiguous), wave size
+
+**Significant Wave Height (Hs)**:
+The standard oceanographic measure of sea state — the mean height of the highest third of
+waves over a sampling period. Measured instrumentally. Much smaller than Face Height for the
+same sea, and not convertible to it by any fixed ratio.
+_Avoid_: wave height (ambiguous), swell height (a different variable)
+
+**XXL Day**:
+A day on which Praia do Norte produced genuinely giant surf, confirmed by an external
+authority such as a contest being run, a record being ratified, or documented coverage.
+_Avoid_: big day, epic day, a swell
+
+### Data
+
+**Proxy Target**:
+Significant Wave Height recorded by the Nazaré buoy, used as the training target in place of
+Face Height because Face Height cannot be sourced historically. Abundant and objective, but
+measures the sea offshore rather than the wave at the beach.
+_Avoid_: label, target variable, ground truth
+
+**Gold Day**:
+A hand-verified XXL Day, assembled from contest records and ratified measurements. Too few to
+train on. Used only to calibrate and validate the alerting threshold.
+_Avoid_: test set, validation data, positive example
+
+### The system
+
+**Amplification Model**:
+The component that takes Offshore Conditions and predicts the resulting sea state at Nazaré.
+Learns what global forecast models cannot resolve. Produces a prediction and an uncertainty.
+_Avoid_: the model, the AI, the predictor
+
+**Heuristic Baseline**:
+The surf community's rule of thumb for Nazaré, expressed as fixed thresholds on Offshore
+Conditions and used as an Amplification Model requiring no training. Ships first, and remains
+permanently as the benchmark any learned model must outperform.
+_Avoid_: naive model, dumb model, v1, rules engine
+
+**Decision Model**:
+The component that consumes the Amplification Model's prediction and uncertainty and produces
+a Go Call. Concerned with whether to act, not with how big the waves will be.
+_Avoid_: the alerter, the recommender, business logic
+
+**Go Call**:
+The system's recommendation to commit — book travel now for a named date. Issued only when
+Model Spread has narrowed and predicted conditions clear the Gold Day threshold. Optimised for
+precision: a false Go Call costs the user real money.
+_Avoid_: alert, notification, prediction, signal
+
+**Watch**:
+A long-range warning that a swell may be forming, issued before confidence justifies a Go Call.
+Tells the user to start paying attention, not to spend money. Optimised for recall: missing a
+forming swell is worse than raising a Watch that fades.
+_Avoid_: early alert, heads-up, pre-warning
+
+**Confirmed**:
+A short-range statement that the swell has materialised, for users already travelling or
+already at Praia do Norte. Carries no booking recommendation.
+_Avoid_: nowcast, live alert
+
+**Hindcast**:
+A reconstruction of Offshore Conditions as they actually were, built after the fact with the
+benefit of observations. Accurate, but never available for a future date. Training material
+only, never a system input at serving time.
+_Avoid_: historical data, reanalysis, past weather
+
+**Forecast Error Profile**:
+The measured distribution of how far third-party forecasts drift from what actually happened,
+recorded separately for each Lead Time. Widens as Lead Time grows. Injected into predictions at
+serving time so the system's confidence reflects forecast range.
+_Avoid_: error bars, noise, bias
+
+**Pipeline Run**:
+One scheduled execution that fetches Offshore Conditions and buoy observations, produces
+Predictive Distributions for every date in range, derives Watch and Go Calls, and stores them.
+The only part of the system that runs a model or contacts a third party.
+_Avoid_: job, cron, refresh, update
+
+**Predictive Distribution**:
+The system's output for a given date — a range of plausible outcomes with probabilities, rather
+than a single number. What the Decision Model consumes to produce a Watch or Go Call.
+_Avoid_: prediction, estimate, forecast
+
+**Model Spread**:
+The degree of disagreement between independent third-party wave models forecasting the same
+date. Used as the system's uncertainty estimate, since no ensemble marine forecast is available.
+Narrow spread means confidence; wide spread means doubt.
+_Avoid_: variance, error bars, confidence
+
+**Lead Time**:
+The interval between a Go Call being issued and the swell arriving. The quantity the system
+exists to maximise, and the reason a forecast alone is insufficient.
+_Avoid_: warning time, notice, horizon
