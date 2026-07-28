@@ -62,10 +62,18 @@ _Avoid_: good day, complete day, valid day
 ### Data
 
 **Proxy Target**:
-Significant Wave Height recorded by the Nazaré buoy, used as the training target in place of
-Face Height because Face Height cannot be sourced historically. Abundant and objective, but
-measures the sea offshore rather than the wave at the beach.
+Significant Wave Height recorded by Monican02, the inshore mooring near the canyon head,
+used as the training target in place of Face Height because Face Height cannot be sourced
+historically. Abundant and objective, but measures the sea 15km offshore rather than the
+wave at the beach.
 _Avoid_: label, target variable, ground truth
+
+**Offshore Observation**:
+Significant Wave Height and related measurements from Monican01, the deep-water mooring
+55km out. A measured rather than modelled reading of the swell arriving at the coast.
+Always a system input, never a target — predicting it would mean predicting our own
+inputs.
+_Avoid_: the other buoy, offshore buoy data
 
 **Gold Day**:
 A hand-verified XXL Day, assembled from contest records and ratified measurements. Too few to
