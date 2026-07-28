@@ -15,21 +15,24 @@ loudly rather than quietly reaching the network.
 from __future__ import annotations
 
 import concurrent.futures
-import os
 import sqlite3
+import subprocess
+import sys
 from collections import Counter
+from pathlib import Path
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from nazarenow.api import CurrentConditions
+from nazarenow.api import CurrentConditions, Reading
 from nazarenow.pipeline import run_pipeline
-from nazarenow.sources.open_meteo import MARINE_READINGS, WEATHER_READINGS
+from nazarenow.sources.open_meteo import (
+    MARINE_READINGS,
+    MAX_BACKOFF_SECONDS,
+    WEATHER_READINGS,
+)
 from nazarenow.store import DEFAULT_DATABASE, Store, StoreUnavailable
-
-# Fields on the response that describe the observation rather than being readings.
-METADATA_FIELDS = {"observed_at", "fetched_at", "latitude", "longitude"}
 
 MARINE_BODY = {
     "latitude": 39.541664,
@@ -313,7 +316,10 @@ def test_a_quota_error_dressed_as_a_client_error_is_still_retried(store) -> None
 
 @pytest.mark.parametrize(
     "header",
-    ["inf", "1e400", "-5", "nan", "not-a-number", "Wed, 21 Oct 2026 07:28:00 GMT"],
+    # "1000000" is the case the cap exists for: finite, valid, and far too long to wait.
+    # Without it the clamp was never the operative branch, and deleting the clamp
+    # entirely left the whole suite green.
+    ["inf", "1e400", "-5", "nan", "not-a-number", "Wed, 21 Oct 2026 07:28:00 GMT", "1000000"],
 )
 def test_a_hostile_retry_after_cannot_stall_the_run(store, header) -> None:
     """Retry-After is provider-controlled input. 'inf' previously hung the run forever;
@@ -324,7 +330,9 @@ def test_a_hostile_retry_after_cannot_stall_the_run(store, header) -> None:
     with pytest.raises(httpx.HTTPStatusError):
         ingest(store, transport, sleep=waits.append)
 
-    assert all(0 <= wait <= 60 for wait in waits), f"unbounded wait for {header!r}: {waits}"
+    assert all(0 <= wait <= MAX_BACKOFF_SECONDS for wait in waits), (
+        f"unbounded wait for {header!r}: {waits}"
+    )
 
 
 # --- configuration ------------------------------------------------------------
@@ -343,24 +351,30 @@ def test_the_default_store_does_not_depend_on_the_working_directory(tmp_path) ->
     """Ingesting from one directory and serving from another silently used two different
     databases, and the API answered 503 while holding data.
 
-    Asserting the path is merely absolute does not catch that: Path("data/x.db").resolve()
-    is absolute too, and cwd-dependent. This resolves it from two directories instead.
+    The module constant is bound at import, so chdir-then-compare asserts that a value
+    equals itself — which is how two earlier versions of this test passed while the bug
+    was present. The path has to be derived by a fresh import from a different working
+    directory, and that has to happen in a separate process: reloading the module in
+    this one rebinds StoreUnavailable to a new class object, which the API's except
+    clause and exception handler no longer recognise, breaking unrelated tests.
     """
-    original = os.getcwd()
-    try:
-        os.chdir(tmp_path)
-        from_temp = (
-            Store(create=False, writable=False).path
-            if DEFAULT_DATABASE.exists()
-            else DEFAULT_DATABASE
-        )
-        os.chdir(original)
-        from_repo = DEFAULT_DATABASE
-    finally:
-        os.chdir(original)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from nazarenow.store import DEFAULT_DATABASE; print(DEFAULT_DATABASE)",
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    from_elsewhere = Path(result.stdout.strip())
 
-    assert from_temp == from_repo
-    assert DEFAULT_DATABASE.is_absolute()
+    assert from_elsewhere == DEFAULT_DATABASE, (
+        f"the default database moved with the working directory: "
+        f"{from_elsewhere} != {DEFAULT_DATABASE}"
+    )
 
 
 def test_every_ingested_reading_is_served_by_the_api() -> None:
@@ -372,7 +386,13 @@ def test_every_ingested_reading_is_served_by_the_api() -> None:
     model — pydantic ignores extra fields by default. This pins the two together.
     """
     ingested = set(MARINE_READINGS) | set(WEATHER_READINGS)
-    served = {name for name in CurrentConditions.model_fields if name not in METADATA_FIELDS}
+    # Derived from the annotation, not a hardcoded list of the fields that are not
+    # readings — such a list is one more thing to forget to update.
+    served = {
+        name
+        for name, field in CurrentConditions.model_fields.items()
+        if field.annotation is Reading
+    }
 
     assert ingested == served, (
         f"ingested but never served: {sorted(ingested - served)}; "
@@ -380,16 +400,34 @@ def test_every_ingested_reading_is_served_by_the_api() -> None:
     )
 
 
-def test_the_serving_store_cannot_write(store, tmp_path) -> None:
+def test_the_serving_store_cannot_write(store) -> None:
     """ADR 0005 says the API is strictly a reader. Enforced by SQLite, not convention:
     `create=False` alone still opened a read-write connection."""
     ingest(store, provider())
     reader = Store(store.path, create=False)
+    try:
+        with pytest.raises(sqlite3.OperationalError, match="readonly"):
+            reader.record_conditions("2026-02-13T09:00", 0.0, 0.0, {})
+    finally:
+        reader.close()
 
-    with pytest.raises(sqlite3.OperationalError, match="readonly"):
-        reader.record_conditions("2026-02-13T09:00", 0.0, 0.0, {})
 
-    reader.close()
+@pytest.mark.parametrize("kind", ["missing", "directory", "not-a-database", "empty"])
+def test_every_kind_of_broken_database_path_is_rejected_at_startup(tmp_path, kind) -> None:
+    """Only a missing file was ever checked eagerly. A directory, a file that is not a
+    database, and a zero-byte file all opened fine and failed later, inside the endpoint,
+    where nothing handled them — the browser got a bare 500 with no CORS header."""
+    targets = {
+        "missing": tmp_path / "gone.db",
+        "directory": tmp_path,
+        "not-a-database": tmp_path / "notes.txt",
+        "empty": tmp_path / "empty.db",
+    }
+    (tmp_path / "notes.txt").write_text("this is not a database")
+    (tmp_path / "empty.db").touch()
+
+    with pytest.raises(StoreUnavailable):
+        Store(targets[kind], create=False)
 
 
 def test_a_misconfigured_database_path_explains_itself(tmp_path, monkeypatch) -> None:
@@ -410,3 +448,30 @@ def test_a_misconfigured_database_path_explains_itself(tmp_path, monkeypatch) ->
         assert "store unavailable" in response.json()["detail"].lower()
     finally:
         default_store.cache_clear()
+
+
+def test_a_path_containing_uri_syntax_still_opens_read_only(tmp_path) -> None:
+    """The database path is embedded in a SQLite URI and must be escaped.
+
+    Unescaped, a '#' in any directory name starts a URI fragment: SQLite reads a
+    truncated path, discards ?mode=ro, and creates a read-write database somewhere else
+    entirely. Read-only mode and the never-create rule both fail, silently, and the
+    reader then serves an empty database it just made.
+    """
+    awkward = tmp_path / "my#notes and things"
+    awkward.mkdir()
+    target = awkward / "nazarenow.db"
+
+    writer = Store(target)
+    writer.record_conditions("2026-02-13T09:00", 39.5, -9.2, {})
+    writer.close()
+
+    reader = Store(target, create=False)
+    try:
+        assert reader.latest_conditions() is not None, "read a different database"
+        with pytest.raises(sqlite3.OperationalError, match="readonly"):
+            reader.record_conditions("2026-02-13T10:00", 0.0, 0.0, {})
+    finally:
+        reader.close()
+
+    assert sorted(p.name for p in awkward.iterdir()) == ["nazarenow.db"], "a stray file was created"

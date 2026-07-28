@@ -57,6 +57,10 @@ BACKOFF_SECONDS = 2.0
 # Retry-After of "inf" previously hung the run forever. The cap is generous enough to
 # honour a real rate-limit pause — Open-Meteo's daily limit resets are minutes, not
 # seconds — rather than ignoring the provider's instruction and hammering it early.
+#
+# Worst case for a whole Pipeline Run: two retries per endpoint, two endpoints, so about
+# twenty minutes if both sources stall at the cap. Ticket #7's scheduler interval must
+# exceed that, or runs will overlap.
 MAX_BACKOFF_SECONDS = 300.0
 
 

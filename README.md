@@ -142,7 +142,9 @@ close this.
 ten are displayed, adding significant wave height, wave period and wave direction under
 a *Combined sea* heading. Significant Wave Height is the Proxy Target the whole project
 is built on (ADR 0002), so showing it seemed worth the deviation — but it is a
-deviation, recorded here rather than left for a reader to notice.
+deviation, recorded here rather than left for a reader to notice. The footer also states
+that wind and air temperature come from a different forecast cell than the swell
+readings, which the ticket did not ask for but which would otherwise be misleading.
 
 ### No test contacts a third-party service
 

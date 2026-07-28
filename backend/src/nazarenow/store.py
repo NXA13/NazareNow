@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+import urllib.parse
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -72,19 +73,16 @@ class Store:
     Under load that surfaced as the API reporting no conditions while holding conditions
     — a plausible-looking lie rather than a crash.
 
-    Opened read-only unless it is being written to, so ADR 0005's "the API is strictly a
-    reader" is enforced by SQLite rather than left to convention.
+    A store that creates its database is writable; one that opens an existing database
+    for serving is opened read-only, so ADR 0005's "the API is strictly a reader" is
+    enforced by SQLite rather than left to convention.
     """
 
-    def __init__(
-        self,
-        path: str | Path | None = None,
-        *,
-        create: bool = True,
-        writable: bool | None = None,
-    ) -> None:
+    EXPECTED_TABLES = ("raw_response", "offshore_conditions")
+
+    def __init__(self, path: str | Path | None = None, *, create: bool = True) -> None:
         self.path = Path(path) if path is not None else DEFAULT_DATABASE
-        self.writable = create if writable is None else writable
+        self.writable = create
 
         self._local = threading.local()
         # Every connection handed out, so all can be closed. Windows holds a file lock
@@ -95,11 +93,35 @@ class Store:
         if create:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             self._connect().executescript(SCHEMA)
-        elif not self.path.exists():
-            # Creating the file here would turn a misconfigured path into an empty
-            # database, and the API would then answer "no conditions yet" — a config
-            # fault wearing the costume of missing data.
+            return
+
+        # Creating the file here would turn a misconfigured path into an empty database,
+        # and the API would then answer "no conditions yet" — a config fault wearing the
+        # costume of missing data.
+        if not self.path.exists():
             raise StoreUnavailable(f"No database at {self.path}")
+
+        # Open and check the schema now rather than on first query. Deferring it meant
+        # every open-time fault — a directory, a file that is not a database, an empty
+        # file — surfaced inside the endpoint instead of the dependency, where nothing
+        # handled it: the browser got a bare 500 with no CORS header rather than an
+        # explanation.
+        self._verify()
+
+    def _verify(self) -> None:
+        try:
+            found = {
+                row["name"]
+                for row in self._connect().execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                )
+            }
+        except sqlite3.Error as error:
+            raise StoreUnavailable(f"Cannot read {self.path}: {error}") from error
+
+        missing = [table for table in self.EXPECTED_TABLES if table not in found]
+        if missing:
+            raise StoreUnavailable(f"{self.path} is missing tables: {missing}")
 
     def _connect(self) -> sqlite3.Connection:
         connection = getattr(self._local, "connection", None)
@@ -110,8 +132,14 @@ class Store:
             if self.writable:
                 connection = sqlite3.connect(self.path, check_same_thread=False)
             else:
+                # The path must be percent-encoded. Unescaped, a '#' in any directory
+                # name starts a URI fragment: SQLite then reads a truncated path,
+                # discards ?mode=ro, and happily creates a read-write database
+                # somewhere else entirely — defeating read-only mode and the
+                # never-create rule at the same time, silently.
+                encoded = urllib.parse.quote(self.path.as_posix())
                 connection = sqlite3.connect(
-                    f"file:{self.path.as_posix()}?mode=ro", uri=True, check_same_thread=False
+                    f"file:{encoded}?mode=ro", uri=True, check_same_thread=False
                 )
         except sqlite3.Error as error:
             raise StoreUnavailable(f"Cannot open {self.path}: {error}") from error

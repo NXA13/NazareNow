@@ -11,8 +11,9 @@ import os
 from functools import lru_cache
 from typing import Annotated, Any
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from nazarenow.store import Store, StoreUnavailable
@@ -38,6 +39,17 @@ app.add_middleware(
     allow_methods=["GET"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(StoreUnavailable)
+def store_unavailable(_request: Request, error: StoreUnavailable) -> JSONResponse:
+    """Turn a store fault into a described 500 wherever it is raised.
+
+    The dependency catches the expected cases, but an unhandled exception surfaces
+    outside CORSMiddleware — so a browser sees an opaque CORS failure instead of the
+    error. This keeps that from happening for any path not anticipated.
+    """
+    return JSONResponse(status_code=500, content={"detail": f"Store unavailable: {error}"})
 
 
 @lru_cache
