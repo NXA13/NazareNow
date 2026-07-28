@@ -36,6 +36,12 @@ quoted in news coverage and world records. Estimated from imagery by expert pane
 measured instrumentally, and therefore has no reliable historical archive.
 _Avoid_: wave height (ambiguous), wave size
 
+**Combined Sea**:
+The whole wave field arriving at a point, both long-period Swell from distant storms and
+short-period waves raised by local wind. Described by Significant Wave Height. Distinct
+from Swell, which is only the travelled component and is what the canyon amplifies.
+_Avoid_: sea state, total sea, waves
+
 **Significant Wave Height (Hs)**:
 The standard oceanographic measure of sea state — the mean height of the highest third of
 waves over a sampling period. Measured instrumentally. Much smaller than Face Height for the

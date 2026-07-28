@@ -68,14 +68,6 @@ export function App() {
 
       {state.status === 'loaded' && (
         <>
-          {/* Until a Pipeline Run supplies real measurements, say so plainly. A page
-              that looked authoritative while showing stand-in values would mislead. */}
-          {state.conditions.placeholder && (
-            <p role="status" className="alert">
-              This is not real data. The system is wired end to end but measures nothing yet.
-            </p>
-          )}
-
           <section aria-labelledby="swell-heading">
             <h2 id="swell-heading">Swell</h2>
             <dl className="readings">
@@ -89,10 +81,15 @@ export function App() {
             </dl>
           </section>
 
-          <section aria-labelledby="sea-heading">
-            <h2 id="sea-heading">Sea state</h2>
+          {/* Swell is the travelled component the canyon amplifies; the combined sea also
+              includes locally raised wind waves. CONTEXT.md keeps the two apart. */}
+          <section aria-labelledby="combined-heading">
+            <h2 id="combined-heading">Combined sea</h2>
             <dl className="readings">
-              <ReadingBlock label="Wave height" reading={state.conditions.wave_height} />
+              <ReadingBlock
+                label="Significant wave height"
+                reading={state.conditions.significant_wave_height}
+              />
               <ReadingBlock label="Wave period" reading={state.conditions.wave_period} />
               <ReadingBlock
                 label="Wave direction"
@@ -119,14 +116,21 @@ export function App() {
             </dl>
           </section>
 
-          <footer data-testid="freshness">
-            <p>
-              Observed {formatTimestamp(state.conditions.observed_at)}, fetched{' '}
-              {formatTimestamp(state.conditions.fetched_at)}.
+          <footer>
+            <p data-testid="freshness">
+              Observed{' '}
+              <time dateTime={state.conditions.observed_at}>
+                {formatTimestamp(state.conditions.observed_at)}
+              </time>
+              , fetched{' '}
+              <time dateTime={state.conditions.fetched_at}>
+                {formatTimestamp(state.conditions.fetched_at)}
+              </time>
+              .
             </p>
             <p className="provenance">
-              Measured at {state.conditions.latitude.toFixed(2)}N,{' '}
-              {Math.abs(state.conditions.longitude).toFixed(2)}W — roughly 15km offshore, near the
+              Measured at {state.conditions.latitude.toFixed(2)}°N,{' '}
+              {Math.abs(state.conditions.longitude).toFixed(2)}°W — roughly 15km offshore, near the
               head of the Nazare Canyon.
             </p>
           </footer>

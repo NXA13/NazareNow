@@ -21,16 +21,15 @@ export interface Reading {
 }
 
 export interface CurrentConditions {
+  /** The older of the two providers' observation times: the picture is at least this old. */
   observed_at: string;
   fetched_at: string;
   latitude: number;
   longitude: number;
-  /** True while the backend serves stand-in values rather than measurements. */
-  placeholder: boolean;
   swell_height: Reading;
   swell_period: Reading;
   swell_direction: Reading;
-  wave_height: Reading;
+  significant_wave_height: Reading;
   wave_period: Reading;
   wave_direction: Reading;
   water_temperature: Reading;

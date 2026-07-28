@@ -5,12 +5,10 @@ Conditions ingestion and serving are covered in test_conditions.py, at the same 
 
 from fastapi.testclient import TestClient
 
-from nazarenow.api import DEVELOPMENT_ORIGINS, app
-
-client = TestClient(app)
+from nazarenow.api import DEVELOPMENT_ORIGINS
 
 
-def test_browser_requests_from_the_development_frontend_are_allowed() -> None:
+def test_browser_requests_from_the_development_frontend_are_allowed(client: TestClient) -> None:
     """The frontend's origin must be permitted, or the app breaks only in a browser.
 
     This guards a defect that actually occurred: Vite silently moved to a different
@@ -26,7 +24,7 @@ def test_browser_requests_from_the_development_frontend_are_allowed() -> None:
     assert response.headers["access-control-allow-origin"] == origin
 
 
-def test_requests_from_an_unknown_origin_are_not_granted_access() -> None:
+def test_requests_from_an_unknown_origin_are_not_granted_access(client: TestClient) -> None:
     response = client.get(
         "/api/conditions/current", headers={"Origin": "https://somewhere-else.example"}
     )

@@ -17,5 +17,8 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     css: false,
+    // Pinned so timestamp assertions are deterministic. Without it a test asserting a
+    // rendered time passes or fails depending on the machine's zone.
+    env: { TZ: 'UTC' },
   },
 });

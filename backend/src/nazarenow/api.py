@@ -15,7 +15,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from nazarenow.store import Store
+from nazarenow.store import Store, StoreUnavailable
 
 app = FastAPI(
     title="NazareNow",
@@ -42,7 +42,10 @@ app.add_middleware(
 
 @lru_cache
 def default_store() -> Store:
-    return Store(os.environ.get("NAZARENOW_DB", "data/nazarenow.db"))
+    """The store this process serves. Opened read-only: creating a database here would
+    turn a misconfigured path into an empty one, and the API would then report no
+    conditions — a configuration fault disguised as an absence of data."""
+    return Store(os.environ.get("NAZARENOW_DB") or None, create=False)
 
 
 def get_store() -> Store:
@@ -64,18 +67,17 @@ class Reading(BaseModel):
 
 class CurrentConditions(BaseModel):
     observed_at: str
+    """The older of the two providers' observation times — the whole picture is at
+    least this old."""
+
     fetched_at: str
     latitude: float
     longitude: float
 
-    placeholder: bool = False
-    """Retained from the walking skeleton so the interface keeps one honest signal for
-    'this is not a real measurement'. False now that a Pipeline Run supplies the data."""
-
     swell_height: Reading
     swell_period: Reading
     swell_direction: Reading
-    wave_height: Reading
+    significant_wave_height: Reading
     wave_period: Reading
     wave_direction: Reading
     water_temperature: Reading
@@ -92,7 +94,11 @@ def current_conditions(store: Annotated[Store, Depends(get_store)]) -> CurrentCo
     render as a flat, calm ocean, which is a plausible-looking lie; an explicit failure
     is not.
     """
-    latest: dict[str, Any] | None = store.latest_conditions()
+    try:
+        latest: dict[str, Any] | None = store.latest_conditions()
+    except StoreUnavailable as error:
+        raise HTTPException(status_code=500, detail=f"Store unavailable: {error}") from error
+
     if latest is None:
         raise HTTPException(
             status_code=503,

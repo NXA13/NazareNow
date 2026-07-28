@@ -6,9 +6,9 @@
  * implementation behind these behaviours can be rewritten freely.
  *
  * Assertions target values imported from the fixtures rather than text matched loosely.
- * An earlier version asserted `findByText(/Praia do Norte/)`, which silently matched the
- * page's own static subtitle — it passed against a component that fetched nothing at
- * all, and against an API returning a 500.
+ * Two tests have already shipped here that asserted nothing: one matched the page's own
+ * static subtitle, another matched the static word "Observed" while the date formatter
+ * was broken. Every assertion below must fail if the API's value stops being rendered.
  */
 
 import { render, screen, within } from '@testing-library/react';
@@ -21,32 +21,32 @@ import { server } from './test/server';
 
 /** Find the labelled block for one reading, e.g. "Swell height". */
 async function reading(label: string) {
-  return within(await screen.findByRole('group', { name: new RegExp(label, 'i') }));
+  return within(await screen.findByRole('group', { name: new RegExp(`^${label}$`, 'i') }));
 }
 
+/** Every reading the API returns, so none can be added without being displayed. */
+const READINGS: [string, keyof typeof currentConditions][] = [
+  ['Swell height', 'swell_height'],
+  ['Swell period', 'swell_period'],
+  ['Swell direction', 'swell_direction'],
+  ['Significant wave height', 'significant_wave_height'],
+  ['Wave period', 'wave_period'],
+  ['Wave direction', 'wave_direction'],
+  ['Wind speed', 'wind_speed'],
+  ['Wind direction', 'wind_direction'],
+  ['Air temperature', 'air_temperature'],
+  ['Water temperature', 'water_temperature'],
+];
+
 describe('current conditions', () => {
-  it('shows swell height with its unit', async () => {
+  it.each(READINGS)('shows %s with its unit', async (label, key) => {
+    const expected = currentConditions[key] as { value: number; unit: string };
+
     render(<App />);
 
-    const block = await reading('swell height');
-    expect(block.getByText('8.1')).toBeInTheDocument();
-    expect(block.getByText('m')).toBeInTheDocument();
-  });
-
-  it('shows swell period and wind speed with their units', async () => {
-    render(<App />);
-
-    expect((await reading('swell period')).getByText('17')).toBeInTheDocument();
-    expect((await reading('swell period')).getByText('s')).toBeInTheDocument();
-    expect((await reading('wind speed')).getByText('11')).toBeInTheDocument();
-    expect((await reading('wind speed')).getByText('km/h')).toBeInTheDocument();
-  });
-
-  it('shows air and water temperature separately', async () => {
-    render(<App />);
-
-    expect((await reading('water temperature')).getByText('15.2')).toBeInTheDocument();
-    expect((await reading('air temperature')).getByText('13.4')).toBeInTheDocument();
+    const block = await reading(label);
+    expect(block.getByText(String(expected.value))).toBeInTheDocument();
+    expect(block.getByText(expected.unit)).toBeInTheDocument();
   });
 
   it('shows directions as a compass bearing as well as degrees', async () => {
@@ -54,37 +54,29 @@ describe('current conditions', () => {
     // to know the convention to understand where the swell is coming from.
     render(<App />);
 
-    const swell = await reading('swell direction');
-    expect(swell.getByText(/WNW/)).toBeInTheDocument();
-    expect(swell.getByText(/298/)).toBeInTheDocument();
-
-    const wind = await reading('wind direction');
-    expect(wind.getByText(/ESE/)).toBeInTheDocument();
+    expect((await reading('Swell direction')).getByText('WNW')).toBeInTheDocument();
+    expect((await reading('Wind direction')).getByText('ESE')).toBeInTheDocument();
   });
 
-  it('says when the data was last refreshed', async () => {
+  it('shows when the data was observed and when it was fetched', async () => {
+    // Timezone is pinned to UTC in vite.config.ts, so these are deterministic. The
+    // fixture is observed at 09:00 and fetched at 09:04 — asserting both proves the
+    // formatter ran and that the two timestamps are not being conflated.
     render(<App />);
 
-    expect(await screen.findByTestId('freshness')).toHaveTextContent(/observed/i);
+    const freshness = await screen.findByTestId('freshness');
+    expect(freshness).toHaveTextContent(/observed/i);
+    expect(freshness).toHaveTextContent(/09:00/);
+    expect(freshness).toHaveTextContent(/09:04/);
+    expect(freshness).toHaveTextContent(/13/);
   });
 
-  it('does not warn about placeholder data once conditions are real', async () => {
+  it('exposes the raw timestamps in machine-readable form', async () => {
     render(<App />);
 
-    await reading('swell height');
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
-  });
-
-  it('warns when the API is still serving a placeholder', async () => {
-    server.use(
-      http.get('*/api/conditions/current', () =>
-        HttpResponse.json({ ...currentConditions, placeholder: true }),
-      ),
-    );
-
-    render(<App />);
-
-    expect(await screen.findByRole('status')).toHaveTextContent(/not real data/i);
+    const freshness = await screen.findByTestId('freshness');
+    const times = within(freshness).getAllByText(/\d{2}:\d{2}/);
+    expect(times[0]).toHaveAttribute('datetime', currentConditions.observed_at);
   });
 
   it('tells the user when no conditions have been ingested yet', async () => {

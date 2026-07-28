@@ -18,7 +18,9 @@ from nazarenow.store import Store
 
 
 def ingest() -> int:
-    store = Store(os.environ.get("NAZARENOW_DB", "data/nazarenow.db"))
+    # Same default the API uses, anchored to the repository rather than the working
+    # directory, so ingesting and serving cannot end up on different databases.
+    store = Store(os.environ.get("NAZARENOW_DB") or None)
     with httpx.Client() as client:
         run_pipeline(store, client)
 

@@ -5,20 +5,27 @@ database would add operational weight this project has no use for yet. Swapping 
 means changing this module and nothing else, which is the point of keeping the store
 internal to the backend seam (ADR 0005).
 
-Two things are stored for every run: the provider's raw response exactly as received,
-and the values parsed out of it. Retaining the raw response means derived data can be
-rebuilt without refetching, and that a provider changing shape can be diagnosed after
-the fact rather than guessed at.
+Two things are stored for every run: the provider's response as received, and the values
+parsed out of it. Retaining the raw response means derived data can be rebuilt without
+refetching, and that a provider changing shape can be diagnosed after the fact.
 """
 
 from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+# Anchored to this file, not the working directory. A relative default meant the store
+# you got depended on where you happened to be standing: ingesting from one directory
+# and serving from another silently used two different databases, and the API answered
+# "no conditions have been ingested yet" while a perfectly good row sat in the other file.
+REPO_ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_DATABASE = REPO_ROOT / "data" / "nazarenow.db"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS raw_response (
@@ -43,26 +50,57 @@ CREATE INDEX IF NOT EXISTS offshore_conditions_observed_at
 """
 
 
+class StoreUnavailable(RuntimeError):
+    """The store cannot be opened — a configuration fault, not an absence of data."""
+
+
 def now() -> str:
     return datetime.now(UTC).isoformat()
 
 
 class Store:
-    def __init__(self, path: str | Path) -> None:
-        self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._connection = sqlite3.connect(self.path, check_same_thread=False)
-        self._connection.row_factory = sqlite3.Row
-        self._connection.executescript(SCHEMA)
-        self._connection.commit()
+    """A SQLite-backed store, safe to share across threads.
+
+    Connections are per-thread. A single shared `sqlite3.Connection` is not safe under
+    a threaded server even with `check_same_thread=False`: FastAPI runs synchronous
+    endpoints in a threadpool, and concurrent reads through one connection returned
+    `None` for populated columns and raised `IndexError` from the shared statement
+    cache. Under load that surfaced as the API reporting no conditions while holding
+    conditions — a plausible-looking lie rather than a crash.
+    """
+
+    def __init__(self, path: str | Path | None = None, *, create: bool = True) -> None:
+        self.path = Path(path) if path is not None else DEFAULT_DATABASE
+        self.create = create
+        self._local = threading.local()
+
+        if create:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with self._connect() as connection:
+                connection.executescript(SCHEMA)
+        elif not self.path.exists():
+            # Per ADR 0005 the serving path is strictly a reader. Creating the file here
+            # would turn a misconfigured path into an empty database, and the API would
+            # then answer "no conditions yet" — a config fault wearing the costume of
+            # missing data.
+            raise StoreUnavailable(f"No database at {self.path}")
+
+    def _connect(self) -> sqlite3.Connection:
+        connection = getattr(self._local, "connection", None)
+        if connection is None:
+            connection = sqlite3.connect(self.path, check_same_thread=False)
+            connection.row_factory = sqlite3.Row
+            self._local.connection = connection
+        return connection
 
     def record_raw_response(self, source: str, url: str, body: dict[str, Any]) -> None:
-        """Persist a provider response verbatim, before anything interprets it."""
-        self._connection.execute(
+        """Persist a provider response as received."""
+        connection = self._connect()
+        connection.execute(
             "INSERT INTO raw_response (source, url, fetched_at, body) VALUES (?, ?, ?, ?)",
             (source, url, now(), json.dumps(body)),
         )
-        self._connection.commit()
+        connection.commit()
 
     def record_conditions(
         self,
@@ -71,12 +109,13 @@ class Store:
         longitude: float,
         readings: dict[str, dict[str, Any]],
     ) -> None:
-        self._connection.execute(
+        connection = self._connect()
+        connection.execute(
             "INSERT INTO offshore_conditions "
             "(observed_at, fetched_at, latitude, longitude, readings) VALUES (?, ?, ?, ?, ?)",
             (observed_at, now(), latitude, longitude, json.dumps(readings)),
         )
-        self._connection.commit()
+        connection.commit()
 
     def latest_conditions(self) -> dict[str, Any] | None:
         """The most recently ingested Offshore Conditions, or None if the store is empty.
@@ -84,10 +123,14 @@ class Store:
         Ordered by insertion rather than observation time: a later run always supersedes
         an earlier one, even if a provider revises a timestamp backwards.
         """
-        row = self._connection.execute(
-            "SELECT observed_at, fetched_at, latitude, longitude, readings "
-            "FROM offshore_conditions ORDER BY id DESC LIMIT 1"
-        ).fetchone()
+        row = (
+            self._connect()
+            .execute(
+                "SELECT observed_at, fetched_at, latitude, longitude, readings "
+                "FROM offshore_conditions ORDER BY id DESC LIMIT 1"
+            )
+            .fetchone()
+        )
         if row is None:
             return None
         return {
@@ -99,7 +142,16 @@ class Store:
         }
 
     def raw_responses(self) -> Iterable[dict[str, Any]]:
-        rows = self._connection.execute(
-            "SELECT source, url, fetched_at, body FROM raw_response ORDER BY id"
-        ).fetchall()
+        """Every raw provider response retained, oldest first.
+
+        No HTTP surface exposes these, so the test covering their retention drives this
+        method directly. That is a deliberate, narrow exception to the backend seam:
+        the behaviour is required by ticket #4 and there is nothing else to observe it
+        through. When run diagnostics get an endpoint, the test should move to it.
+        """
+        rows = (
+            self._connect()
+            .execute("SELECT source, url, fetched_at, body FROM raw_response ORDER BY id")
+            .fetchall()
+        )
         return [dict(row) for row in rows]

@@ -71,12 +71,16 @@ Fetch some conditions before starting anything — the API has nothing to serve 
 Pipeline Run has stored something, and says so with a 503 rather than inventing zeros:
 
 ```bash
-cd backend && ../.venv/Scripts/python.exe -m nazarenow ingest
+.venv/Scripts/python.exe -m nazarenow ingest
 ```
 
 That contacts Open-Meteo, keeps the raw responses, and writes the parsed readings to
-`data/nazarenow.db`. Per ADR 0005 it is the only part of the system that talks to a
-third party; ticket #7 puts it on a schedule.
+`data/nazarenow.db` at the repository root. The path is anchored to the repository
+rather than the working directory, so ingesting and serving cannot end up on different
+databases — they did, and the API reported no conditions while holding a good row.
+
+Per ADR 0005 this is the only part of the system that talks to a third party; ticket #7
+puts it on a schedule.
 
 Then two processes, in separate terminals:
 

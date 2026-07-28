@@ -4,18 +4,24 @@ A test stubs the third-party providers at the HTTP boundary, executes a Pipeline
 then reads the result back through the API. Ingestion, validation and the store are all
 internal to this seam and may be restructured freely.
 
+Counting requests that reach the stub is behaviour the system exhibits outwardly, so
+asserting on it respects the seam even though the retry policy itself is internal.
+
 Per ADR 0005 the request path must never contact a provider. conftest.py blocks outbound
 sockets, so a test that reads the API without first running the pipeline would fail
 loudly rather than quietly reaching the network.
 """
 
+from __future__ import annotations
+
+import concurrent.futures
+from collections import Counter
+
 import httpx
 import pytest
-from fastapi.testclient import TestClient
 
-from nazarenow.api import app, get_store
 from nazarenow.pipeline import run_pipeline
-from nazarenow.store import Store
+from nazarenow.store import DEFAULT_DATABASE, Store, StoreUnavailable
 
 MARINE_BODY = {
     "latitude": 39.541664,
@@ -61,57 +67,77 @@ WEATHER_BODY = {
 
 
 def no_sleep(_seconds: float) -> None:
-    """Backoff is real behaviour, but waiting for it makes the suite slow enough
-    that people stop running it. Injected so the retry path is exercised at speed."""
+    """Backoff is real behaviour, but waiting for it makes the suite slow enough that
+    people stop running it. Injected so the retry path is exercised at speed."""
 
 
-def provider(marine=MARINE_BODY, weather=WEATHER_BODY, status=200):
-    """An httpx transport standing in for both Open-Meteo endpoints."""
-
+def provider(marine=MARINE_BODY, weather=WEATHER_BODY):
     def handle(request: httpx.Request) -> httpx.Response:
         body = marine if "marine" in request.url.host else weather
-        return httpx.Response(status, json=body)
+        return httpx.Response(200, json=body)
 
     return httpx.MockTransport(handle)
 
 
-@pytest.fixture
-def store(tmp_path) -> Store:
-    return Store(tmp_path / "test.db")
+def failing_provider(status: int, headers: dict[str, str] | None = None, body=None):
+    """A stub that records every request that reached it."""
+    seen: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(status, json=body or {"error": "nope"}, headers=headers or {})
+
+    return httpx.MockTransport(handle), seen
 
 
-@pytest.fixture
-def client(store: Store) -> TestClient:
-    app.dependency_overrides[get_store] = lambda: store
-    yield TestClient(app)
-    app.dependency_overrides.clear()
+def unreachable_provider():
+    seen: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        raise httpx.ConnectError("refused")
+
+    return httpx.MockTransport(handle), seen
+
+
+def ingest(store, transport, sleep=no_sleep) -> None:
+    with httpx.Client(transport=transport) as http:
+        run_pipeline(store, http, sleep=sleep)
+
+
+# --- serving -----------------------------------------------------------------
 
 
 def test_current_conditions_come_from_the_stored_pipeline_run(store, client) -> None:
-    with httpx.Client(transport=provider()) as http:
-        run_pipeline(store, http, sleep=no_sleep)
+    ingest(store, provider())
 
     body = client.get("/api/conditions/current").json()
 
-    assert body["swell_height"]["value"] == 8.1
-    assert body["swell_height"]["unit"] == "m"
-    assert body["swell_period"]["value"] == 17.0
-    assert body["swell_direction"]["value"] == 298
-    assert body["wind_speed"]["value"] == 11.0
-    assert body["wind_direction"]["value"] == 115
-    assert body["air_temperature"]["value"] == 13.4
-    assert body["water_temperature"]["value"] == 15.2
+    assert body["swell_height"] == {"value": 8.1, "unit": "m"}
+    assert body["swell_period"] == {"value": 17.0, "unit": "s"}
+    assert body["swell_direction"] == {"value": 298, "unit": "°"}
+    assert body["significant_wave_height"] == {"value": 8.4, "unit": "m"}
+    assert body["wave_period"] == {"value": 16.2, "unit": "s"}
+    assert body["wave_direction"] == {"value": 295, "unit": "°"}
+    assert body["wind_speed"] == {"value": 11.0, "unit": "km/h"}
+    assert body["wind_direction"] == {"value": 115, "unit": "°"}
+    assert body["air_temperature"] == {"value": 13.4, "unit": "°C"}
+    assert body["water_temperature"] == {"value": 15.2, "unit": "°C"}
 
 
-def test_the_api_reports_when_the_data_was_observed_and_fetched(store, client) -> None:
-    with httpx.Client(transport=provider()) as http:
-        run_pipeline(store, http, sleep=no_sleep)
+def test_conditions_are_dated_by_the_older_of_the_two_providers(store, client) -> None:
+    """Two endpoints, two observation times. Presenting ten readings under the fresher
+    of them would overstate how current half the page is."""
+    stale_weather = {
+        **WEATHER_BODY,
+        "current": {**WEATHER_BODY["current"], "time": "2026-02-13T07:00"},
+    }
+    ingest(store, provider(weather=stale_weather))
 
     body = client.get("/api/conditions/current").json()
 
-    assert body["observed_at"].startswith("2026-02-13T09:00")
+    assert body["observed_at"] == "2026-02-13T07:00"
     assert body["fetched_at"]
-    assert body["placeholder"] is False
 
 
 def test_no_conditions_yet_is_reported_rather_than_faked(client) -> None:
@@ -122,9 +148,30 @@ def test_no_conditions_yet_is_reported_rather_than_faked(client) -> None:
     assert "no conditions" in response.json()["detail"].lower()
 
 
+def test_concurrent_readers_all_see_the_stored_conditions(store, client) -> None:
+    """The API is served from a threadpool, so the store is read concurrently.
+
+    A single shared SQLite connection returned None for populated columns and raised
+    IndexError from its statement cache under load — surfacing as the API reporting no
+    conditions while holding conditions. Exactly the plausible-looking lie this project
+    exists to avoid, and it never appears in a single-threaded test.
+    """
+    ingest(store, provider())
+
+    def read(_: int) -> int:
+        return client.get("/api/conditions/current").status_code
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        statuses = Counter(pool.map(read, range(200)))
+
+    assert statuses == {200: 200}, f"expected every read to succeed, got {dict(statuses)}"
+
+
+# --- retention and validation -------------------------------------------------
+
+
 def test_raw_provider_responses_are_retained(store) -> None:
-    with httpx.Client(transport=provider()) as http:
-        run_pipeline(store, http, sleep=no_sleep)
+    ingest(store, provider())
 
     raw = store.raw_responses()
 
@@ -132,73 +179,146 @@ def test_raw_provider_responses_are_retained(store) -> None:
     assert all(entry["body"] for entry in raw)
 
 
-def test_a_malformed_payload_is_rejected_rather_than_stored(store, client) -> None:
-    """A provider changing shape must fail the run, not poison the store."""
-    broken = {"current_units": {}, "current": {"time": "2026-02-13T09:00"}}
+def test_a_payload_missing_a_requested_variable_is_rejected(store, client) -> None:
+    """A silently absent variable would render as a missing reading, which reads as calm
+    conditions rather than as a fault."""
+    without_swell = {
+        **MARINE_BODY,
+        "current": {k: v for k, v in MARINE_BODY["current"].items() if k != "swell_wave_height"},
+    }
 
-    with httpx.Client(transport=provider(marine=broken)) as http, pytest.raises(ValueError):
-        run_pipeline(store, http, sleep=no_sleep)
+    with pytest.raises(ValueError, match="missing requested variables"):
+        ingest(store, provider(marine=without_swell))
+
+    assert client.get("/api/conditions/current").status_code == 503
+
+
+def test_a_payload_missing_a_unit_is_rejected(store, client) -> None:
+    """Units travel with values. A reading whose unit vanished cannot be displayed
+    truthfully, so it must not be stored."""
+    without_unit = {
+        **MARINE_BODY,
+        "current_units": {
+            k: v for k, v in MARINE_BODY["current_units"].items() if k != "swell_wave_height"
+        },
+    }
+
+    with pytest.raises(ValueError, match="missing units"):
+        ingest(store, provider(marine=without_unit))
+
+    assert client.get("/api/conditions/current").status_code == 503
+
+
+def test_a_structurally_malformed_payload_is_rejected(store, client) -> None:
+    with pytest.raises(ValueError, match="Unexpected Open-Meteo payload"):
+        ingest(store, provider(marine={"current": {}}))
 
     assert client.get("/api/conditions/current").status_code == 503
 
 
 def test_a_failed_run_leaves_earlier_conditions_intact(store, client) -> None:
-    with httpx.Client(transport=provider()) as http:
-        run_pipeline(store, http, sleep=no_sleep)
+    ingest(store, provider())
+    transport, _ = failing_provider(500)
 
-    with httpx.Client(transport=provider(status=500)) as http, pytest.raises(httpx.HTTPError):
-        run_pipeline(store, http, sleep=no_sleep)
+    with pytest.raises(httpx.HTTPStatusError):
+        ingest(store, transport)
 
-    body = client.get("/api/conditions/current").json()
-    assert body["swell_height"]["value"] == 8.1
+    assert client.get("/api/conditions/current").json()["swell_height"]["value"] == 8.1
 
 
-def counting_provider(status: int, headers: dict[str, str] | None = None):
-    """A stub that records how many requests reached it.
-
-    Counting requests at the stubbed network boundary is behaviour the system exhibits
-    outwardly, not an internal detail — so asserting on it respects the agreed seam.
-    """
-    seen: list[httpx.Request] = []
-
-    def handle(request: httpx.Request) -> httpx.Response:
-        seen.append(request)
-        return httpx.Response(status, json={"error": "nope"}, headers=headers or {})
-
-    return httpx.MockTransport(handle), seen
+# --- retry policy -------------------------------------------------------------
 
 
 def test_a_client_error_is_not_retried(store) -> None:
     """A 400 is the provider saying we are wrong. Asking again cannot change that.
 
-    Retrying permanent errors wastes the provider's rate budget and delays the failure.
     This regressed once: catching httpx.HTTPError around raise_for_status swallowed
     HTTPStatusError and retried 400s and 404s three times each.
     """
-    transport, seen = counting_provider(400)
+    transport, seen = failing_provider(400)
 
-    with httpx.Client(transport=transport) as http, pytest.raises(httpx.HTTPStatusError):
-        run_pipeline(store, http, sleep=no_sleep)
+    with pytest.raises(httpx.HTTPStatusError):
+        ingest(store, transport)
 
     assert len(seen) == 1
 
 
-def test_a_server_error_is_retried(store) -> None:
-    transport, seen = counting_provider(500)
+def test_a_server_error_is_retried_the_full_number_of_attempts(store) -> None:
+    transport, seen = failing_provider(500)
 
-    with httpx.Client(transport=transport) as http, pytest.raises(httpx.HTTPStatusError):
-        run_pipeline(store, http, sleep=no_sleep)
+    with pytest.raises(httpx.HTTPStatusError):
+        ingest(store, transport)
 
-    assert len(seen) > 1
+    assert len(seen) == 3
+
+
+def test_a_connection_failure_is_retried_and_backs_off(store) -> None:
+    """The transport-failure path had no test at all: deleting its backoff left the
+    whole suite green."""
+    transport, seen = unreachable_provider()
+    waits: list[float] = []
+
+    with pytest.raises(httpx.ConnectError):
+        ingest(store, transport, sleep=waits.append)
+
+    assert len(seen) == 3
+    assert waits == sorted(waits)
+    assert all(wait > 0 for wait in waits), f"expected backoff, got {waits}"
 
 
 def test_a_rate_limit_is_retried_and_waits_as_instructed(store) -> None:
     """429 carries a Retry-After we are obliged to honour rather than guess at."""
-    transport, seen = counting_provider(429, {"Retry-After": "7"})
+    transport, seen = failing_provider(429, {"Retry-After": "7"})
     waits: list[float] = []
 
-    with httpx.Client(transport=transport) as http, pytest.raises(httpx.HTTPStatusError):
-        run_pipeline(store, http, sleep=waits.append)
+    with pytest.raises(httpx.HTTPStatusError):
+        ingest(store, transport, sleep=waits.append)
 
-    assert len(seen) > 1
+    assert len(seen) == 3
     assert 7 in waits, f"expected to honour Retry-After: 7, waited {waits}"
+
+
+def test_a_quota_error_dressed_as_a_client_error_is_still_retried(store) -> None:
+    """Open-Meteo has signalled quota exhaustion with a 4xx carrying a reason string.
+    Treating that as permanent would turn a wait-and-retry into a hard failure."""
+    quota = {"error": True, "reason": "Daily API request limit exceeded"}
+    transport, seen = failing_provider(400, body=quota)
+
+    with pytest.raises(httpx.HTTPStatusError):
+        ingest(store, transport)
+
+    assert len(seen) == 3
+
+
+@pytest.mark.parametrize(
+    "header",
+    ["inf", "1e400", "-5", "nan", "not-a-number", "Wed, 21 Oct 2026 07:28:00 GMT"],
+)
+def test_a_hostile_retry_after_cannot_stall_the_run(store, header) -> None:
+    """Retry-After is provider-controlled input. 'inf' previously hung the run forever;
+    negatives and NaN raised out of time.sleep."""
+    transport, _ = failing_provider(429, {"Retry-After": header})
+    waits: list[float] = []
+
+    with pytest.raises(httpx.HTTPStatusError):
+        ingest(store, transport, sleep=waits.append)
+
+    assert all(0 <= wait <= 60 for wait in waits), f"unbounded wait for {header!r}: {waits}"
+
+
+# --- configuration ------------------------------------------------------------
+
+
+def test_a_missing_database_is_a_fault_not_an_absence_of_data(tmp_path) -> None:
+    """Opening the serving store must not create it. A read-only API that creates an
+    empty database turns a misconfigured path into a confident 'no conditions yet'."""
+    with pytest.raises(StoreUnavailable):
+        Store(tmp_path / "nowhere" / "missing.db", create=False)
+
+    assert not (tmp_path / "nowhere").exists()
+
+
+def test_the_default_store_does_not_depend_on_the_working_directory() -> None:
+    """Ingesting from one directory and serving from another silently used two different
+    databases, and the API answered 503 while holding data."""
+    assert DEFAULT_DATABASE.is_absolute()
