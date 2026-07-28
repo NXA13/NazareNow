@@ -41,12 +41,6 @@ LON_MIN, LON_MAX = -10.6, -8.6
 OUTPUT = Path(__file__).parent / "output" / "platforms_near_nazare.csv"
 
 
-def fetch(url: str) -> str:
-    request = urllib.request.Request(url, headers={"User-Agent": "NazareNow/0.1"})
-    with urllib.request.urlopen(request, timeout=120) as response:
-        return response.read().decode("utf-8")
-
-
 def catalogue_url() -> str:
     """Build an ERDDAP query: comma-separated variables, then one constraint each.
 
@@ -66,14 +60,18 @@ def catalogue_url() -> str:
 
 
 def main() -> int:
-    print(f"Querying EMODnet catalogue for platforms in {LAT_MIN}-{LAT_MAX}N, {LON_MIN}-{LON_MAX}E")
-    body = fetch(catalogue_url())
+    print(f"Querying EMODnet catalogue for platforms in "
+          f"{LAT_MIN}-{LAT_MAX}N, {abs(LON_MAX)}-{abs(LON_MIN)}W")
+
+    request = urllib.request.Request(catalogue_url(), headers={"User-Agent": "NazareNow/0.1"})
+    with urllib.request.urlopen(request, timeout=120) as response:
+        body = response.read().decode("utf-8")
 
     rows = list(csv.DictReader(io.StringIO(body)))
     # ERDDAP puts a units row immediately after the header. It is not data.
     rows = [row for row in rows if row["PLATFORMCODE"]]
 
-    # VHM0 is significant wave height. A platform without it cannot serve as a
+    # VHM0 is Significant Wave Height. A platform without it cannot serve as a
     # Proxy Target no matter how long its record is.
     wave_platforms = [row for row in rows if "VHM0" in (row["parameters"] or "")]
 
@@ -83,7 +81,8 @@ def main() -> int:
         writer.writeheader()
         writer.writerows(wave_platforms)
 
-    print(f"\n{len(rows)} platforms in the box, {len(wave_platforms)} reporting wave height:\n")
+    print(f"\n{len(rows)} platforms in the box, {len(wave_platforms)} reporting "
+          f"Significant Wave Height:\n")
     for row in sorted(wave_platforms, key=lambda r: r["firstdateobservation"]):
         print(f"  {row['PLATFORMCODE']:>10}  {row['call_name'][:22]:<22} "
               f"{float(row['latitude']):.2f}N {abs(float(row['longitude'])):.2f}W  "

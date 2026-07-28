@@ -46,6 +46,19 @@ A day on which Praia do Norte produced genuinely giant surf, confirmed by an ext
 authority such as a contest being run, a record being ratified, or documented coverage.
 _Avoid_: big day, epic day, a swell
 
+**Big-Wave Season**:
+October through March, the months in which North Atlantic storm activity makes XXL Days
+at Praia do Norte possible. Named by the calendar year it begins in, so the 2016/17
+season runs from October 2016 to March 2017 — a season is never a calendar year, and
+splitting one across two years destroys the unit that matters.
+_Avoid_: winter, storm season, the season
+
+**Usable Day**:
+A day on which an instrument reported for at least three quarters of its hours. The unit
+in which coverage is counted, because a handful of scattered readings cannot establish
+what a day did.
+_Avoid_: good day, complete day, valid day
+
 ### Data
 
 **Proxy Target**:

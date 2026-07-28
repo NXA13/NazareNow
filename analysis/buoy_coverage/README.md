@@ -8,6 +8,9 @@ tests that assumption before any application code depends on it.
 
 ## Running it
 
+Paths below are Windows. On macOS or Linux the interpreter is `.venv/bin/python` and
+the CLI is `.venv/bin/copernicusmarine`; nothing else differs.
+
 ```bash
 python -m venv .venv
 .venv/Scripts/python.exe -m pip install -r analysis/buoy_coverage/requirements.txt
@@ -17,16 +20,26 @@ python -m venv .venv
 
 # 2. Download their records. Needs a free Copernicus Marine account:
 #    register at https://data.marine.copernicus.eu/register
+#    Run the login in a real terminal — it prompts, so it cannot be piped.
 .venv/Scripts/copernicusmarine.exe login
 .venv/Scripts/python.exe analysis/buoy_coverage/download_observations.py
 
-# 3. Measure what is actually there.
-.venv/Scripts/python.exe analysis/buoy_coverage/analyse_coverage.py
+# 3. Measure what is actually there. Run from inside this directory,
+#    which is on the import path for platforms.py.
+cd analysis/buoy_coverage && ../../.venv/Scripts/python.exe analyse_coverage.py
 ```
 
 Raw downloads land in `data/raw/buoy/` and are gitignored — they are large and
-reproducible. Results land in `output/` and are committed, because the finding is
-the deliverable.
+reproducible. Results land in `output/` and are committed, because the finding is the
+deliverable:
+
+| File | |
+|---|---|
+| `coverage.png` | monthly gap grid and coverage per Big-Wave Season |
+| `coverage_by_season.csv` | per-season hours, coverage and Usable Days |
+| `joint_coverage.csv` | what the two moorings cover together |
+| `candidate_xxl_day_readings.csv` | Hs on provisional XXL Days |
+| `platforms_near_nazare.csv` | what the EMODnet catalogue claims |
 
 ## Findings
 
@@ -63,31 +76,47 @@ version of this finding claimed the project had "eight winters, not seventeen" �
 was wrong, and it came from trusting catalogue metadata instead of the data. Both
 buoys span roughly sixteen years.
 
-### 2. Coverage is substantial but severely uneven
+### 2. Whole seasons are missing, not just days
 
-Neither buoy runs continuously. Usable hours per year swing between 13% and 97%, and
-outages last months rather than days — see `output/coverage.png`, where blank and dark
-cells are gaps.
+Coverage is counted per **Big-Wave Season** — October to March, named by the year it
+begins in — because a season is the unit that matters and it is not a calendar year.
+A **Usable Day** is one where the instrument reported for at least three quarters of
+its hours. Denominators are the hours the season actually contains, not the span the
+instrument happened to report over.
 
-Counting only the October–March big-wave season, and only days where the buoy reported
-for at least 75% of hours:
+**Five seasons are effectively dead:**
 
-| | Usable winter days |
+| Buoy | Seasons recorded | Effectively lost (<5%) |
+|---|---|---|
+| Monican01 | 17 | 2013/14, 2020/21, 2025/26 |
+| Monican02 | 16 | 2013/14, 2016/17 |
+
+Monican01's 2025/26 is dead because the mooring stopped on 2025-10-01, one day into
+the season.
+
+Of Monican02's 16 seasons: **9 exceed 50% coverage, 5 are weak** (2010/11, 2012/13,
+2021/22, 2024/25, 2025/26 all sit between 16% and 37%), and **2 recorded nothing at
+all**. Any evaluation split must be made on what was actually recorded — treating this
+as sixteen equivalent seasons would be wrong.
+
+Counting Usable Days across the Big-Wave Season:
+
+| | Usable Days |
 |---|---|
 | Monican01 | 1,733 |
 | Monican02 | 1,683 |
 | Both on the same day | 1,101 |
+| Only Monican01 | 632 |
+| Only Monican02 | 582 |
 | **Either buoy** | **2,315** |
 
-The gaps are largely uncorrelated — 632 winter days have only Monican01 and 582 have
-only Monican02 — so the two moorings partially cover for each other.
+The outages are largely uncorrelated, so the two moorings partially cover for each
+other — 2013/14 is the only season both lost.
 
-Some winters are effectively lost. Monican02 recorded 8.2% of winter 2013 and 28.2% of
-winter 2024; Monican01 recorded 10.6% of winter 2020. Any evaluation split by season
-must account for this rather than assuming even coverage.
-
-Where the buoys do report, the data is good: quality-control flags reject only ~0.05%
-of readings, cadence is a stable 60 minutes throughout, and neither mooring has moved.
+Where the buoys do report, the data is clean. Quality control rejects 0.026% of
+Monican01's readings and 0.047% of Monican02's. 99.8% of reporting intervals are
+exactly 60 minutes for both; the remainder are outage gaps rather than irregular
+sampling, the longest running 448 and 488 days respectively.
 
 ### 3. Wave variables are reliably present
 
@@ -105,9 +134,26 @@ Percentage of readings carrying each variable, after quality control:
 Nothing here is intermittent. When a buoy is reporting, it reports everything. The
 risk is whole-outage, not partial records.
 
-### 4. The buoys do capture big days — but Hs predicts Face Height poorly
+**What cannot be established.** Criterion 4 of the ticket asked for changes in
+instrument, position and reporting cadence. Cadence and position are answered above.
+**Instrument changes are not answerable from this source at all** — the files carry no
+sensor model, serial number or deployment record, so a swapped instrument would be
+invisible. The nearest available proxy is the data-mode flag, and both buoys show a
+mix of real-time and delayed-mode processing across their records.
 
-Significant Wave Height recorded on days independently known to have been giant:
+Position is likewise weaker than it first appears: coordinates are stored to 0.01°,
+roughly 1.1 km. Each buoy reports a single distinct position throughout, which
+establishes that neither was relocated substantially — not that neither ever moved.
+
+### 4. The buoys do capture XXL Days — but Hs predicts Face Height poorly
+
+**This section is provisional and answers no acceptance criterion.** It was a sanity
+check on whether the buoys report at all when Praia do Norte goes giant, and the dates
+in `candidate_xxl_days.csv` are recalled and spot-checked rather than systematically
+sourced. Issue #10 supersedes it. It is kept because what it shows changes how #12
+should be approached.
+
+Significant Wave Height recorded on candidate XXL Days:
 
 | Date | Event | Monican01 | Monican02 |
 |---|---|---|---|
@@ -132,10 +178,9 @@ This is direct evidence for the caveat ADR 0002 already carries, and it sets the
 expectation for the Gold Day calibration in #12: a single threshold on predicted Hs
 will be noisy, and the honest output is a probability rather than a height.
 
-_These dates were assembled quickly for a sanity check and are not the curated Gold
-Day set. One candidate date initially included, a 2022 contest, returned 1.45 m —
-almost certainly a wrong date on my part rather than a wrong reading, and a reminder
-that #10 needs sourced dates rather than recalled ones._
+_One date initially included, a 2022 contest, returned 1.45 m — almost certainly a
+wrong date rather than a wrong reading. It was removed, and it is the reason #10 needs
+sourced dates rather than recalled ones._
 
 ### 5. EMODnet no longer serves the data it advertises
 
@@ -166,21 +211,38 @@ Monican02, and the retrieval route is Copernicus rather than EMODnet. Those are
 factual repairs, not a change of direction.
 
 The underlying decision — train on buoy Significant Wave Height as a Proxy Target,
-calibrate against Gold Days — survives, and survives better than the intermediate
-reading of this analysis suggested. Monican02 alone offers 1,683 usable winter days
-across sixteen seasons, and it captures the big days when it is running.
+calibrate against Gold Days — survives. Monican02 offers 1,683 Usable Days, and it
+reports on the days Praia do Norte is known to have gone giant.
 
-Two qualifications belong in the revised ADR:
+Three qualifications belong in the revised ADR:
 
-1. **Coverage is uneven enough to matter.** Whole winters are effectively absent.
-   Evaluation splits must be made on what was actually recorded, and reporting
-   "sixteen years of data" without qualification would be misleading.
+1. **Fourteen usable seasons, not sixteen.** Monican02 recorded nothing in 2013/14 or
+   2016/17, and five further seasons sit under 40%. Evaluation splits must be made on
+   what was actually recorded; "sixteen years of data" would be misleading.
 2. **The Hs-to-Face-Height relationship is loose**, as finding 4 shows directly. This
-   was already acknowledged in the ADR as a caveat; it should be stated as a measured
-   property rather than a suspicion.
+   was already a caveat in the ADR; it should now be stated as a measured property.
+3. **Instrument changes cannot be ruled out.** The source carries no sensor metadata,
+   so an undetected instrument swap remains a live risk to the record's consistency.
 
 Recommended: adopt **Monican02** as the Proxy Target. Monican01 is worth retaining,
 not as a target but as a measured offshore input and a gap-filler — it independently
-covers 632 winter days that Monican02 missed.
+covers 632 Usable Days that Monican02 missed, and 2013/14 is the only season both lost.
 
 Tracked in [#17](https://github.com/NXA13/NazareNow/issues/17).
+
+## Review corrections
+
+This analysis was reviewed on both a standards and a spec axis, and two findings
+changed the numbers rather than merely the prose:
+
+- **Seasons were being grouped by calendar year**, which split every Big-Wave Season
+  across two rows. The committed table showed Monican02's 2016 as 33.4% coverage; that
+  figure was January–March 2016, belonging to the *previous* season. The 2016/17 season
+  recorded nothing at all. Two dead seasons were hidden this way.
+- **Coverage used the observed span as its denominator** rather than the calendar
+  period, which flattered partial years. Monican01's 2025 was reported as 87.8% despite
+  the mooring dying on 1 October; against the season it is 0.3%.
+
+Both inflated the headline result. The joint-coverage figures and the candidate XXL Day
+table were also being computed by hand outside any committed script, and are now
+produced by `analyse_coverage.py` so they regenerate.

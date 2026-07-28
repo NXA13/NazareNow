@@ -19,6 +19,8 @@ from pathlib import Path
 
 import copernicusmarine
 
+from platforms import PLATFORMS, Platform
+
 # In-situ observations for the Iberia-Biscay-Ireland region, which includes the
 # Portuguese coast. This one product carries both the historical record and the
 # near-real-time feed.
@@ -29,29 +31,21 @@ DATASET_ID = "cmems_obs-ins_ibi_phybgcwav_mynrt_na_irr"
 # "history" holds the full record as one file per platform.
 DATASET_PART = "history"
 
-# Discovered by discover_platforms.py. Monican01 has the long record but sits ~55km
-# offshore in deep water; Monican02 is near the canyon but starts in 2018. We pull
-# both, because deciding between them is the point of this analysis.
-PLATFORMS = {
-    "6200192": "Monican01",
-    "6200199": "Monican02",
-}
-
 DESTINATION = Path(__file__).resolve().parents[2] / "data" / "raw" / "buoy"
 
 
-def download(platform_code: str, name: str) -> int:
-    print(f"\n--- {name} ({platform_code}) ---")
+def download(platform: Platform) -> int:
+    print(f"\n--- {platform.name} ({platform.code}) ---")
     result = copernicusmarine.get(
         dataset_id=DATASET_ID,
         dataset_part=DATASET_PART,
-        filter=f"*{platform_code}*",
+        filter=f"*{platform.code}*",
         output_directory=str(DESTINATION),
         no_directories=True,
         overwrite=True,
     )
     if result is None or not result.files:
-        print(f"  no files matched *{platform_code}*")
+        print(f"  no files matched *{platform.code}*")
         return 0
     for file in result.files:
         print(f"  {file.filename}")
@@ -63,9 +57,9 @@ def main() -> int:
     print(f"Downloading to {DESTINATION}")
 
     total = 0
-    for code, name in PLATFORMS.items():
+    for platform in PLATFORMS:
         try:
-            total += download(code, name)
+            total += download(platform)
         except Exception as error:  # noqa: BLE001 — report and continue to the next platform
             print(f"  FAILED: {type(error).__name__}: {error}")
 
