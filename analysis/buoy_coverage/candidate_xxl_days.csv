@@ -1,0 +1,21 @@
+# PROVISIONAL. Not the curated Gold Day set — that is issue #10.
+#
+# These dates were assembled during ticket #2 as a sanity check on whether the buoys
+# report at all when Praia do Norte goes giant. They are recalled and spot-checked, not
+# systematically sourced, and one initially-included date was dropped after the buoy
+# returned 1.45 m for it, which almost certainly meant the date was wrong rather than
+# the reading. Treat every figure derived from this file as indicative.
+#
+# confidence: ratified = an officially measured and certified record
+#             contest  = a competition was held, so conditions were verifiably giant
+#             reported = widely covered but not independently certified
+#
+date,event,confidence,source
+2011-11-01,McNamara 78 ft Guinness world record,ratified,https://www.guinnessworldrecords.com/
+2013-10-28,McNamara ~100 ft claim (never ratified),reported,https://www.surfertoday.com/
+2017-11-08,Koxa 80 ft Guinness world record,ratified,https://www.guinnessworldrecords.com/
+2018-01-18,Gabeira women's world record,ratified,https://www.guinnessworldrecords.com/
+2020-10-29,Laureano 101 ft claim (never ratified),reported,https://www.surfertoday.com/
+2024-01-22,TUDOR Nazare Big Wave Challenge,contest,https://www.worldsurfleague.com/
+2025-02-18,TUDOR Nazare Big Wave Challenge,contest,https://www.worldsurfleague.com/
+2025-12-13,TUDOR Nazare Big Wave Challenge,contest,https://www.worldsurfleague.com/
