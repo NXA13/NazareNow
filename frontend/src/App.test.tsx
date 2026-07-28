@@ -24,7 +24,8 @@ async function reading(label: string) {
   return within(await screen.findByRole('group', { name: new RegExp(`^${label}$`, 'i') }));
 }
 
-/** Every reading the API returns, so none can be added without being displayed. */
+/** Every reading the API returns. A test below pins this list to the API type, so a
+ * reading cannot be added to the contract without also being displayed and asserted. */
 const READINGS: [string, keyof typeof currentConditions][] = [
   ['Swell height', 'swell_height'],
   ['Swell period', 'swell_period'],
@@ -38,7 +39,19 @@ const READINGS: [string, keyof typeof currentConditions][] = [
   ['Water temperature', 'water_temperature'],
 ];
 
+/** Fields describing the observation rather than being readings. */
+const METADATA = ['observed_at', 'fetched_at', 'latitude', 'longitude'];
+
 describe('current conditions', () => {
+  it('covers every reading the API returns', () => {
+    // Without this, READINGS is just a hand-written list: an eleventh field could be
+    // added to the API and the fixture and still pass 14 of 14.
+    const fromApi = Object.keys(currentConditions).filter((key) => !METADATA.includes(key));
+    const covered = READINGS.map(([, key]) => key as string);
+
+    expect(covered.sort()).toEqual(fromApi.sort());
+  });
+
   it.each(READINGS)('shows %s with its unit', async (label, key) => {
     const expected = currentConditions[key] as { value: number; unit: string };
 

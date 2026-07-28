@@ -129,9 +129,10 @@ export function App() {
               .
             </p>
             <p className="provenance">
-              Measured at {state.conditions.latitude.toFixed(2)}°N,{' '}
+              Swell and sea measured at {state.conditions.latitude.toFixed(2)}°N,{' '}
               {Math.abs(state.conditions.longitude).toFixed(2)}°W — roughly 15km offshore, near the
-              head of the Nazare Canyon.
+              head of the Nazare Canyon. Wind and air temperature come from the nearest land
+              forecast cell, which is not the same point.
             </p>
           </footer>
         </>

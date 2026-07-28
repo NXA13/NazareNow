@@ -130,6 +130,20 @@ downloaded data, so CI checks them statically:
 .venv/Scripts/python.exe -m ruff format --check analysis/
 ```
 
+### Known gaps
+
+**Mobile layout has no automated protection.** jsdom has no layout engine, so the
+frontend suite cannot measure it. It was verified by hand at 320, 360 and 390px — all
+ten readings render, no horizontal overflow, the grid reflows to one column — and the
+CSS uses only fluid units, but nothing stops a regression. A browser-driven test would
+close this.
+
+**The site shows more than ticket #4 asked for.** The ticket enumerates seven readings;
+ten are displayed, adding significant wave height, wave period and wave direction under
+a *Combined sea* heading. Significant Wave Height is the Proxy Target the whole project
+is built on (ADR 0002), so showing it seemed worth the deviation — but it is a
+deviation, recorded here rather than left for a reader to notice.
+
 ### No test contacts a third-party service
 
 This is enforced rather than asserted, in both suites:

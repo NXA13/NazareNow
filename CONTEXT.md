@@ -43,7 +43,7 @@ from Swell, which is only the travelled component and is what the canyon amplifi
 _Avoid_: sea state, total sea, waves
 
 **Significant Wave Height (Hs)**:
-The standard oceanographic measure of sea state — the mean height of the highest third of
+The standard oceanographic measure of a Combined Sea — the mean height of the highest third of
 waves over a sampling period. Measured instrumentally. Much smaller than Face Height for the
 same sea, and not convertible to it by any fixed ratio.
 _Avoid_: wave height (ambiguous), swell height (a different variable)
@@ -90,7 +90,7 @@ _Avoid_: test set, validation data, positive example
 ### The system
 
 **Amplification Model**:
-The component that takes Offshore Conditions and predicts the resulting sea state at Nazaré.
+The component that takes Offshore Conditions and predicts the resulting Combined Sea at Nazaré.
 Learns what global forecast models cannot resolve. Produces a prediction and an uncertainty.
 _Avoid_: the model, the AI, the predictor
 

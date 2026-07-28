@@ -15,13 +15,21 @@ loudly rather than quietly reaching the network.
 from __future__ import annotations
 
 import concurrent.futures
+import os
+import sqlite3
 from collections import Counter
 
 import httpx
 import pytest
+from fastapi.testclient import TestClient
 
+from nazarenow.api import CurrentConditions
 from nazarenow.pipeline import run_pipeline
+from nazarenow.sources.open_meteo import MARINE_READINGS, WEATHER_READINGS
 from nazarenow.store import DEFAULT_DATABASE, Store, StoreUnavailable
+
+# Fields on the response that describe the observation rather than being readings.
+METADATA_FIELDS = {"observed_at", "fetched_at", "latitude", "longitude"}
 
 MARINE_BODY = {
     "latitude": 39.541664,
@@ -217,13 +225,26 @@ def test_a_structurally_malformed_payload_is_rejected(store, client) -> None:
 
 
 def test_a_failed_run_leaves_earlier_conditions_intact(store, client) -> None:
+    """The second source failing is the case that matters.
+
+    Failing on the first fetch never exercises the ordering guarantee: conditions are
+    written after both sources succeed, so only a mid-run failure can prove that a
+    partial run leaves nothing behind. With the stub failing first, moving
+    record_conditions between the two fetches left the whole suite green.
+    """
     ingest(store, provider())
-    transport, _ = failing_provider(500)
+
+    def half_broken(request: httpx.Request) -> httpx.Response:
+        if "marine" in request.url.host:
+            return httpx.Response(200, json=MARINE_BODY)
+        return httpx.Response(500, json={"error": "weather is down"})
 
     with pytest.raises(httpx.HTTPStatusError):
-        ingest(store, transport)
+        ingest(store, httpx.MockTransport(half_broken))
 
-    assert client.get("/api/conditions/current").json()["swell_height"]["value"] == 8.1
+    body = client.get("/api/conditions/current").json()
+    assert body["swell_height"]["value"] == 8.1
+    assert body["observed_at"] == "2026-02-13T09:00"
 
 
 # --- retry policy -------------------------------------------------------------
@@ -318,7 +339,74 @@ def test_a_missing_database_is_a_fault_not_an_absence_of_data(tmp_path) -> None:
     assert not (tmp_path / "nowhere").exists()
 
 
-def test_the_default_store_does_not_depend_on_the_working_directory() -> None:
+def test_the_default_store_does_not_depend_on_the_working_directory(tmp_path) -> None:
     """Ingesting from one directory and serving from another silently used two different
-    databases, and the API answered 503 while holding data."""
+    databases, and the API answered 503 while holding data.
+
+    Asserting the path is merely absolute does not catch that: Path("data/x.db").resolve()
+    is absolute too, and cwd-dependent. This resolves it from two directories instead.
+    """
+    original = os.getcwd()
+    try:
+        os.chdir(tmp_path)
+        from_temp = (
+            Store(create=False, writable=False).path
+            if DEFAULT_DATABASE.exists()
+            else DEFAULT_DATABASE
+        )
+        os.chdir(original)
+        from_repo = DEFAULT_DATABASE
+    finally:
+        os.chdir(original)
+
+    assert from_temp == from_repo
     assert DEFAULT_DATABASE.is_absolute()
+
+
+def test_every_ingested_reading_is_served_by_the_api() -> None:
+    """A reading can be fetched and stored yet never reach the user.
+
+    Deriving the requested variables from the reading map closed only the fetch side.
+    A new reading name over a variable already requested passed all 24 tests, was
+    ingested, was written to the store, and was then silently dropped by the response
+    model — pydantic ignores extra fields by default. This pins the two together.
+    """
+    ingested = set(MARINE_READINGS) | set(WEATHER_READINGS)
+    served = {name for name in CurrentConditions.model_fields if name not in METADATA_FIELDS}
+
+    assert ingested == served, (
+        f"ingested but never served: {sorted(ingested - served)}; "
+        f"served but never ingested: {sorted(served - ingested)}"
+    )
+
+
+def test_the_serving_store_cannot_write(store, tmp_path) -> None:
+    """ADR 0005 says the API is strictly a reader. Enforced by SQLite, not convention:
+    `create=False` alone still opened a read-write connection."""
+    ingest(store, provider())
+    reader = Store(store.path, create=False)
+
+    with pytest.raises(sqlite3.OperationalError, match="readonly"):
+        reader.record_conditions("2026-02-13T09:00", 0.0, 0.0, {})
+
+    reader.close()
+
+
+def test_a_misconfigured_database_path_explains_itself(tmp_path, monkeypatch) -> None:
+    """A missing database is a configuration fault, and must not read as missing data.
+
+    The handler for this previously sat inside the endpoint body, where it could never
+    fire — dependencies resolve first — so the API returned a bare 500 with no detail.
+    """
+    from nazarenow.api import app, default_store
+
+    default_store.cache_clear()
+    monkeypatch.setenv("NAZARENOW_DB", str(tmp_path / "nowhere.db"))
+    app.dependency_overrides.clear()
+
+    try:
+        response = TestClient(app, raise_server_exceptions=False).get("/api/conditions/current")
+        assert response.status_code == 500
+        assert "store unavailable" in response.json()["detail"].lower()
+    finally:
+        default_store.cache_clear()

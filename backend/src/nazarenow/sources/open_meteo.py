@@ -53,9 +53,11 @@ WEATHER_VARIABLES = sorted(set(WEATHER_READINGS.values()))
 
 MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = 2.0
-# However long a provider asks us to wait, a Pipeline Run must still finish. An
-# unbounded Retry-After of "inf" previously hung the run forever.
-MAX_BACKOFF_SECONDS = 60.0
+# However long a provider asks us to wait, a Pipeline Run must still finish. An unbounded
+# Retry-After of "inf" previously hung the run forever. The cap is generous enough to
+# honour a real rate-limit pause — Open-Meteo's daily limit resets are minutes, not
+# seconds — rather than ignoring the provider's instruction and hammering it early.
+MAX_BACKOFF_SECONDS = 300.0
 
 
 class OpenMeteoResponse(BaseModel):
@@ -161,15 +163,9 @@ def fetch(
             sleep(retry_delay(response, attempt))
             continue
 
-        # Covers 3xx as well as 4xx and 5xx: anything that is not a success should stop
-        # here rather than reach json() and fail as a confusing parse error.
-        if not response.is_success:
-            response.raise_for_status()
-            raise httpx.HTTPStatusError(
-                f"Unexpected status {response.status_code}",
-                request=response.request,
-                response=response,
-            )
+        # Covers 3xx as well as 4xx and 5xx: anything that is not a success stops here
+        # rather than reaching json() and failing as a confusing parse error.
+        response.raise_for_status()
 
         body = response.json()
         validate(body, variables)

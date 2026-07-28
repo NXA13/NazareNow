@@ -49,8 +49,17 @@ def default_store() -> Store:
 
 
 def get_store() -> Store:
-    """Injected so tests can substitute a temporary store."""
-    return default_store()
+    """Injected so tests can substitute a temporary store.
+
+    The store is opened here, in the dependency, so this is also where a misconfigured
+    path surfaces. An earlier version caught StoreUnavailable inside the endpoint body,
+    which could never fire — dependencies resolve first — and a missing database
+    produced a bare 500 with no explanation of what was wrong.
+    """
+    try:
+        return default_store()
+    except StoreUnavailable as error:
+        raise HTTPException(status_code=500, detail=f"Store unavailable: {error}") from error
 
 
 class Reading(BaseModel):
@@ -94,11 +103,7 @@ def current_conditions(store: Annotated[Store, Depends(get_store)]) -> CurrentCo
     render as a flat, calm ocean, which is a plausible-looking lie; an explicit failure
     is not.
     """
-    try:
-        latest: dict[str, Any] | None = store.latest_conditions()
-    except StoreUnavailable as error:
-        raise HTTPException(status_code=500, detail=f"Store unavailable: {error}") from error
-
+    latest: dict[str, Any] | None = store.latest_conditions()
     if latest is None:
         raise HTTPException(
             status_code=503,

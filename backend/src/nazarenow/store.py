@@ -21,9 +21,13 @@ from pathlib import Path
 from typing import Any
 
 # Anchored to this file, not the working directory. A relative default meant the store
-# you got depended on where you happened to be standing: ingesting from one directory
-# and serving from another silently used two different databases, and the API answered
-# "no conditions have been ingested yet" while a perfectly good row sat in the other file.
+# you got depended on where you happened to be standing: ingesting from one directory and
+# serving from another silently used two different databases, and the API answered "no
+# conditions have been ingested yet" while a perfectly good row sat in the other file.
+#
+# This assumes a source checkout, which is how the project is run and how CI runs it.
+# Installed non-editable into site-packages the anchor would land beside the virtualenv,
+# so a packaged deployment must set NAZARENOW_DB.
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_DATABASE = REPO_ROOT / "data" / "nazarenow.db"
 
@@ -61,37 +65,70 @@ def now() -> str:
 class Store:
     """A SQLite-backed store, safe to share across threads.
 
-    Connections are per-thread. A single shared `sqlite3.Connection` is not safe under
-    a threaded server even with `check_same_thread=False`: FastAPI runs synchronous
+    Connections are per-thread. A single shared `sqlite3.Connection` is not safe under a
+    threaded server even with `check_same_thread=False`: FastAPI runs synchronous
     endpoints in a threadpool, and concurrent reads through one connection returned
-    `None` for populated columns and raised `IndexError` from the shared statement
-    cache. Under load that surfaced as the API reporting no conditions while holding
-    conditions — a plausible-looking lie rather than a crash.
+    `None` for populated columns and raised `IndexError` from the shared statement cache.
+    Under load that surfaced as the API reporting no conditions while holding conditions
+    — a plausible-looking lie rather than a crash.
+
+    Opened read-only unless it is being written to, so ADR 0005's "the API is strictly a
+    reader" is enforced by SQLite rather than left to convention.
     """
 
-    def __init__(self, path: str | Path | None = None, *, create: bool = True) -> None:
+    def __init__(
+        self,
+        path: str | Path | None = None,
+        *,
+        create: bool = True,
+        writable: bool | None = None,
+    ) -> None:
         self.path = Path(path) if path is not None else DEFAULT_DATABASE
-        self.create = create
+        self.writable = create if writable is None else writable
+
         self._local = threading.local()
+        # Every connection handed out, so all can be closed. Windows holds a file lock
+        # while any remain open, which makes the database impossible to delete.
+        self._connections: list[sqlite3.Connection] = []
+        self._lock = threading.Lock()
 
         if create:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            with self._connect() as connection:
-                connection.executescript(SCHEMA)
+            self._connect().executescript(SCHEMA)
         elif not self.path.exists():
-            # Per ADR 0005 the serving path is strictly a reader. Creating the file here
-            # would turn a misconfigured path into an empty database, and the API would
-            # then answer "no conditions yet" — a config fault wearing the costume of
-            # missing data.
+            # Creating the file here would turn a misconfigured path into an empty
+            # database, and the API would then answer "no conditions yet" — a config
+            # fault wearing the costume of missing data.
             raise StoreUnavailable(f"No database at {self.path}")
 
     def _connect(self) -> sqlite3.Connection:
         connection = getattr(self._local, "connection", None)
-        if connection is None:
-            connection = sqlite3.connect(self.path, check_same_thread=False)
-            connection.row_factory = sqlite3.Row
-            self._local.connection = connection
+        if connection is not None:
+            return connection
+
+        try:
+            if self.writable:
+                connection = sqlite3.connect(self.path, check_same_thread=False)
+            else:
+                connection = sqlite3.connect(
+                    f"file:{self.path.as_posix()}?mode=ro", uri=True, check_same_thread=False
+                )
+        except sqlite3.Error as error:
+            raise StoreUnavailable(f"Cannot open {self.path}: {error}") from error
+
+        connection.row_factory = sqlite3.Row
+        self._local.connection = connection
+        with self._lock:
+            self._connections.append(connection)
         return connection
+
+    def close(self) -> None:
+        """Close every connection this store has opened."""
+        with self._lock:
+            for connection in self._connections:
+                connection.close()
+            self._connections.clear()
+        self._local = threading.local()
 
     def record_raw_response(self, source: str, url: str, body: dict[str, Any]) -> None:
         """Persist a provider response as received."""
@@ -145,8 +182,8 @@ class Store:
         """Every raw provider response retained, oldest first.
 
         No HTTP surface exposes these, so the test covering their retention drives this
-        method directly. That is a deliberate, narrow exception to the backend seam:
-        the behaviour is required by ticket #4 and there is nothing else to observe it
+        method directly. That is a deliberate, narrow exception to the backend seam: the
+        behaviour is required by ticket #4 and there is nothing else to observe it
         through. When run diagnostics get an endpoint, the test should move to it.
         """
         rows = (

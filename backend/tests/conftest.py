@@ -44,8 +44,15 @@ def block_outbound_network(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
-def store(tmp_path) -> Store:
-    return Store(tmp_path / "test.db")
+def store(tmp_path) -> Iterator[Store]:
+    """A temporary store, closed afterwards.
+
+    Windows holds a file lock while any connection is open, which leaves pytest unable
+    to clean up its temporary directories.
+    """
+    store = Store(tmp_path / "test.db")
+    yield store
+    store.close()
 
 
 @pytest.fixture
