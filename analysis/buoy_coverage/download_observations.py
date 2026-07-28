@@ -6,7 +6,7 @@ In Situ TAC ("INSTAC" in the dead EMODnet paths), which still has it.
 
 Requires a free Copernicus Marine account. Log in once with:
 
-    .venv/Scripts/python.exe -m copernicusmarine login
+    .venv/Scripts/copernicusmarine.exe login
 
 That stores a credentials file in your home directory; this script never sees or
 handles your password.
@@ -24,6 +24,11 @@ import copernicusmarine
 # near-real-time feed.
 DATASET_ID = "cmems_obs-ins_ibi_phybgcwav_mynrt_na_irr"
 
+# The dataset is split into parts, and the default is "latest" — the last 30 days
+# only. That is a trap: a download that looks successful returns a month of data.
+# "history" holds the full record as one file per platform.
+DATASET_PART = "history"
+
 # Discovered by discover_platforms.py. Monican01 has the long record but sits ~55km
 # offshore in deep water; Monican02 is near the canyon but starts in 2018. We pull
 # both, because deciding between them is the point of this analysis.
@@ -39,6 +44,7 @@ def download(platform_code: str, name: str) -> int:
     print(f"\n--- {name} ({platform_code}) ---")
     result = copernicusmarine.get(
         dataset_id=DATASET_ID,
+        dataset_part=DATASET_PART,
         filter=f"*{platform_code}*",
         output_directory=str(DESTINATION),
         no_directories=True,
@@ -65,7 +71,7 @@ def main() -> int:
 
     if total == 0:
         print("\nNothing downloaded. If you were prompted for a username, run:")
-        print("  .venv/Scripts/python.exe -m copernicusmarine login")
+        print("  .venv/Scripts/copernicusmarine.exe login")
         return 1
 
     print(f"\n{total} files downloaded. Next: analyse_coverage.py")

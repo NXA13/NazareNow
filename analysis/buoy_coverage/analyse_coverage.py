@@ -62,24 +62,36 @@ def load_platform(code: str) -> pd.DataFrame | None:
     return combined[~combined.index.duplicated(keep="first")]
 
 
+def surface_level(dataset: xr.Dataset) -> int:
+    """Index of the DEPTH level holding surface measurements.
+
+    These files stack several sensor levels on one DEPTH dimension — typically
+    -4 m (above water, for the met sensors), 0 m, 0.5 m and 1 m. Wave parameters
+    are surface quantities and live at 0 m, which is not index 0. Selecting
+    positionally silently returns an entirely empty column.
+    """
+    depths = dataset["DEPH"].to_numpy()
+    return int(np.argmin(np.abs(depths)))
+
+
 def extract(dataset: xr.Dataset) -> pd.DataFrame:
     """Pull the wave variables out of one file, applying quality control."""
     columns: dict[str, np.ndarray] = {}
+    level = surface_level(dataset)
 
     for name in WAVE_VARIABLES:
         if name not in dataset:
             continue
         values = dataset[name]
-        # These files carry a DEPTH dimension of length one for surface variables.
         if "DEPTH" in values.dims:
-            values = values.isel(DEPTH=0)
+            values = values.isel(DEPTH=level)
         series = values.to_numpy().astype("float64").ravel()
 
         flag_name = f"{name}_QC"
         if flag_name in dataset:
             flags = dataset[flag_name]
             if "DEPTH" in flags.dims:
-                flags = flags.isel(DEPTH=0)
+                flags = flags.isel(DEPTH=level)
             flags = flags.to_numpy().ravel()
             series = np.where(np.isin(flags, GOOD_QC_FLAGS), series, np.nan)
 
@@ -179,10 +191,13 @@ def plot(frames: dict[str, pd.DataFrame]) -> Path:
         axis.set_yticks(range(len(pivot.index)), pivot.index)
         axis.set_xticks(range(12), ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"])
         axis.set_title(f"{name} — monthly coverage of significant wave height (%)")
-        # The big-wave season is what actually matters; mark it.
-        for month in (0, 1, 2, 9, 10, 11):
-            axis.axvspan(month - 0.5, month + 0.5, color="white", alpha=0.0, lw=0)
-        axis.set_xlabel("shaded months Oct-Mar are the big-wave season")
+
+        # Outline the big-wave season. A gap in July costs this project nothing;
+        # a gap in January costs it a whole winter.
+        for month in WINTER_MONTHS:
+            axis.axvline(month - 1.5, color="red", lw=1.2, alpha=0.6)
+            axis.axvline(month - 0.5, color="red", lw=1.2, alpha=0.6)
+        axis.set_xlabel("red-bounded months (Oct-Mar) are the big-wave season")
         fig.colorbar(image, ax=axis, label="% of hours present")
 
     fig.tight_layout()
