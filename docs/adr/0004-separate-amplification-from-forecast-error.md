@@ -1,8 +1,8 @@
 # Learn Amplification from Hindcast, then inject Forecast Error at serving time
 
 The Amplification Model needs to learn how the canyon transforms Offshore Conditions, and that
-relationship is best learned from clean inputs — ERA5 Hindcast paired with buoy Significant Wave
-Height, roughly 150,000 hourly rows from 2009 to present. But the system is served forecasts,
+relationship is best learned from clean inputs — ERA5 Hindcast paired with the Proxy Target,
+roughly 76,000 quality-controlled hourly observations from 2010. But the system is served forecasts,
 not hindcasts, and forecast error grows with Lead Time. Training on clean inputs and serving on
 noisy ones is train/serve skew, and it produces a model whose test-set accuracy is meaningfully
 better than its real accuracy, with no warning.
@@ -25,8 +25,10 @@ stops at seven days, leaving the Watch tier with no data at all.
 
 ## Consequences
 
-The buoy record, not ERA5, bounds the training set. ERA5 reaches back to 1940 but labels begin
-in 2009, so the deeper archive is useful only for climatology and rarity context.
+The buoy record, not ERA5, bounds the training set. ERA5 reaches back to 1940 but the Proxy
+Target begins in 2010, so the deeper archive is useful only for climatology and rarity context.
+The bound is tighter than the date range suggests: coverage is uneven and two Big-Wave Seasons
+are missing entirely (see ADR 0002).
 
 Serving requires many model evaluations per forecast date rather than one, so the Amplification
 Model must be cheap to evaluate. This effectively rules out architectures that are expensive at

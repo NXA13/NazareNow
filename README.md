@@ -43,7 +43,7 @@ weather services separate a *watch* from a *warning*.
 | | |
 |---|---|
 | **Inputs** | Open-Meteo Marine API — swell height, period, direction, wind. Multiple independent wave models queried per date; their disagreement serves as the uncertainty estimate. |
-| **Training target** | Significant wave height from the Instituto Hidrográfico's MONICAN buoy off Nazaré, hourly since 2009, via EMODnet ERDDAP. |
+| **Training target** | Significant wave height from Monican02, the Instituto Hidrográfico mooring 15km off Nazaré near the canyon head. Hourly from 2010, via the Copernicus Marine In Situ TAC. Fourteen usable seasons — coverage is uneven and two winters are missing entirely. |
 | **Calibration** | A hand-verified set of days confirmed as genuinely giant — contest days, ratified records — used to establish what a predicted height actually means. |
 | **Baseline** | The surf community's rule of thumb, implemented first and retained permanently as the benchmark any learned model must beat. |
 
@@ -61,5 +61,6 @@ In design. No implementation yet.
 ## Acknowledgements
 
 Wave forecasts from [Open-Meteo](https://open-meteo.com). Buoy observations from the
-[Instituto Hidrográfico](https://monican.hidrografico.pt) via
-[EMODnet Physics](https://emodnet.ec.europa.eu/en/physics).
+[Instituto Hidrográfico](https://monican.hidrografico.pt)'s MONICAN network, via the
+[Copernicus Marine Service](https://marine.copernicus.eu) In Situ TAC, with platform
+discovery through [EMODnet Physics](https://emodnet.ec.europa.eu/en/physics).
