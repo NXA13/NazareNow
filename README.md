@@ -47,6 +47,65 @@ weather services separate a *watch* from a *warning*.
 | **Calibration** | A hand-verified set of days confirmed as genuinely giant — contest days, ratified records — used to establish what a predicted height actually means. |
 | **Baseline** | The surf community's rule of thumb, implemented first and retained permanently as the benchmark any learned model must beat. |
 
+## Running it locally
+
+Requires Python 3.12+ and Node 22+. Paths below are Windows; on macOS or Linux the
+interpreter is `.venv/bin/python` and the CLI scripts live in `.venv/bin/`.
+
+```bash
+git clone https://github.com/NXA13/NazareNow.git
+cd NazareNow
+
+# One virtualenv serves both the backend and the analysis scripts.
+python -m venv .venv
+.venv/Scripts/python.exe -m pip install -e "backend[dev]"
+
+cd frontend && npm install && cd ..
+```
+
+Two processes, in separate terminals:
+
+```bash
+# Backend on http://127.0.0.1:8000
+cd backend
+../.venv/Scripts/python.exe -m uvicorn nazarenow.api:app --app-dir src --reload
+
+# Frontend on http://localhost:5273
+cd frontend
+npm run dev
+```
+
+The frontend port is pinned with `strictPort`, so a clash fails immediately rather than
+silently moving to another port. That matters: the backend's CORS list names this exact
+origin, and a drifting port would break the app in a way neither test suite can catch —
+both seams mock the boundary between them.
+
+### Checks
+
+Each suite runs with one command. CI runs all of them on every push.
+
+```bash
+# Backend — tests, lint, formatting
+cd backend
+../.venv/Scripts/python.exe -m pytest
+../.venv/Scripts/python.exe -m ruff check .
+../.venv/Scripts/python.exe -m ruff format --check .
+
+# Frontend — tests, types, lint, formatting
+cd frontend
+npm test
+npm run typecheck
+npm run lint
+npm run format:check
+
+# Analysis scripts — lint only; running them needs credentials and real data
+.venv/Scripts/python.exe -m ruff check analysis/
+```
+
+No test contacts a third-party service. The frontend suite runs MSW with
+`onUnhandledRequest: 'error'`, so any request a test did not explicitly mock fails the
+test rather than escaping to the network.
+
 ## Documentation
 
 - [`CONTEXT.md`](./CONTEXT.md) — the domain glossary. Deliberately opinionated about vocabulary,

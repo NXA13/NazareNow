@@ -20,7 +20,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from platforms import PLATFORMS, Platform
+from platforms import PLATFORMS
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402 — must follow the backend selection
@@ -168,16 +168,21 @@ def coverage_by_season(frame: pd.DataFrame) -> pd.DataFrame:
     for season in sorted(set(season_of(in_season.index))):
         mask = season_of(in_season.index) == season
         # October to March, accounting for a February that may have 29 days.
-        span_hours = int((pd.Timestamp(season + 1, 4, 1) - pd.Timestamp(season, 10, 1))
-                         .total_seconds() // 3600)
+        span_hours = int(
+            (pd.Timestamp(season + 1, 4, 1) - pd.Timestamp(season, 10, 1)).total_seconds() // 3600
+        )
         usable = int(in_season[mask].sum())
-        rows.append({
-            "season": f"{season}/{str(season + 1)[2:]}",
-            "season_hours": span_hours,
-            "hours_usable": usable,
-            "coverage_pct": round(100 * usable / span_hours, 1),
-            "usable_days": sum(1 for d in days if season_of(pd.DatetimeIndex([d]))[0] == season),
-        })
+        rows.append(
+            {
+                "season": f"{season}/{str(season + 1)[2:]}",
+                "season_hours": span_hours,
+                "hours_usable": usable,
+                "coverage_pct": round(100 * usable / span_hours, 1),
+                "usable_days": sum(
+                    1 for d in days if season_of(pd.DatetimeIndex([d]))[0] == season
+                ),
+            }
+        )
     return pd.DataFrame(rows)
 
 
@@ -188,8 +193,10 @@ def describe_cadence(frame: pd.DataFrame) -> str:
         return "unknown"
     minutes = gaps.dt.total_seconds() / 60
     hourly = 100 * float((minutes.between(59, 61)).mean())
-    return (f"median {minutes.median():.0f} min; {hourly:.1f}% of intervals are 60 min "
-            f"(the remainder are outage gaps, max {minutes.max() / 1440:.0f} days)")
+    return (
+        f"median {minutes.median():.0f} min; {hourly:.1f}% of intervals are 60 min "
+        f"(the remainder are outage gaps, max {minutes.max() / 1440:.0f} days)"
+    )
 
 
 def describe_position(frame: pd.DataFrame) -> str:
@@ -202,9 +209,13 @@ def describe_position(frame: pd.DataFrame) -> str:
     if "latitude" not in frame or frame["latitude"].isna().all():
         return "not recorded per observation"
     lat, lon = frame["latitude"].dropna(), frame["longitude"].dropna()
-    distinct = len(set(zip(lat.round(4), lon.round(4))))
-    return (f"{lat.mean():.2f}N {abs(lon.mean()):.2f}W, {distinct} distinct position(s) "
-            f"reported; resolution ~1.1 km, so smaller movement is undetectable")
+    # strict=True: a length mismatch between the two would mean the frame is malformed,
+    # and silently truncating would understate how much the mooring appears to have moved.
+    distinct = len(set(zip(lat.round(4), lon.round(4), strict=True)))
+    return (
+        f"{lat.mean():.2f}N {abs(lon.mean()):.2f}W, {distinct} distinct position(s) "
+        f"reported; resolution ~1.1 km, so smaller movement is undetectable"
+    )
 
 
 def describe_instrument(code: str) -> str:
@@ -218,7 +229,8 @@ def describe_instrument(code: str) -> str:
     if path is None:
         return "no files"
     with xr.open_dataset(path, decode_timedelta=False) as dataset:
-        fields = [k for k in dataset.attrs if any(t in k.lower() for t in ("instrument", "sensor", "serial", "device"))]
+        wanted = ("instrument", "sensor", "serial", "device")
+        fields = [k for k in dataset.attrs if any(t in k.lower() for t in wanted)]
         modes: set[str] = set()
         if "VHM0_DM" in dataset:
             for value in dataset["VHM0_DM"].to_numpy().ravel():
@@ -227,9 +239,11 @@ def describe_instrument(code: str) -> str:
                     modes.add(text.strip())
     if fields:
         return f"instrument metadata present: {fields}"
-    return ("no instrument metadata in source, so a sensor change would be undetectable; "
-            f"data modes present: {'/'.join(sorted(modes)) or 'none'} "
-            "(R real-time, D delayed-mode)")
+    return (
+        "no instrument metadata in source, so a sensor change would be undetectable; "
+        f"data modes present: {'/'.join(sorted(modes)) or 'none'} "
+        "(R real-time, D delayed-mode)"
+    )
 
 
 def variable_availability(frame: pd.DataFrame) -> pd.DataFrame:
@@ -237,8 +251,9 @@ def variable_availability(frame: pd.DataFrame) -> pd.DataFrame:
     rows = []
     for name, description in WAVE_VARIABLES.items():
         present = 100 * frame[name].notna().mean() if name in frame and total else 0.0
-        rows.append({"variable": name, "description": description,
-                     "present_pct": round(float(present), 1)})
+        rows.append(
+            {"variable": name, "description": description, "present_pct": round(float(present), 1)}
+        )
     return pd.DataFrame(rows)
 
 
@@ -255,8 +270,7 @@ def candidate_day_report(frames: dict[str, pd.DataFrame]) -> pd.DataFrame:
     """Was each buoy reporting on days known to have been giant, and what did it read?"""
     rows = []
     for entry in load_candidate_days():
-        row = {"date": entry["date"], "event": entry["event"],
-               "confidence": entry["confidence"]}
+        row = {"date": entry["date"], "event": entry["event"], "confidence": entry["confidence"]}
         for name, frame in frames.items():
             day = frame["VHM0"][frame.index.strftime("%Y-%m-%d") == entry["date"]]
             row[name] = round(float(day.max()), 2) if day.notna().any() else None
@@ -271,20 +285,23 @@ def joint_coverage(frames: dict[str, pd.DataFrame]) -> pd.DataFrame:
     if len(names) != 2:
         return pd.DataFrame()
     first, second = days[names[0]], days[names[1]]
-    return pd.DataFrame([
-        {"measure": names[0], "usable_days": len(first)},
-        {"measure": names[1], "usable_days": len(second)},
-        {"measure": "both on the same day", "usable_days": len(first & second)},
-        {"measure": f"only {names[0]}", "usable_days": len(first - second)},
-        {"measure": f"only {names[1]}", "usable_days": len(second - first)},
-        {"measure": "either buoy", "usable_days": len(first | second)},
-    ])
+    return pd.DataFrame(
+        [
+            {"measure": names[0], "usable_days": len(first)},
+            {"measure": names[1], "usable_days": len(second)},
+            {"measure": "both on the same day", "usable_days": len(first & second)},
+            {"measure": f"only {names[0]}", "usable_days": len(first - second)},
+            {"measure": f"only {names[1]}", "usable_days": len(second - first)},
+            {"measure": "either buoy", "usable_days": len(first | second)},
+        ]
+    )
 
 
 def plot(frames: dict[str, pd.DataFrame], seasons: dict[str, pd.DataFrame]) -> Path:
     """Monthly grid showing where the gaps are, plus coverage per Big-Wave Season."""
-    fig, axes = plt.subplots(len(frames), 2, figsize=(17, 3.4 * len(frames)),
-                             squeeze=False, width_ratios=[3, 2])
+    fig, axes = plt.subplots(
+        len(frames), 2, figsize=(17, 3.4 * len(frames)), squeeze=False, width_ratios=[3, 2]
+    )
 
     for row, (name, frame) in enumerate(frames.items()):
         monthly = hourly_presence(frame).resample("MS").mean() * 100
@@ -294,8 +311,14 @@ def plot(frames: dict[str, pd.DataFrame], seasons: dict[str, pd.DataFrame]) -> P
         pivot = pivot.reindex(columns=range(1, 13))
 
         axis = axes[row, 0]
-        image = axis.imshow(pivot.to_numpy(), aspect="auto", cmap="viridis",
-                            vmin=0, vmax=100, interpolation="nearest")
+        image = axis.imshow(
+            pivot.to_numpy(),
+            aspect="auto",
+            cmap="viridis",
+            vmin=0,
+            vmax=100,
+            interpolation="nearest",
+        )
         axis.set_yticks(range(len(pivot.index)), pivot.index)
         axis.set_xticks(range(12), ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"])
         axis.set_title(f"{name} — monthly coverage of Significant Wave Height (%)")
@@ -307,8 +330,10 @@ def plot(frames: dict[str, pd.DataFrame], seasons: dict[str, pd.DataFrame]) -> P
 
         axis = axes[row, 1]
         table = seasons[name]
-        colours = ["#c0392b" if v < 5 else "#e67e22" if v < 50 else "#27ae60"
-                   for v in table["coverage_pct"]]
+        colours = [
+            "#c0392b" if v < 5 else "#e67e22" if v < 50 else "#27ae60"
+            for v in table["coverage_pct"]
+        ]
         axis.bar(range(len(table)), table["coverage_pct"], color=colours)
         axis.set_xticks(range(len(table)), table["season"], rotation=90, fontsize=8)
         axis.set_ylim(0, 100)
@@ -352,8 +377,10 @@ def main() -> int:
         print(f"  cadence    : {describe_cadence(frame)}")
         print(f"  position   : {describe_position(frame)}")
         print(f"  instrument : {describe_instrument(platform.code)}")
-        print(f"  QC         : {rejected:,} of {tally['before_qc']:,} VHM0 readings rejected "
-              f"({rejected_pct:.3f}%)")
+        print(
+            f"  QC         : {rejected:,} of {tally['before_qc']:,} VHM0 readings rejected "
+            f"({rejected_pct:.3f}%)"
+        )
         print(f"  highest Hs : {frame['VHM0'].max():.2f} m")
 
         print("\n  variable availability:")
@@ -382,22 +409,27 @@ def main() -> int:
     joint = joint_coverage(frames)
     if not joint.empty:
         joint.to_csv(OUTPUT / "joint_coverage.csv", index=False)
-        print(f"\n{'=' * 74}\nBoth moorings together (Usable Days in the Big-Wave Season)\n{'=' * 74}")
+        print(f"\n{'=' * 74}\nBoth moorings together (Usable Days in the Big-Wave Season)")
+        print("=" * 74)
         for row in joint.itertuples():
             print(f"  {row.measure:<26} {row.usable_days:>6}")
 
     candidates = candidate_day_report(frames)
     if not candidates.empty:
         candidates.to_csv(OUTPUT / "candidate_xxl_day_readings.csv", index=False)
-        print(f"\n{'=' * 74}\nSignificant Wave Height on candidate XXL Days (PROVISIONAL, see #10)"
-              f"\n{'=' * 74}")
+        print(
+            f"\n{'=' * 74}\nSignificant Wave Height on candidate XXL Days (PROVISIONAL, see #10)"
+            f"\n{'=' * 74}"
+        )
         names = [c for c in candidates.columns if c in frames]
         print(f"  {'date':<12} {'confidence':<10} " + "  ".join(f"{n:>11}" for n in names))
         for row in candidates.itertuples(index=False):
             # A missing reading arrives as NaN once pandas has built the column,
             # so testing against None would report every gap as a value.
-            cells = ["    missing" if pd.isna(getattr(row, n)) else f"{getattr(row, n):>9.2f} m"
-                     for n in names]
+            cells = [
+                "    missing" if pd.isna(getattr(row, n)) else f"{getattr(row, n):>9.2f} m"
+                for n in names
+            ]
             print(f"  {row.date:<12} {row.confidence:<10} " + "  ".join(f"{c:>11}" for c in cells))
 
     image = plot(frames, seasons)
