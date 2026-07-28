@@ -1,9 +1,0 @@
-pyproject.toml
-src/nazarenow/__init__.py
-src/nazarenow/api.py
-src/nazarenow.egg-info/PKG-INFO
-src/nazarenow.egg-info/SOURCES.txt
-src/nazarenow.egg-info/dependency_links.txt
-src/nazarenow.egg-info/requires.txt
-src/nazarenow.egg-info/top_level.txt
-tests/test_api.py
