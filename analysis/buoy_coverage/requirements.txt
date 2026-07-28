@@ -1,0 +1,10 @@
+# Ticket #2 — buoy coverage analysis.
+# Install into a virtualenv:
+#   python -m venv .venv
+#   .venv/Scripts/python.exe -m pip install -r analysis/buoy_coverage/requirements.txt
+
+copernicusmarine>=2.4      # access to the Copernicus Marine In Situ TAC
+xarray>=2025.1             # reading the NetCDF timeseries
+netCDF4>=1.7               # xarray's NetCDF backend
+pandas>=2.2                # resampling and gap analysis
+matplotlib>=3.9            # coverage plots
