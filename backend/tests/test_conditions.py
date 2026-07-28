@@ -151,3 +151,54 @@ def test_a_failed_run_leaves_earlier_conditions_intact(store, client) -> None:
 
     body = client.get("/api/conditions/current").json()
     assert body["swell_height"]["value"] == 8.1
+
+
+def counting_provider(status: int, headers: dict[str, str] | None = None):
+    """A stub that records how many requests reached it.
+
+    Counting requests at the stubbed network boundary is behaviour the system exhibits
+    outwardly, not an internal detail — so asserting on it respects the agreed seam.
+    """
+    seen: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(status, json={"error": "nope"}, headers=headers or {})
+
+    return httpx.MockTransport(handle), seen
+
+
+def test_a_client_error_is_not_retried(store) -> None:
+    """A 400 is the provider saying we are wrong. Asking again cannot change that.
+
+    Retrying permanent errors wastes the provider's rate budget and delays the failure.
+    This regressed once: catching httpx.HTTPError around raise_for_status swallowed
+    HTTPStatusError and retried 400s and 404s three times each.
+    """
+    transport, seen = counting_provider(400)
+
+    with httpx.Client(transport=transport) as http, pytest.raises(httpx.HTTPStatusError):
+        run_pipeline(store, http, sleep=no_sleep)
+
+    assert len(seen) == 1
+
+
+def test_a_server_error_is_retried(store) -> None:
+    transport, seen = counting_provider(500)
+
+    with httpx.Client(transport=transport) as http, pytest.raises(httpx.HTTPStatusError):
+        run_pipeline(store, http, sleep=no_sleep)
+
+    assert len(seen) > 1
+
+
+def test_a_rate_limit_is_retried_and_waits_as_instructed(store) -> None:
+    """429 carries a Retry-After we are obliged to honour rather than guess at."""
+    transport, seen = counting_provider(429, {"Retry-After": "7"})
+    waits: list[float] = []
+
+    with httpx.Client(transport=transport) as http, pytest.raises(httpx.HTTPStatusError):
+        run_pipeline(store, http, sleep=waits.append)
+
+    assert len(seen) > 1
+    assert 7 in waits, f"expected to honour Retry-After: 7, waited {waits}"

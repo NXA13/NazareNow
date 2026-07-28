@@ -76,28 +76,34 @@ def fetch(
         "timezone": "UTC",
     }
 
-    last_error: Exception | None = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
+        # Only transport failures are caught here. Catching HTTPError around
+        # raise_for_status as well would swallow HTTPStatusError and retry it, which
+        # silently retried 400s and 404s three times — permanent errors, retried at the
+        # cost of the provider's rate budget and two pointless backoff sleeps.
         try:
             response = client.get(url, params=params, timeout=30)
-            # 429 carries a Retry-After we are obliged to honour; 5xx is worth retrying.
-            retryable = response.status_code == 429 or response.status_code >= 500
-            if retryable and attempt < MAX_ATTEMPTS:
-                sleep(retry_delay(response, attempt))
-                continue
-            response.raise_for_status()
-        except httpx.HTTPError as error:
-            last_error = error
+        except httpx.HTTPError:
             if attempt == MAX_ATTEMPTS:
                 raise
             sleep(BACKOFF_SECONDS * attempt)
             continue
 
+        # 429 carries a Retry-After we are obliged to honour; 5xx may be transient.
+        # Every other error status is the provider telling us we are wrong, and asking
+        # again will not change its mind.
+        retryable = response.status_code == 429 or response.status_code >= 500
+        if retryable and attempt < MAX_ATTEMPTS:
+            sleep(retry_delay(response, attempt))
+            continue
+
+        response.raise_for_status()
         body = response.json()
         validate(body, variables)
         return body, str(response.url)
 
-    raise last_error or httpx.HTTPError(f"{url} failed after {MAX_ATTEMPTS} attempts")
+    # Unreachable: the final attempt either returns or raises above.
+    raise AssertionError("retry loop completed without returning or raising")
 
 
 def retry_delay(response: httpx.Response, attempt: int) -> float:
