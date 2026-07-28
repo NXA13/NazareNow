@@ -2,15 +2,20 @@
 
 Per ADR 0005 this layer only ever reads. It evaluates no model and contacts no
 third-party service — a Pipeline Run does that on a schedule and writes its results to
-a store, which this API serves. Nothing here should ever grow a network call outward.
-
-Right now there is no store and no pipeline, so the one endpoint returns a placeholder
-that says so.
+the store, which this API serves. Nothing here should ever grow a network call outward.
 """
 
-from fastapi import FastAPI
+from __future__ import annotations
+
+import os
+from functools import lru_cache
+from typing import Annotated, Any
+
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+
+from nazarenow.store import Store
 
 app = FastAPI(
     title="NazareNow",
@@ -35,31 +40,69 @@ app.add_middleware(
 )
 
 
-class CurrentConditions(BaseModel):
-    """What the API reports for Praia do Norte right now.
+@lru_cache
+def default_store() -> Store:
+    return Store(os.environ.get("NAZARENOW_DB", "data/nazarenow.db"))
 
-    Declared as a model rather than a loose dict so FastAPI's generated schema is the
-    single description of this shape — the frontend, the tests and the docs all
-    disagreeing about it is a problem worth designing out early.
+
+def get_store() -> Store:
+    """Injected so tests can substitute a temporary store."""
+    return default_store()
+
+
+class Reading(BaseModel):
+    """One measured quantity, carrying the unit the provider reported it in.
+
+    The unit travels with the value rather than being assumed by the interface. Every
+    displayed number can then state its unit truthfully, and a provider switching from
+    km/h to m/s becomes visible instead of silently rescaling the page.
     """
 
-    placeholder: bool
-    """True while the API serves stand-in values rather than measurements."""
+    value: float
+    unit: str
 
-    location: str
-    message: str
+
+class CurrentConditions(BaseModel):
+    observed_at: str
+    fetched_at: str
+    latitude: float
+    longitude: float
+
+    placeholder: bool = False
+    """Retained from the walking skeleton so the interface keeps one honest signal for
+    'this is not a real measurement'. False now that a Pipeline Run supplies the data."""
+
+    swell_height: Reading
+    swell_period: Reading
+    swell_direction: Reading
+    wave_height: Reading
+    wave_period: Reading
+    wave_direction: Reading
+    water_temperature: Reading
+    air_temperature: Reading
+    wind_speed: Reading
+    wind_direction: Reading
 
 
 @app.get("/api/conditions/current")
-def current_conditions() -> CurrentConditions:
-    """A placeholder standing in for what a Pipeline Run will eventually store.
+def current_conditions(store: Annotated[Store, Depends(get_store)]) -> CurrentConditions:
+    """The most recent Offshore Conditions a Pipeline Run stored.
 
-    Deliberately carries `placeholder: true` rather than plausible-looking numbers.
-    The frontend surfaces that flag, so nobody can mistake the walking skeleton for a
-    working forecast.
+    Returns 503 when the store is empty rather than inventing defaults. Zeros would
+    render as a flat, calm ocean, which is a plausible-looking lie; an explicit failure
+    is not.
     """
+    latest: dict[str, Any] | None = store.latest_conditions()
+    if latest is None:
+        raise HTTPException(
+            status_code=503,
+            detail="No conditions have been ingested yet. Run the pipeline first.",
+        )
+
     return CurrentConditions(
-        placeholder=True,
-        location="Praia do Norte, Nazare",
-        message="Wired end to end. No conditions are being measured yet.",
+        observed_at=latest["observed_at"],
+        fetched_at=latest["fetched_at"],
+        latitude=latest["latitude"],
+        longitude=latest["longitude"],
+        **latest["readings"],
     )

@@ -67,7 +67,18 @@ python -m venv .venv
 cd frontend && npm install && cd ..
 ```
 
-Two processes, in separate terminals:
+Fetch some conditions before starting anything — the API has nothing to serve until a
+Pipeline Run has stored something, and says so with a 503 rather than inventing zeros:
+
+```bash
+cd backend && ../.venv/Scripts/python.exe -m nazarenow ingest
+```
+
+That contacts Open-Meteo, keeps the raw responses, and writes the parsed readings to
+`data/nazarenow.db`. Per ADR 0005 it is the only part of the system that talks to a
+third party; ticket #7 puts it on a schedule.
+
+Then two processes, in separate terminals:
 
 ```bash
 # Backend on http://127.0.0.1:8000
@@ -134,7 +145,8 @@ This is enforced rather than asserted, in both suites:
 
 ## Status
 
-In design. No implementation yet.
+Early. Current Offshore Conditions are ingested from Open-Meteo, stored, and displayed.
+No forecasting, no model, and no Watch or Go Calls yet — those are tickets #5 onward.
 
 ## Acknowledgements
 

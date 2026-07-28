@@ -1,11 +1,6 @@
-"""Tests for the backend, driven entirely through its HTTP API.
+"""API-level behaviour that is not about a particular endpoint's payload.
 
-This is one of the project's two agreed test seams. Everything behind the API —
-ingestion, the Amplification Model, the Decision Model, the store — is internal and
-may be restructured freely. A test that reaches past the API and asserts on internals
-would defeat the point of choosing this seam.
-
-No test here contacts a third-party service; conftest.py enforces that.
+Conditions ingestion and serving are covered in test_conditions.py, at the same seam.
 """
 
 from fastapi.testclient import TestClient
@@ -13,22 +8,6 @@ from fastapi.testclient import TestClient
 from nazarenow.api import DEVELOPMENT_ORIGINS, app
 
 client = TestClient(app)
-
-
-def test_placeholder_conditions_are_marked_as_not_real() -> None:
-    """Nothing real is wired up yet, and the API must not pretend otherwise.
-
-    The walking skeleton exists to prove the plumbing. A placeholder that looked like
-    a genuine reading would be the exact failure this project most needs to avoid —
-    output that appears successful and is wrong.
-    """
-    response = client.get("/api/conditions/current")
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["placeholder"] is True
-    assert body["location"] == "Praia do Norte, Nazare"
-    assert body["message"]
 
 
 def test_browser_requests_from_the_development_frontend_are_allowed() -> None:
