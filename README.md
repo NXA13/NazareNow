@@ -134,9 +134,9 @@ downloaded data, so CI checks them statically:
 
 **Mobile layout has no automated protection.** jsdom has no layout engine, so the
 frontend suite cannot measure it. It was verified by hand at 320, 360 and 390px — all
-ten readings render, no horizontal overflow, the grid reflows to one column — and the
-CSS uses only fluid units, but nothing stops a regression. A browser-driven test would
-close this.
+ten readings render, no horizontal overflow, and the grid reflows from two columns to
+one at the narrowest. The CSS uses only fluid units, but nothing stops a regression;
+a browser-driven test would close this.
 
 **The site shows more than ticket #4 asked for.** The ticket enumerates seven readings;
 ten are displayed, adding significant wave height, wave period and wave direction under

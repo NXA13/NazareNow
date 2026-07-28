@@ -56,7 +56,13 @@ CREATE INDEX IF NOT EXISTS offshore_conditions_observed_at
 
 
 class StoreUnavailable(RuntimeError):
-    """The store cannot be opened — a configuration fault, not an absence of data."""
+    """The store cannot be opened or read.
+
+    Usually a configuration fault — a path pointing at nothing, at a directory, or at a
+    file that is not a database. It can also be transient, such as another process
+    holding a write lock. What it never means is that the store is simply empty: that is
+    reported as an absence of conditions, not as a fault.
+    """
 
 
 def now() -> str:
@@ -77,8 +83,6 @@ class Store:
     for serving is opened read-only, so ADR 0005's "the API is strictly a reader" is
     enforced by SQLite rather than left to convention.
     """
-
-    EXPECTED_TABLES = ("raw_response", "offshore_conditions")
 
     def __init__(self, path: str | Path | None = None, *, create: bool = True) -> None:
         self.path = Path(path) if path is not None else DEFAULT_DATABASE
@@ -109,19 +113,27 @@ class Store:
         self._verify()
 
     def _verify(self) -> None:
-        try:
-            found = {
-                row["name"]
-                for row in self._connect().execute(
-                    "SELECT name FROM sqlite_master WHERE type = 'table'"
-                )
-            }
-        except sqlite3.Error as error:
-            raise StoreUnavailable(f"Cannot read {self.path}: {error}") from error
+        """Run the reads this store performs, against no rows.
 
-        missing = [table for table in self.EXPECTED_TABLES if table not in found]
-        if missing:
-            raise StoreUnavailable(f"{self.path} is missing tables: {missing}")
+        Checking table names alone was not enough: a database carrying the right tables
+        with the wrong columns passed construction and then failed inside the endpoint
+        with "no such column", which is the bare-500-without-CORS outcome eager
+        verification exists to prevent. Executing the real queries with LIMIT 0 checks
+        the columns too, and cannot drift from what the store actually asks for.
+        """
+        probes = (
+            "SELECT observed_at, fetched_at, latitude, longitude, readings "
+            "FROM offshore_conditions LIMIT 0",
+            "SELECT source, url, fetched_at, body FROM raw_response LIMIT 0",
+        )
+        try:
+            for probe in probes:
+                self._connect().execute(probe)
+        except sqlite3.Error as error:
+            # Close before raising: the connection is registered on a Store no caller
+            # can reach, and on Windows it holds a lock that makes the file unlinkable.
+            self.close()
+            raise StoreUnavailable(f"Cannot read {self.path}: {error}") from error
 
     def _connect(self) -> sqlite3.Connection:
         connection = getattr(self._local, "connection", None)

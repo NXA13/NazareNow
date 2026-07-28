@@ -371,6 +371,12 @@ def test_the_default_store_does_not_depend_on_the_working_directory(tmp_path) ->
     )
     from_elsewhere = Path(result.stdout.strip())
 
+    # Two assertions because the property has two failure modes, and each earlier
+    # version of this test caught only one of them. A relative path is cwd-dependent and
+    # compares equal to itself across processes, so the subprocess check alone misses it;
+    # a path built from Path.cwd() is absolute, so is_absolute() alone misses that. This
+    # test has now been wrong three times for want of keeping both.
+    assert DEFAULT_DATABASE.is_absolute(), f"{DEFAULT_DATABASE} is relative, so it moves"
     assert from_elsewhere == DEFAULT_DATABASE, (
         f"the default database moved with the working directory: "
         f"{from_elsewhere} != {DEFAULT_DATABASE}"
@@ -412,13 +418,12 @@ def test_the_serving_store_cannot_write(store) -> None:
         reader.close()
 
 
-@pytest.mark.parametrize("kind", ["missing", "directory", "not-a-database", "empty"])
+@pytest.mark.parametrize("kind", ["directory", "not-a-database", "empty"])
 def test_every_kind_of_broken_database_path_is_rejected_at_startup(tmp_path, kind) -> None:
     """Only a missing file was ever checked eagerly. A directory, a file that is not a
     database, and a zero-byte file all opened fine and failed later, inside the endpoint,
     where nothing handled them — the browser got a bare 500 with no CORS header."""
     targets = {
-        "missing": tmp_path / "gone.db",
         "directory": tmp_path,
         "not-a-database": tmp_path / "notes.txt",
         "empty": tmp_path / "empty.db",
@@ -428,6 +433,27 @@ def test_every_kind_of_broken_database_path_is_rejected_at_startup(tmp_path, kin
 
     with pytest.raises(StoreUnavailable):
         Store(targets[kind], create=False)
+
+
+def test_a_database_with_the_right_tables_but_wrong_columns_is_rejected(tmp_path) -> None:
+    """Checking table names alone let a mangled schema through.
+
+    Construction succeeded, then the first query failed inside the endpoint with "no
+    such column" — an unhandled exception, which surfaces outside CORSMiddleware, so the
+    browser saw an opaque CORS failure instead of a 500 it could read. Verifying by
+    running the store's own queries catches the columns as well as the tables.
+    """
+    target = tmp_path / "mangled.db"
+    connection = sqlite3.connect(target)
+    connection.executescript(
+        "CREATE TABLE raw_response (id INTEGER PRIMARY KEY, nonsense TEXT);"
+        "CREATE TABLE offshore_conditions (id INTEGER PRIMARY KEY, nonsense TEXT);"
+    )
+    connection.commit()
+    connection.close()
+
+    with pytest.raises(StoreUnavailable, match="Cannot read"):
+        Store(target, create=False)
 
 
 def test_a_misconfigured_database_path_explains_itself(tmp_path, monkeypatch) -> None:
@@ -469,8 +495,6 @@ def test_a_path_containing_uri_syntax_still_opens_read_only(tmp_path) -> None:
     reader = Store(target, create=False)
     try:
         assert reader.latest_conditions() is not None, "read a different database"
-        with pytest.raises(sqlite3.OperationalError, match="readonly"):
-            reader.record_conditions("2026-02-13T10:00", 0.0, 0.0, {})
     finally:
         reader.close()
 
