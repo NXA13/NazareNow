@@ -60,8 +60,10 @@ def catalogue_url() -> str:
 
 
 def main() -> int:
-    print(f"Querying EMODnet catalogue for platforms in "
-          f"{LAT_MIN}-{LAT_MAX}N, {abs(LON_MAX)}-{abs(LON_MIN)}W")
+    print(
+        f"Querying EMODnet catalogue for platforms in "
+        f"{LAT_MIN}-{LAT_MAX}N, {abs(LON_MAX)}-{abs(LON_MIN)}W"
+    )
 
     request = urllib.request.Request(catalogue_url(), headers={"User-Agent": "NazareNow/0.1"})
     with urllib.request.urlopen(request, timeout=120) as response:
@@ -81,14 +83,19 @@ def main() -> int:
         writer.writeheader()
         writer.writerows(wave_platforms)
 
-    print(f"\n{len(rows)} platforms in the box, {len(wave_platforms)} reporting "
-          f"Significant Wave Height:\n")
+    print(
+        f"\n{len(rows)} platforms in the box, {len(wave_platforms)} reporting "
+        f"Significant Wave Height:\n"
+    )
     for row in sorted(wave_platforms, key=lambda r: r["firstdateobservation"]):
-        print(f"  {row['PLATFORMCODE']:>10}  {row['call_name'][:22]:<22} "
-              f"{float(row['latitude']):.2f}N {abs(float(row['longitude'])):.2f}W  "
-              f"{row['firstdateobservation'][:10]} -> {row['lastdateobservation'][:10]}")
+        print(
+            f"  {row['PLATFORMCODE']:>10}  {row['call_name'][:22]:<22} "
+            f"{float(row['latitude']):.2f}N {abs(float(row['longitude'])):.2f}W  "
+            f"{row['firstdateobservation'][:10]} -> {row['lastdateobservation'][:10]}"
+        )
 
-    print(f"\nWritten to {OUTPUT.relative_to(Path.cwd()) if OUTPUT.is_relative_to(Path.cwd()) else OUTPUT}")
+    location = OUTPUT.relative_to(Path.cwd()) if OUTPUT.is_relative_to(Path.cwd()) else OUTPUT
+    print(f"\nWritten to {location}")
     print("\nNote: these dates are the catalogue's claim about the span of the record.")
     print("They say nothing about gaps inside it. That is what analyse_coverage.py is for.")
     return 0

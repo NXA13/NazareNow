@@ -47,6 +47,84 @@ weather services separate a *watch* from a *warning*.
 | **Calibration** | A hand-verified set of days confirmed as genuinely giant — contest days, ratified records — used to establish what a predicted height actually means. |
 | **Baseline** | The surf community's rule of thumb, implemented first and retained permanently as the benchmark any learned model must beat. |
 
+## Running it locally
+
+Requires **Python 3.14** and **Node 26**, the versions CI runs and the ones pinned in
+`.python-version` and `.nvmrc`. Paths below are Windows; on macOS or Linux the
+interpreter is `.venv/bin/python` and the CLI scripts live in `.venv/bin/`.
+
+Every command below is written to be run **from the repository root**. Where a block
+changes directory it says so, and the next block starts from the root again.
+
+```bash
+git clone https://github.com/NXA13/NazareNow.git
+cd NazareNow
+
+# One virtualenv serves both the backend and the analysis scripts.
+python -m venv .venv
+.venv/Scripts/python.exe -m pip install -e "backend[dev]"
+
+cd frontend && npm install && cd ..
+```
+
+Two processes, in separate terminals:
+
+```bash
+# Backend on http://127.0.0.1:8000
+cd backend
+../.venv/Scripts/python.exe -m uvicorn nazarenow.api:app --app-dir src --reload
+
+# Frontend on http://localhost:5273
+cd frontend
+npm run dev
+```
+
+The frontend port is pinned with `strictPort`, so a clash fails immediately rather than
+silently moving to another port. That matters: the backend's CORS list names this exact
+origin, and a drifting port would break the app in a way neither test suite can catch —
+both seams mock the boundary between them.
+
+### Checks
+
+Each suite runs with one command. These are exactly the checks CI runs on every push —
+if all of these pass locally, CI will pass too.
+
+**Backend** (from the repository root):
+
+```bash
+cd backend && ../.venv/Scripts/python.exe -m pytest
+cd backend && ../.venv/Scripts/python.exe -m ruff check .
+cd backend && ../.venv/Scripts/python.exe -m ruff format --check .
+```
+
+**Frontend** (from the repository root):
+
+```bash
+cd frontend && npm test
+cd frontend && npm run typecheck
+cd frontend && npm run lint
+cd frontend && npm run format:check
+cd frontend && npm run build
+```
+
+**Analysis scripts** — linted only. Running them needs Copernicus credentials and the
+downloaded data, so CI checks them statically:
+
+```bash
+.venv/Scripts/python.exe -m ruff check analysis/
+.venv/Scripts/python.exe -m ruff format --check analysis/
+```
+
+### No test contacts a third-party service
+
+This is enforced rather than asserted, in both suites:
+
+- **Frontend** — MSW runs with `onUnhandledRequest: 'error'`, so any request a test did
+  not explicitly mock fails the test instead of escaping to the network.
+- **Backend** — `backend/tests/conftest.py` blocks outbound socket connections for every
+  test, allowing only loopback. Adding a third-party call inside a request handler, which
+  ADR 0005 forbids anyway, fails the suite immediately.
+
 ## Documentation
 
 - [`CONTEXT.md`](./CONTEXT.md) — the domain glossary. Deliberately opinionated about vocabulary,

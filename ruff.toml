@@ -1,0 +1,13 @@
+# Lint settings for Python outside the backend package — currently the analysis
+# scripts. The backend carries its own [tool.ruff] in backend/pyproject.toml, which
+# ruff prefers for files under that directory.
+
+line-length = 100
+
+[lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[lint.isort]
+# The analysis scripts are run from their own directory, so sibling modules like
+# platforms.py are first-party despite there being no package.
+known-first-party = ["platforms"]

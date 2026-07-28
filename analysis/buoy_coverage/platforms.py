@@ -21,14 +21,14 @@ MONICAN01 = Platform(
     code="6200192",
     name="Monican01",
     note="~55 km offshore in deep water. Long record, but measures approximately the "
-         "open-ocean swell forecast providers already supply as an input.",
+    "open-ocean swell forecast providers already supply as an input.",
 )
 
 MONICAN02 = Platform(
     code="6200199",
     name="Monican02",
     note="~15 km offshore, near the canyon head. Its readings carry the local "
-         "Amplification the project exists to learn.",
+    "Amplification the project exists to learn.",
 )
 
 PLATFORMS: tuple[Platform, ...] = (MONICAN01, MONICAN02)

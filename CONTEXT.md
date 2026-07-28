@@ -21,7 +21,8 @@ _Avoid_: North Canyon, the trench
 **Offshore Conditions**:
 The state of the open ocean before the canyon acts on it — swell height, swell period, swell
 direction, wind speed and wind direction. Freely available from third-party forecast models
-and reanalysis. These are system inputs, never system outputs.
+and reanalysis. Always consumed, never predicted: the system reads them as inputs and may
+display them to a user, but producing its own is out of scope per ADR 0001.
 _Avoid_: the weather, sea state, raw data
 
 **Amplification**:
