@@ -208,10 +208,12 @@ def describe_position(frame: pd.DataFrame) -> str:
     """
     if "latitude" not in frame or frame["latitude"].isna().all():
         return "not recorded per observation"
-    lat, lon = frame["latitude"].dropna(), frame["longitude"].dropna()
-    # strict=True: a length mismatch between the two would mean the frame is malformed,
-    # and silently truncating would understate how much the mooring appears to have moved.
-    distinct = len(set(zip(lat.round(4), lon.round(4), strict=True)))
+    # Dropped as a pair, so a row missing either coordinate is discarded whole. Zipping
+    # two separately-dropped series would either truncate silently against a malformed
+    # frame or raise, and neither is wanted in a reporting script.
+    fixes = frame[["latitude", "longitude"]].dropna()
+    lat, lon = fixes["latitude"], fixes["longitude"]
+    distinct = len(fixes.round(4).drop_duplicates())
     return (
         f"{lat.mean():.2f}N {abs(lon.mean()):.2f}W, {distinct} distinct position(s) "
         f"reported; resolution ~1.1 km, so smaller movement is undetectable"

@@ -27,8 +27,7 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 
 [tool.ruff]
-line-length = 100
+# Inherits line-length and the rule selection from the repo root, so the two configs
+# cannot drift into disagreeing about what "lint clean" means.
+extend = "../ruff.toml"
 src = ["src", "tests"]
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM"]

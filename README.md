@@ -49,8 +49,12 @@ weather services separate a *watch* from a *warning*.
 
 ## Running it locally
 
-Requires Python 3.12+ and Node 22+. Paths below are Windows; on macOS or Linux the
+Requires **Python 3.14** and **Node 26**, the versions CI runs and the ones pinned in
+`.python-version` and `.nvmrc`. Paths below are Windows; on macOS or Linux the
 interpreter is `.venv/bin/python` and the CLI scripts live in `.venv/bin/`.
+
+Every command below is written to be run **from the repository root**. Where a block
+changes directory it says so, and the next block starts from the root again.
 
 ```bash
 git clone https://github.com/NXA13/NazareNow.git
@@ -82,29 +86,44 @@ both seams mock the boundary between them.
 
 ### Checks
 
-Each suite runs with one command. CI runs all of them on every push.
+Each suite runs with one command. These are exactly the checks CI runs on every push —
+if all of these pass locally, CI will pass too.
+
+**Backend** (from the repository root):
 
 ```bash
-# Backend — tests, lint, formatting
-cd backend
-../.venv/Scripts/python.exe -m pytest
-../.venv/Scripts/python.exe -m ruff check .
-../.venv/Scripts/python.exe -m ruff format --check .
-
-# Frontend — tests, types, lint, formatting
-cd frontend
-npm test
-npm run typecheck
-npm run lint
-npm run format:check
-
-# Analysis scripts — lint only; running them needs credentials and real data
-.venv/Scripts/python.exe -m ruff check analysis/
+cd backend && ../.venv/Scripts/python.exe -m pytest
+cd backend && ../.venv/Scripts/python.exe -m ruff check .
+cd backend && ../.venv/Scripts/python.exe -m ruff format --check .
 ```
 
-No test contacts a third-party service. The frontend suite runs MSW with
-`onUnhandledRequest: 'error'`, so any request a test did not explicitly mock fails the
-test rather than escaping to the network.
+**Frontend** (from the repository root):
+
+```bash
+cd frontend && npm test
+cd frontend && npm run typecheck
+cd frontend && npm run lint
+cd frontend && npm run format:check
+cd frontend && npm run build
+```
+
+**Analysis scripts** — linted only. Running them needs Copernicus credentials and the
+downloaded data, so CI checks them statically:
+
+```bash
+.venv/Scripts/python.exe -m ruff check analysis/
+.venv/Scripts/python.exe -m ruff format --check analysis/
+```
+
+### No test contacts a third-party service
+
+This is enforced rather than asserted, in both suites:
+
+- **Frontend** — MSW runs with `onUnhandledRequest: 'error'`, so any request a test did
+  not explicitly mock fails the test instead of escaping to the network.
+- **Backend** — `backend/tests/conftest.py` blocks outbound socket connections for every
+  test, allowing only loopback. Adding a third-party call inside a request handler, which
+  ADR 0005 forbids anyway, fails the suite immediately.
 
 ## Documentation
 

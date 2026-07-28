@@ -10,6 +10,7 @@ that says so.
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 app = FastAPI(
     title="NazareNow",
@@ -17,10 +18,9 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# The frontend is served separately in development, so the browser treats it as a
-# different origin. This list must match the port pinned in frontend/vite.config.ts —
-# if they drift apart the app fails only in the browser, with a CORS error the test
-# suites cannot catch, because both seams mock this boundary.
+# Must match the port pinned in frontend/vite.config.ts. If the two drift apart the app
+# fails only in a browser, with a CORS error neither test suite can see, because both
+# seams mock the boundary between them. A test asserts this list to stop that recurring.
 # Production origins get added when there is somewhere to deploy to.
 DEVELOPMENT_ORIGINS = [
     "http://localhost:5273",
@@ -35,16 +35,31 @@ app.add_middleware(
 )
 
 
+class CurrentConditions(BaseModel):
+    """What the API reports for Praia do Norte right now.
+
+    Declared as a model rather than a loose dict so FastAPI's generated schema is the
+    single description of this shape — the frontend, the tests and the docs all
+    disagreeing about it is a problem worth designing out early.
+    """
+
+    placeholder: bool
+    """True while the API serves stand-in values rather than measurements."""
+
+    location: str
+    message: str
+
+
 @app.get("/api/conditions/current")
-def current_conditions() -> dict[str, object]:
-    """Placeholder standing in for the current Offshore Conditions.
+def current_conditions() -> CurrentConditions:
+    """A placeholder standing in for what a Pipeline Run will eventually store.
 
     Deliberately carries `placeholder: true` rather than plausible-looking numbers.
     The frontend surfaces that flag, so nobody can mistake the walking skeleton for a
     working forecast.
     """
-    return {
-        "placeholder": True,
-        "location": "Praia do Norte, Nazare",
-        "message": "Wired end to end. No conditions are being measured yet.",
-    }
+    return CurrentConditions(
+        placeholder=True,
+        location="Praia do Norte, Nazare",
+        message="Wired end to end. No conditions are being measured yet.",
+    )
