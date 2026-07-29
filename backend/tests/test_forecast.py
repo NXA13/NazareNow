@@ -12,7 +12,6 @@ import pytest
 from nazarenow.api import ForecastHour, Reading
 from nazarenow.pipeline import run_pipeline
 from nazarenow.sources.open_meteo import (
-    FORECAST_DAYS,
     MARINE_READINGS,
     WEATHER_READINGS,
 )
@@ -23,25 +22,35 @@ from test_conditions import MARINE_BODY, WEATHER_BODY, ingest
 HOURS = [f"2026-02-{day:02d}T{hour:02d}:00" for day in (12, 13, 14) for hour in range(24)]
 
 
+# For the peak day, height, period and direction each peak at a *different* hour, and
+# none of those is hour zero or the last hour. Every degenerate fixture this project has
+# shipped failed for want of exactly that: monotonic height made the peak hour the last
+# hour, and constant direction gave direction no argmax at all, so a summary reading the
+# wrong hour was indistinguishable from a correct one.
+PEAK_DAY = "2026-02-13"
+HEIGHT_PEAK_HOUR = 8
+PERIOD_PEAK_HOUR = 15
+DIRECTION_PEAK_HOUR = 20
+
+
 def marine_with_hourly() -> dict:
     """A swell building through the 13th and easing on the 14th."""
     heights, periods, directions = [], [], []
-    for index, stamp in enumerate(HOURS):
-        day = stamp[8:10]
-        base = {"12": 2.0, "13": 7.0, "14": 3.5}[day]
-        heights.append(round(base + (index % 24) * 0.05, 2))
-        # Period varies across the day, and its maximum deliberately falls at a
-        # different hour from the peak height. A constant period made the summary
-        # assertion vacuous: it passed against a mutant reading hours[0].
-        # Period rises through the day *and* spikes at 15:00, so three hours give three
-        # different values: hour 0, the peak-height hour (23:00), and the longest-period
-        # hour. A fixture where any two of those agree cannot tell a correct summary
-        # from one reading the wrong hour — which is how the earlier version passed
-        # against a mutant sourcing hours[0].
-        base = {"12": 9.0, "13": 17.0, "14": 12.0}[day]
-        hour = index % 24
-        periods.append(round(base + hour * 0.1 + (5.0 if hour == 15 else 0.0), 2))
-        directions.append({"12": 250, "13": 298, "14": 280}[day])
+    for stamp in HOURS:
+        day, hour = stamp[8:10], int(stamp[11:13])
+        if day == "13":
+            heights.append(8.5 if hour == HEIGHT_PEAK_HOUR else 7.0)
+            periods.append(
+                23.0 if hour == PERIOD_PEAK_HOUR else 19.0 if hour == HEIGHT_PEAK_HOUR else 17.0
+            )
+            directions.append(
+                350 if hour == DIRECTION_PEAK_HOUR else 270 if hour == HEIGHT_PEAK_HOUR else 298
+            )
+        else:
+            base = {"12": 1.4, "14": 3.5}[day]
+            heights.append(round(base + (0.2 if hour == 6 else 0.0), 2))
+            periods.append({"12": 9.0, "14": 12.0}[day] + (1.0 if hour == 11 else 0.0))
+            directions.append({"12": 250, "14": 280}[day] + (5 if hour == 17 else 0))
 
     return {
         **MARINE_BODY,
@@ -60,7 +69,7 @@ def marine_with_hourly() -> dict:
             "swell_wave_height": heights,
             "swell_wave_period": periods,
             "swell_wave_direction": directions,
-            "wave_height": [h + 0.3 for h in heights],
+            "wave_height": [round(h + 0.3, 2) for h in heights],
             "wave_period": periods,
             "wave_direction": directions,
             "sea_surface_temperature": [15.0] * len(HOURS),
@@ -123,14 +132,12 @@ def test_each_day_summarises_swell_without_collapsing_it(store, client) -> None:
     body = client.get("/api/conditions/forecast").json()
     peak = next(day for day in body["days"] if day["date"] == "2026-02-13")
 
-    assert peak["peak_swell_height"] == {"value": 8.15, "unit": "m"}
-    # The height peaks at 23:00 and the period at 15:00, so a summary that read both
-    # from the same hour would get one of them wrong.
-    # 19.3 at the peak-height hour (23:00), 23.5 at the longest-period hour (15:00),
-    # and 17.0 at hour zero — all different, so any confusion between them shows.
-    assert peak["swell_period_at_peak"] == {"value": 19.3, "unit": "s"}
-    assert peak["swell_direction_at_peak"] == {"value": 298, "unit": "°"}
-    assert peak["longest_swell_period"] == {"value": 23.5, "unit": "s"}
+    # Height peaks at 08:00, period at 15:00, direction at 20:00. Hour zero holds a
+    # fourth set of values. Any summary reading the wrong hour reports a wrong number.
+    assert peak["peak_swell_height"] == {"value": 8.5, "unit": "m"}
+    assert peak["swell_period_at_peak"] == {"value": 19.0, "unit": "s"}
+    assert peak["swell_direction_at_peak"] == {"value": 270, "unit": "°"}
+    assert peak["longest_swell_period"] == {"value": 23.0, "unit": "s"}
 
 
 def test_a_day_carries_its_hours_in_order(store, client) -> None:
@@ -143,6 +150,7 @@ def test_a_day_carries_its_hours_in_order(store, client) -> None:
     assert [hour["at"] for hour in day["hours"]] == sorted(hour["at"] for hour in day["hours"])
     assert day["hours"][0]["at"] == "2026-02-13T00:00"
     assert day["hours"][0]["swell_height"] == {"value": 7.0, "unit": "m"}
+    assert day["hours"][HEIGHT_PEAK_HOUR]["swell_height"] == {"value": 8.5, "unit": "m"}
     assert day["hours"][0]["wind_speed"] == {"value": 10.0, "unit": "km/h"}
 
 
@@ -233,6 +241,42 @@ def test_hours_the_provider_could_not_model_are_dropped(store, client) -> None:
     assert all(day["hours"] for day in body["days"])
 
 
+def test_a_response_with_barely_any_usable_hours_keeps_the_previous_forecast(store, client) -> None:
+    """Zero was not the only destructive case. A response nulling all but one hour
+    replaced seventy-two stored hours with one, silently and with exit code zero."""
+    ingest(store, forecasting_provider())
+    before = client.get("/api/conditions/forecast").json()
+
+    nearly_dead = marine_with_hourly()
+    for name in nearly_dead["hourly"]:
+        if name != "time":
+            nearly_dead["hourly"][name] = [nearly_dead["hourly"][name][0]] + [None] * (
+                len(nearly_dead["hourly"]["time"]) - 1
+            )
+
+    with pytest.raises(ValueError, match="fewer than"):
+        ingest(store, forecasting_provider(marine=nearly_dead))
+
+    assert client.get("/api/conditions/forecast").json() == before
+
+
+def test_a_rejected_forecast_does_not_advance_the_current_conditions(store, client) -> None:
+    """The run is all-or-nothing. Writing conditions before checking the forecast left
+    the store half-updated, which this pipeline's docstring promises never happens."""
+    ingest(store, forecasting_provider())
+    before = client.get("/api/conditions/current").json()
+
+    dead = marine_with_hourly()
+    for name in dead["hourly"]:
+        if name != "time":
+            dead["hourly"][name] = [None] * len(dead["hourly"]["time"])
+
+    with pytest.raises(ValueError):
+        ingest(store, forecasting_provider(marine=dead))
+
+    assert client.get("/api/conditions/current").json() == before
+
+
 def test_a_response_with_no_usable_hours_keeps_the_previous_forecast(store, client) -> None:
     """An all-null response parses cleanly, yields nothing, and used to delete the lot.
 
@@ -248,7 +292,7 @@ def test_a_response_with_no_usable_hours_keeps_the_previous_forecast(store, clie
         if name != "time":
             dead["hourly"][name] = [None] * len(dead["hourly"]["time"])
 
-    with pytest.raises(ValueError, match="no usable forecast hours"):
+    with pytest.raises(ValueError, match="usable forecast hours"):
         ingest(store, forecasting_provider(marine=dead))
 
     assert len(client.get("/api/conditions/forecast").json()["days"]) == 3
@@ -278,7 +322,10 @@ def test_the_provider_is_asked_for_the_whole_range_hour_by_hour(store) -> None:
         run_pipeline(store, http, sleep=lambda _: None)
 
     for url in asked:
-        assert url.params.get("forecast_days") == str(FORECAST_DAYS)
+        # The literal the ticket asks for, not the constant the code uses. Comparing
+        # against FORECAST_DAYS was self-referential: changing it to 7 — the exact
+        # regression this test names — passed.
+        assert url.params.get("forecast_days") == "16"
         assert url.params.get("hourly"), "the hourly block must be requested"
         assert url.params.get("current"), "current conditions must still be requested"
 
@@ -296,3 +343,31 @@ def test_every_ingested_hourly_reading_is_served_by_the_api() -> None:
         f"ingested but never served: {sorted(ingested - served)}; "
         f"served but never ingested: {sorted(served - ingested)}"
     )
+
+
+def test_the_fixture_can_tell_the_summary_apart_from_a_wrong_hour() -> None:
+    """A test on the fixture, because the fixture is what kept failing.
+
+    Three separate attempts at the summary guard passed against a summary reading the
+    wrong hour, every time because the fixture was degenerate in some dimension nobody
+    had looked at. This asserts the property those attempts assumed: on the peak day,
+    height, period and direction each peak at a distinct hour, and none of them is hour
+    zero or the last hour. If that stops being true, this fails rather than quietly
+    hollowing out every assertion downstream.
+    """
+    hourly = marine_with_hourly()["hourly"]
+    peak_day = [i for i, stamp in enumerate(hourly["time"]) if stamp.startswith(PEAK_DAY)]
+
+    def argmax(variable: str) -> int:
+        values = [hourly[variable][i] for i in peak_day]
+        return values.index(max(values))
+
+    hours = {
+        "height": argmax("swell_wave_height"),
+        "period": argmax("swell_wave_period"),
+        "direction": argmax("swell_wave_direction"),
+    }
+
+    assert len(set(hours.values())) == 3, f"two quantities peak at the same hour: {hours}"
+    assert 0 not in hours.values(), f"a quantity peaks at hour zero: {hours}"
+    assert 23 not in hours.values(), f"a quantity peaks at the last hour: {hours}"

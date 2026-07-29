@@ -6,19 +6,26 @@ import { compassPoint, formatTimestamp, formatValue } from './format';
 type LoadState =
   { status: 'loading' } | { status: 'loaded'; forecast: Forecast } | { status: 'failed' };
 
-/** How big a day is, on a scale a reader can see rather than read.
+/** How a day compares with the rest of the range on screen.
  *
- * "Shown as such" in the ticket asks for more than presence: nine tiles carrying only
- * digits are nine indistinguishable tiles, and the point of the overview is to find the
- * one worth flying for without reading every number. Thresholds follow the surf
- * community's rule of thumb for Nazaré, where a groundswell over 3m offshore is when it
- * starts to matter.
+ * Relative, not absolute. An earlier version used fixed thresholds lifted from the surf
+ * community's rule of thumb — which reimplemented ADR 0006's Heuristic Baseline in the
+ * presentation layer, on swell height rather than the Significant Wave Height the
+ * baseline is actually defined on, in a layer ADR 0005 says only reads. It also did
+ * nothing useful: every day of a real summer week fell in the same bucket, so nine
+ * tiles looked identical.
+ *
+ * Comparing each day with the largest day shown needs no domain knowledge and always
+ * distinguishes the standout day, whether the week peaks at 1.2m or at 12m.
  */
-export function magnitude(metres: number): 'flat' | 'moderate' | 'large' | 'huge' {
-  if (metres >= 6) return 'huge';
-  if (metres >= 3) return 'large';
-  if (metres >= 1.5) return 'moderate';
-  return 'flat';
+export type Prominence = 'leading' | 'notable' | 'ordinary';
+
+function prominence(value: number, largest: number): Prominence {
+  if (largest <= 0) return 'ordinary';
+  const share = value / largest;
+  if (share >= 0.95) return 'leading';
+  if (share >= 0.6) return 'notable';
+  return 'ordinary';
 }
 
 /** The day, as a weekday and date a reader can place without doing arithmetic. */
@@ -32,17 +39,19 @@ function dayLabel(date: string): string {
 
 function DaySummary({
   day,
+  largest,
   selected,
   onSelect,
 }: {
   day: ForecastDay;
+  largest: number;
   selected: boolean;
   onSelect: () => void;
 }) {
   return (
     <button
       type="button"
-      className={`day size-${magnitude(day.peak_swell_height.value)}${selected ? ' selected' : ''}`}
+      className={`day rank-${prominence(day.peak_swell_height.value, largest)}${selected ? ' selected' : ''}`}
       aria-pressed={selected}
       // The label carries every summarised figure. An earlier version named only the
       // height, which overrode the card's content for screen readers and lost the
@@ -143,6 +152,7 @@ export function ForecastRange() {
   }
 
   const open = state.forecast.days.find((day) => day.date === openDate) ?? null;
+  const largest = Math.max(...state.forecast.days.map((day) => day.peak_swell_height.value));
 
   return (
     <section aria-labelledby="forecast-heading">
@@ -153,6 +163,7 @@ export function ForecastRange() {
           <DaySummary
             key={day.date}
             day={day}
+            largest={largest}
             selected={day.date === openDate}
             onSelect={() => setOpenDate(day.date === openDate ? null : day.date)}
           />

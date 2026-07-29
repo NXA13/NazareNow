@@ -11,7 +11,7 @@ import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 
-import { ForecastRange, magnitude } from './Forecast';
+import { ForecastRange } from './Forecast';
 import { forecast } from './test/handlers';
 import { server } from './test/server';
 
@@ -19,20 +19,37 @@ const QUIET = forecast.days[0]!;
 const BIG = forecast.days[1]!;
 
 describe('the forecast range', () => {
-  it('encodes magnitude so a big day is visible without reading the numbers', async () => {
-    // "Shown as such" asks for more than presence. Nine tiles carrying only digits are
-    // nine indistinguishable tiles, and finding the day worth flying for is the point.
-    expect(magnitude(0.6)).toBe('flat');
-    expect(magnitude(2.0)).toBe('moderate');
-    expect(magnitude(4.0)).toBe('large');
-    expect(magnitude(8.1)).toBe('huge');
-
+  it('marks the standout day so the overview can be scanned, not read', async () => {
+    // Asserted through the rendered class, not by calling the helper: the agreed seam
+    // is what a user sees. The scale is relative to the range on screen, so it works on
+    // a flat summer week as well as on a winter one.
     render(<ForecastRange />);
 
     const quiet = await screen.findByRole('button', { name: new RegExp(QUIET.date) });
     const big = await screen.findByRole('button', { name: new RegExp(BIG.date) });
-    expect(quiet.className).not.toBe(big.className);
-    expect(big.className).toContain('size-huge');
+
+    expect(big.className).toContain('rank-leading');
+    expect(quiet.className).toContain('rank-ordinary');
+  });
+
+  it('still marks a standout day when the whole range is small', async () => {
+    // The real database is a flat summer week where every day is 0.6-1.2m. Absolute
+    // thresholds put all nine in one bucket and distinguished nothing.
+    const flat = {
+      ...forecast,
+      days: forecast.days.map((day, index) => ({
+        ...day,
+        peak_swell_height: { value: index === 1 ? 1.2 : 0.7, unit: 'm' },
+      })),
+    };
+    server.use(http.get('*/api/conditions/forecast', () => HttpResponse.json(flat)));
+
+    render(<ForecastRange />);
+
+    const big = await screen.findByRole('button', { name: new RegExp(BIG.date) });
+    const quiet = await screen.findByRole('button', { name: new RegExp(QUIET.date) });
+    expect(big.className).toContain('rank-leading');
+    expect(quiet.className).toContain('rank-ordinary');
   });
 
   it('names every summarised figure for a screen reader', async () => {
@@ -44,6 +61,9 @@ describe('the forecast range', () => {
     expect(label).toContain(String(BIG.peak_swell_height.value));
     expect(label).toContain(String(BIG.swell_period_at_peak.value));
     expect(label).toContain('WNW');
+    // The fix that added longest_swell_period did not guard it: deleting its clause
+    // from the label passed every test.
+    expect(label).toContain(String(BIG.longest_swell_period.value));
   });
 
   it('shows the day label and hours in order, marked as UTC', async () => {

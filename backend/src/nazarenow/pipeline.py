@@ -21,6 +21,13 @@ from nazarenow.sources import open_meteo
 from nazarenow.sources.open_meteo import MARINE_READINGS, WEATHER_READINGS
 from nazarenow.store import Store
 
+# A real Pipeline Run returns days of hourly data. Anything less is a degraded provider
+# response, not a short forecast — and replacing a good forecast with it destroys the
+# range while looking like a success. Zero alone was not enough of a floor: a response
+# nulling all but one hour passed the check and replaced seventy-two stored hours with
+# one, silently.
+MINIMUM_FORECAST_HOURS = 24
+
 
 def collect(body: dict[str, Any], mapping: dict[str, str]) -> dict[str, dict[str, Any]]:
     """Pull the readings we care about, each carrying the provider's own unit.
@@ -98,7 +105,19 @@ def run_pipeline(store: Store, client: httpx.Client, sleep=time.sleep) -> None:
     weather_body, weather_url = open_meteo.fetch_weather(client, sleep)
     store.record_raw_response("open-meteo-weather", weather_url, weather_body)
 
+    # Everything is computed and checked before anything is written. Writing the current
+    # conditions first meant a rejected forecast still advanced them — a half-updated
+    # picture, which this module's own docstring promises not to produce.
     readings = collect(marine_body, MARINE_READINGS) | collect(weather_body, WEATHER_READINGS)
+    hours = merge_hourly(
+        collect_hourly(marine_body, MARINE_READINGS),
+        collect_hourly(weather_body, WEATHER_READINGS),
+    )
+    if len(hours) < MINIMUM_FORECAST_HOURS:
+        raise ValueError(
+            f"Providers returned only {len(hours)} usable forecast hours, fewer than the "
+            f"{MINIMUM_FORECAST_HOURS} a real run produces; keeping the previous forecast"
+        )
 
     store.record_conditions(
         observed_at=earliest(marine_body["current"]["time"], weather_body["current"]["time"]),
@@ -106,17 +125,4 @@ def run_pipeline(store: Store, client: httpx.Client, sleep=time.sleep) -> None:
         longitude=marine_body["longitude"],
         readings=readings,
     )
-
-    hours = merge_hourly(
-        collect_hourly(marine_body, MARINE_READINGS),
-        collect_hourly(weather_body, WEATHER_READINGS),
-    )
-    if not hours:
-        # A response that parses but yields no usable hour is a provider fault, not an
-        # empty forecast. Storing it would delete a good forecast and leave the page
-        # saying no run had happened — blaming absence for a successful-looking run that
-        # destroyed nine real days. ADR 0005 promises stale-but-honest instead.
-        raise ValueError(
-            "Providers returned no usable forecast hours; keeping the previous forecast"
-        )
     store.replace_forecast(hours)

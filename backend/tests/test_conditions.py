@@ -34,6 +34,8 @@ from nazarenow.sources.open_meteo import (
 )
 from nazarenow.store import DEFAULT_DATABASE, Store, StoreUnavailable
 
+DAY_HOURS = [f"2026-02-13T{hour:02d}:00" for hour in range(24)]
+
 MARINE_BODY = {
     "latitude": 39.541664,
     "longitude": -9.208328,
@@ -58,8 +60,9 @@ MARINE_BODY = {
         "sea_surface_temperature": 15.2,
     },
     # The provider returns the forecast range in the same response as the current
-    # conditions, so a realistic fixture carries both. Two hours is enough here; the
-    # forecast itself is exercised in test_forecast.py.
+    # conditions, so a realistic fixture carries both. A full day, because a Pipeline
+    # Run rejects anything shorter as a degraded response. The forecast itself is
+    # exercised in test_forecast.py.
     "hourly_units": {
         "time": "iso8601",
         "wave_height": "m",
@@ -71,14 +74,14 @@ MARINE_BODY = {
         "sea_surface_temperature": "°C",
     },
     "hourly": {
-        "time": ["2026-02-13T09:00", "2026-02-13T10:00"],
-        "wave_height": [8.4, 8.6],
-        "wave_direction": [295, 296],
-        "wave_period": [16.2, 16.4],
-        "swell_wave_height": [8.1, 8.3],
-        "swell_wave_direction": [298, 299],
-        "swell_wave_period": [17.0, 17.2],
-        "sea_surface_temperature": [15.2, 15.2],
+        "time": DAY_HOURS,
+        "wave_height": [8.4] * 24,
+        "wave_direction": [295] * 24,
+        "wave_period": [16.2] * 24,
+        "swell_wave_height": [8.1] * 24,
+        "swell_wave_direction": [298] * 24,
+        "swell_wave_period": [17.0] * 24,
+        "sea_surface_temperature": [15.2] * 24,
     },
 }
 
@@ -104,10 +107,10 @@ WEATHER_BODY = {
         "wind_direction_10m": "°",
     },
     "hourly": {
-        "time": ["2026-02-13T09:00", "2026-02-13T10:00"],
-        "temperature_2m": [13.4, 13.6],
-        "wind_speed_10m": [11.0, 12.0],
-        "wind_direction_10m": [115, 118],
+        "time": DAY_HOURS,
+        "temperature_2m": [13.4] * 24,
+        "wind_speed_10m": [11.0] * 24,
+        "wind_direction_10m": [115] * 24,
     },
 }
 

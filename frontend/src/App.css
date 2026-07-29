@@ -258,32 +258,32 @@ footer p {
   margin-left: 0.15rem;
 }
 
-/* Magnitude, encoded so the overview can be scanned rather than read. A flat week and
-   a week with one XXL day must not look the same at a glance. */
-.day.size-flat .day-swell .value {
+/* Prominence relative to the rest of the range, so the standout day is visible at a
+   glance whether the week peaks at 1.2m or 12m. Selection is declared after these and
+   with a higher-specificity selector, because the earlier version let the size classes
+   override it and clicking a big day changed almost nothing. */
+.day.rank-ordinary .day-swell .value {
   color: var(--muted);
   font-weight: 500;
 }
 
-.day.size-moderate {
+.day.rank-notable {
   border-left-color: #6aa9c0;
 }
 
-.day.size-large {
-  border-left-color: var(--accent);
-  background: #f2f8fb;
-}
-
-.day.size-large .day-swell .value {
-  font-size: 1.6rem;
-}
-
-.day.size-huge {
+.day.rank-leading {
   border-left-color: #b5471f;
   background: #fdf3ee;
 }
 
-.day.size-huge .day-swell .value {
-  font-size: 1.85rem;
+.day.rank-leading .day-swell .value {
+  font-size: 1.7rem;
   color: #8f3213;
+}
+
+.day.day.selected {
+  border-color: var(--accent);
+  border-left-color: var(--accent);
+  background: #e6f2f7;
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
