@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { fetchCurrentConditions, type CurrentConditions, type Reading } from './api';
+import { ForecastRange } from './Forecast';
 import { compassPoint, formatTimestamp, formatValue } from './format';
 import './App.css';
 
@@ -115,6 +116,8 @@ export function App() {
               />
             </dl>
           </section>
+
+          <ForecastRange />
 
           <footer>
             <p data-testid="freshness">

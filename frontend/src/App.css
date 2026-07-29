@@ -132,3 +132,151 @@ footer p {
 .provenance {
   max-width: 40rem;
 }
+
+/* --- forecast range ------------------------------------------------------- */
+
+.days {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  gap: 0.5rem;
+}
+
+.day {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line);
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.7rem;
+}
+
+.day:hover {
+  border-color: var(--accent);
+}
+
+.day-date {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.day-swell .value {
+  font-size: 1.4rem;
+}
+
+.day-detail {
+  display: flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.day-detail .value {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.day-detail .bearing {
+  margin-left: auto;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+/* The table is wider than a phone. It scrolls inside its own box so the page itself
+   never does — a horizontally scrolling page is the thing that makes a site feel
+   broken on mobile. */
+.hours-scroll {
+  overflow-x: auto;
+  margin-top: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--surface);
+}
+
+.hours-scroll table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 22rem;
+  font-size: 0.9rem;
+}
+
+.hours-scroll caption {
+  text-align: left;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.hours-scroll th,
+.hours-scroll td {
+  padding: 0.35rem 0.75rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.hours-scroll thead th,
+.hours-scroll tbody th {
+  text-align: left;
+  font-weight: 600;
+}
+
+.hours-scroll thead th {
+  border-bottom: 1px solid var(--line);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.hours-scroll tbody tr:nth-child(even) {
+  background: #fafcfd;
+}
+
+.hours-scroll .unit {
+  font-size: 0.75rem;
+  margin-left: 0.15rem;
+}
+
+/* Prominence relative to the rest of the range, so the standout day is visible at a
+   glance whether the week peaks at 1.2m or 12m. Selection is declared after these and
+   with a higher-specificity selector, because the earlier version let the size classes
+   override it and clicking a big day changed almost nothing. */
+.day.rank-ordinary .day-swell .value {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.day.rank-notable {
+  border-left-color: #6aa9c0;
+}
+
+.day.rank-leading {
+  border-left-color: #b5471f;
+  background: #fdf3ee;
+}
+
+.day.rank-leading .day-swell .value {
+  font-size: 1.7rem;
+  color: #8f3213;
+}
+
+.day.day.selected {
+  border-color: var(--accent);
+  border-left-color: var(--accent);
+  background: #e6f2f7;
+  box-shadow: inset 0 0 0 1px var(--accent);
+}

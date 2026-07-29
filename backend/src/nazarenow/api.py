@@ -107,6 +107,86 @@ class CurrentConditions(BaseModel):
     wind_direction: Reading
 
 
+class ForecastHour(BaseModel):
+    at: str
+    swell_height: Reading
+    swell_period: Reading
+    swell_direction: Reading
+    significant_wave_height: Reading
+    wave_period: Reading
+    wave_direction: Reading
+    water_temperature: Reading
+    air_temperature: Reading
+    wind_speed: Reading
+    wind_direction: Reading
+
+
+class ForecastDay(BaseModel):
+    date: str
+
+    peak_swell_height: Reading
+    """The day's largest swell, which is what decides whether it is worth travelling for."""
+
+    swell_period_at_peak: Reading
+    swell_direction_at_peak: Reading
+    """The period and direction *of the largest hour*, not the day's maximum period.
+
+    Named for what they hold. Calling them peak period and dominant direction was a lie:
+    they were read from the peak-height hour, so a day whose longest period arrived at a
+    quieter hour reported the wrong number — on the two fields a travel decision most
+    turns on."""
+
+    longest_swell_period: Reading
+    """The day's actual maximum period, which is the groundswell signal a big-wave
+    forecast lives on and can fall at a different hour from the peak height."""
+
+    hours: list[ForecastHour]
+
+
+class Forecast(BaseModel):
+    fetched_at: str
+    days: list[ForecastDay]
+
+
+def summarise(date: str, hours: list[dict[str, Any]]) -> ForecastDay:
+    """Reduce a day's hours to the figures a user scans the overview for."""
+    peak = max(hours, key=lambda hour: hour["readings"]["swell_height"]["value"])
+    longest = max(hours, key=lambda hour: hour["readings"]["swell_period"]["value"])
+    return ForecastDay(
+        date=date,
+        peak_swell_height=Reading(**peak["readings"]["swell_height"]),
+        swell_period_at_peak=Reading(**peak["readings"]["swell_period"]),
+        swell_direction_at_peak=Reading(**peak["readings"]["swell_direction"]),
+        longest_swell_period=Reading(**longest["readings"]["swell_period"]),
+        hours=[ForecastHour(at=hour["at"], **hour["readings"]) for hour in hours],
+    )
+
+
+@app.get("/api/conditions/forecast")
+def forecast(store: Annotated[Store, Depends(get_store)]) -> Forecast:
+    """Every forecast hour a Pipeline Run stored, grouped by day.
+
+    Quiet days are returned like any other. Omitting them would leave gaps a reader
+    cannot distinguish from missing data, and a flat spell is a real answer to "when
+    should I go".
+    """
+    hours = store.forecast()
+    if not hours:
+        raise HTTPException(
+            status_code=503,
+            detail="No forecast has been ingested yet. Run the pipeline first.",
+        )
+
+    by_date: dict[str, list[dict[str, Any]]] = {}
+    for hour in hours:
+        by_date.setdefault(hour["at"][:10], []).append(hour)
+
+    return Forecast(
+        fetched_at=hours[0]["fetched_at"],
+        days=[summarise(date, by_date[date]) for date in sorted(by_date)],
+    )
+
+
 @app.get("/api/conditions/current")
 def current_conditions(store: Annotated[Store, Depends(get_store)]) -> CurrentConditions:
     """The most recent Offshore Conditions a Pipeline Run stored.

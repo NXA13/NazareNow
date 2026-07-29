@@ -34,6 +34,8 @@ from nazarenow.sources.open_meteo import (
 )
 from nazarenow.store import DEFAULT_DATABASE, Store, StoreUnavailable
 
+DAY_HOURS = [f"2026-02-13T{hour:02d}:00" for hour in range(24)]
+
 MARINE_BODY = {
     "latitude": 39.541664,
     "longitude": -9.208328,
@@ -57,6 +59,30 @@ MARINE_BODY = {
         "swell_wave_period": 17.0,
         "sea_surface_temperature": 15.2,
     },
+    # The provider returns the forecast range in the same response as the current
+    # conditions, so a realistic fixture carries both. A full day, because a Pipeline
+    # Run rejects anything shorter as a degraded response. The forecast itself is
+    # exercised in test_forecast.py.
+    "hourly_units": {
+        "time": "iso8601",
+        "wave_height": "m",
+        "wave_direction": "°",
+        "wave_period": "s",
+        "swell_wave_height": "m",
+        "swell_wave_direction": "°",
+        "swell_wave_period": "s",
+        "sea_surface_temperature": "°C",
+    },
+    "hourly": {
+        "time": DAY_HOURS,
+        "wave_height": [8.4] * 24,
+        "wave_direction": [295] * 24,
+        "wave_period": [16.2] * 24,
+        "swell_wave_height": [8.1] * 24,
+        "swell_wave_direction": [298] * 24,
+        "swell_wave_period": [17.0] * 24,
+        "sea_surface_temperature": [15.2] * 24,
+    },
 }
 
 WEATHER_BODY = {
@@ -73,6 +99,18 @@ WEATHER_BODY = {
         "temperature_2m": 13.4,
         "wind_speed_10m": 11.0,
         "wind_direction_10m": 115,
+    },
+    "hourly_units": {
+        "time": "iso8601",
+        "temperature_2m": "°C",
+        "wind_speed_10m": "km/h",
+        "wind_direction_10m": "°",
+    },
+    "hourly": {
+        "time": DAY_HOURS,
+        "temperature_2m": [13.4] * 24,
+        "wind_speed_10m": [11.0] * 24,
+        "wind_direction_10m": [115] * 24,
     },
 }
 
@@ -412,8 +450,10 @@ def test_the_serving_store_cannot_write(store) -> None:
     ingest(store, provider())
     reader = Store(store.path, create=False)
     try:
+        # record_run, not record_conditions: production writes through record_run, and
+        # a read-only guard on a method nothing calls guards nothing.
         with pytest.raises(sqlite3.OperationalError, match="readonly"):
-            reader.record_conditions("2026-02-13T09:00", 0.0, 0.0, {})
+            reader.record_run("2026-02-13T09:00", 0.0, 0.0, {}, [])
     finally:
         reader.close()
 
@@ -489,7 +529,7 @@ def test_a_path_containing_uri_syntax_still_opens_read_only(tmp_path) -> None:
     target = awkward / "nazarenow.db"
 
     writer = Store(target)
-    writer.record_conditions("2026-02-13T09:00", 39.5, -9.2, {})
+    writer.record_run("2026-02-13T09:00", 39.5, -9.2, {}, [])
     writer.close()
 
     reader = Store(target, create=False)
