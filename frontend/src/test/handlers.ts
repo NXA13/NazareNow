@@ -90,7 +90,13 @@ function dayFrom(
       status: call,
       lead_time_days: leadTime,
       reasons: [`swell period ${peakHour.swell_period.value}s`, 'wind is offshore and light'],
-      predicted_significant_wave_height: peakHour.swell_height,
+      // Its own object with its own value. Sharing peak_swell_height's object made
+      // rendering the wrong one undetectable, and they are different quantities:
+      // CONTEXT.md lists swell height under significant wave height's avoided synonyms.
+      predicted_significant_wave_height: {
+        value: Number((peakHour.swell_height.value + 0.4).toFixed(2)),
+        unit: 'm',
+      },
     },
     peak_swell_height: peakHour.swell_height,
     swell_period_at_peak: peakHour.swell_period,
@@ -104,10 +110,10 @@ function dayFrom(
  * rather than hidden, and that height, period and direction stay separate. */
 export const forecast: Forecast = {
   fetched_at: '2026-02-11T09:04:11.221000+00:00',
-  model: 'heuristic-baseline',
+  amplification_model: 'heuristic-baseline',
   calibrated: false,
   days: [
-    dayFrom('2026-02-12', 1.4, 8, 250, 'none', 0),
+    dayFrom('2026-02-12', 1.4, 8, 250, 'confirmed', 1),
     // Base chosen so the peak hour (15:00, +75 degrees) lands on 298 = WNW, which the
     // tests assert as a literal rather than recomputing it with compassPoint.
     dayFrom('2026-02-13', 8.1, 17, 223, 'go', 4),

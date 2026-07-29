@@ -13,10 +13,13 @@ picture.
 from __future__ import annotations
 
 import time
+from datetime import date
 from typing import Any
 
 import httpx
 
+from nazarenow.decision import decide
+from nazarenow.models import HeuristicBaseline
 from nazarenow.sources import open_meteo
 from nazarenow.sources.open_meteo import MARINE_READINGS, WEATHER_READINGS
 from nazarenow.store import Store
@@ -27,6 +30,10 @@ from nazarenow.store import Store
 # nulling all but one hour passed the check and replaced seventy-two stored hours with
 # one, silently.
 MINIMUM_FORECAST_HOURS = 24
+
+# The active Amplification Model. ADR 0006 keeps the Heuristic Baseline permanently as
+# the benchmark; ticket #13 swaps a learned model in behind the same interface.
+AMPLIFICATION_MODEL = HeuristicBaseline()
 
 
 def collect(body: dict[str, Any], mapping: dict[str, str]) -> dict[str, dict[str, Any]]:
@@ -97,6 +104,57 @@ def earliest(*timestamps: str) -> str:
     return min(timestamps)
 
 
+def derive_calls(hours: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Group hours into days and decide a call for each.
+
+    Per ADR 0005 this belongs to the Pipeline Run, not the request path: the API is
+    strictly a reader, CONTEXT.md makes a Pipeline Run "the only part of the system that
+    runs a model", and the ADR promises every prediction is retained -- the record ticket
+    #11 needs to score Go Call precision after the fact. Deciding per request produced no
+    record at all.
+
+    The call is judged on the day's best *matching* hour rather than its biggest. A day
+    with a clean 3m offshore window at 09:00 and an onshore peak at 15:00 is worth
+    surfacing, and judging the peak alone silently discarded it -- costing exactly the
+    recall ADR 0003 asks the Watch tier to protect.
+    """
+    by_date: dict[str, list[dict[str, Any]]] = {}
+    for hour in hours:
+        by_date.setdefault(hour["at"][:10], []).append(hour)
+
+    issued_for = min(by_date)
+    calls: list[dict[str, Any]] = []
+
+    for day in sorted(by_date):
+        predictions = [
+            AMPLIFICATION_MODEL.predict(
+                {name: value["value"] for name, value in hour["readings"].items()}
+            )
+            for hour in by_date[day]
+        ]
+        # Fewest failed conditions wins; the largest sea breaks a tie.
+        best = min(
+            predictions,
+            key=lambda p: (len(p.unmatched), -p.significant_wave_height),
+        )
+        lead_time = (date.fromisoformat(day) - date.fromisoformat(issued_for)).days
+        call = decide(best, lead_time)
+        calls.append(
+            {
+                "date": day,
+                "issued_for_date": issued_for,
+                "status": call.status.value,
+                "lead_time_days": call.lead_time_days,
+                "reasons": list(call.reasons),
+                "predicted_hs": call.predicted_significant_wave_height,
+                "unit": call.unit,
+                "model": AMPLIFICATION_MODEL.name,
+                "calibrated": AMPLIFICATION_MODEL.calibrated,
+            }
+        )
+    return calls
+
+
 def run_pipeline(store: Store, client: httpx.Client, sleep=time.sleep) -> None:
     """Execute one Pipeline Run against the given store."""
     marine_body, marine_url = open_meteo.fetch_marine(client, sleep)
@@ -125,4 +183,5 @@ def run_pipeline(store: Store, client: httpx.Client, sleep=time.sleep) -> None:
         longitude=marine_body["longitude"],
         readings=readings,
         hours=hours,
+        calls=derive_calls(hours),
     )

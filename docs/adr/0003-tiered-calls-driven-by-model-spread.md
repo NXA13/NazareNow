@@ -29,3 +29,12 @@ rather than the prediction.
 
 Watch and Go Call must be evaluated against different metrics. Reporting a single accuracy
 figure for the system would be meaningless.
+
+## Implementation status
+
+As of ticket #6 the tiers are decided by Lead Time alone. Model Spread does not exist
+yet — ticket #8 introduces it — so nothing in the system measures forecast agreement, and
+no part of it may claim a forecast has "converged". A Watch is kept genuinely looser than
+a Go Call in the meantime by dropping the wind condition, which carries little information
+at range; without that the two tiers were one rule with two names, which is what this ADR
+exists to prevent.

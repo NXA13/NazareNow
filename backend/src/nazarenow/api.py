@@ -1,14 +1,15 @@
 """The read-only HTTP API.
 
 Per ADR 0005 this layer only ever reads. It evaluates no model and contacts no
-third-party service — a Pipeline Run does that on a schedule and writes its results to
-the store, which this API serves. Nothing here should ever grow a network call outward.
+third-party service, and it derives no calls — a Pipeline Run does all of that on a
+schedule and writes its results to the store, which this API serves. Deriving calls
+here was an ADR 0005 breach that also destroyed the retained-prediction record.
+Nothing here should ever grow a network call outward.
 """
 
 from __future__ import annotations
 
 import os
-from datetime import date as date_module
 from functools import lru_cache
 from typing import Annotated, Any
 
@@ -17,14 +18,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from nazarenow.decision import Call, Status, decide
-from nazarenow.models import HeuristicBaseline
+from nazarenow.decision import Status
 from nazarenow.store import Store, StoreUnavailable
-
-# The active Amplification Model. ADR 0006 keeps the Heuristic Baseline permanently;
-# ticket #13 swaps a learned model in behind the same interface without anything below
-# this line changing.
-MODEL = HeuristicBaseline()
 
 app = FastAPI(
     title="NazareNow",
@@ -164,7 +159,7 @@ class ForecastDay(BaseModel):
 
 class Forecast(BaseModel):
     fetched_at: str
-    model: str
+    amplification_model: str
     calibrated: bool
     """False while thresholds are the surf community's rule of thumb rather than values
     fitted to Gold Days. Ticket #12 changes that; until then the interface must not imply
@@ -173,28 +168,23 @@ class Forecast(BaseModel):
     days: list[ForecastDay]
 
 
-def summarise(date: str, hours: list[dict[str, Any]], lead_time_days: int) -> ForecastDay:
+def summarise(date: str, hours: list[dict[str, Any]], call: dict[str, Any]) -> ForecastDay:
     """Reduce a day's hours to the figures a user scans the overview for, plus its call.
 
-    The call is judged on the peak hour: the question is whether the day is worth
-    travelling for, and a day is worth travelling for if its best hours are.
+    The call is read from the store, never computed. ADR 0005 makes this layer a reader,
+    and CONTEXT.md makes a Pipeline Run the only thing that runs a model.
     """
     peak = max(hours, key=lambda hour: hour["readings"]["swell_height"]["value"])
     longest = max(hours, key=lambda hour: hour["readings"]["swell_period"]["value"])
 
-    call: Call = decide(
-        MODEL.predict({name: value["value"] for name, value in peak["readings"].items()}),
-        lead_time_days,
-    )
-
     return ForecastDay(
         date=date,
         call=DayCall(
-            status=call.status,
-            lead_time_days=call.lead_time_days,
-            reasons=list(call.reasons),
+            status=Status(call["status"]),
+            lead_time_days=call["lead_time_days"],
+            reasons=call["reasons"],
             predicted_significant_wave_height=Reading(
-                value=call.predicted_significant_wave_height, unit=call.unit
+                value=call["predicted_hs"], unit=call["unit"]
             ),
         ),
         peak_swell_height=Reading(**peak["readings"]["swell_height"]),
@@ -224,19 +214,23 @@ def forecast(store: Annotated[Store, Depends(get_store)]) -> Forecast:
     for hour in hours:
         by_date.setdefault(hour["at"][:10], []).append(hour)
 
-    # Lead Time is measured from the first day the forecast covers, which is the day it
-    # was fetched. Deriving it from the data rather than the wall clock keeps the API
-    # deterministic for a given store.
-    dates = sorted(by_date)
-    first = date_module.fromisoformat(dates[0])
+    stored = store.calls()
+    if not stored:
+        raise HTTPException(
+            status_code=503,
+            detail="No calls have been derived yet. Run the pipeline first.",
+        )
+
+    # Lead Time was fixed when the call was issued and is stored with it, so a stale
+    # forecast cannot present an already-elapsed Go Call as fresh advice.
+    first = next(iter(stored.values()))
 
     return Forecast(
         fetched_at=hours[0]["fetched_at"],
-        model=MODEL.name,
-        calibrated=MODEL.calibrated,
+        amplification_model=first["model"],
+        calibrated=first["calibrated"],
         days=[
-            summarise(day, by_date[day], (date_module.fromisoformat(day) - first).days)
-            for day in dates
+            summarise(day, by_date[day], stored[day]) for day in sorted(by_date) if day in stored
         ],
     )
 

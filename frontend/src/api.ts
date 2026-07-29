@@ -73,7 +73,7 @@ export interface ForecastDay {
 
 export interface Forecast {
   fetched_at: string;
-  model: string;
+  amplification_model: string;
   /** False while thresholds are a rule of thumb rather than values fitted to Gold Days.
    * The interface must not imply a precision the numbers do not have. */
   calibrated: boolean;

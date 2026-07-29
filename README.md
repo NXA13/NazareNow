@@ -179,6 +179,11 @@ surf community's rule of thumb, with no machine learning in it. It ships as the
 permanent benchmark a learned model must beat in #13, and the interface says plainly
 that its thresholds are not yet calibrated — #12 fits them to Gold Days.
 
+The tiers are decided by Lead Time alone for now. ADR 0003 has them driven by Model
+Spread — disagreement between independent wave models — which ticket #8 introduces; a
+Watch is kept looser than a Go Call in the meantime by not requiring the wind
+condition, and nothing claims the forecast has converged, because nothing measures it.
+
 It predicts Significant Wave Height, not Face Height. The canyon's famous threefold
 amplification applies to the wave a surfer rides; multiplying the instrument's measure
 by a face-height factor would produce a confident, plausible, wrong number.

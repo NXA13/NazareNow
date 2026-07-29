@@ -6,6 +6,21 @@ import { compassPoint, formatTimestamp, formatValue } from './format';
 type LoadState =
   { status: 'loading' } | { status: 'loaded'; forecast: Forecast } | { status: 'failed' };
 
+/** What each status says, in the fewest words that are still honest. */
+const CALL_LABELS: Record<CallStatus, string> = {
+  confirmed: 'Confirmed',
+  go: 'Go',
+  watch: 'Watch',
+  none: 'No call',
+};
+
+const CALL_MEANINGS: Record<CallStatus, string> = {
+  confirmed: 'It is happening. For anyone already travelling.',
+  go: 'Worth booking. Every condition of the rule holds at this range.',
+  watch: 'Something may be forming. Start watching flights, do not book yet.',
+  none: 'Not a day to travel for.',
+};
+
 /** How a day compares with the rest of the range on screen.
  *
  * Relative, not absolute. An earlier version used fixed thresholds lifted from the surf
@@ -18,21 +33,6 @@ type LoadState =
  * Comparing each day with the largest day shown needs no domain knowledge and always
  * distinguishes the standout day, whether the week peaks at 1.2m or at 12m.
  */
-/** What each status says, in the fewest words that are still honest. */
-const CALL_LABELS: Record<CallStatus, string> = {
-  confirmed: 'Confirmed',
-  go: 'Go',
-  watch: 'Watch',
-  none: 'No call',
-};
-
-const CALL_MEANINGS: Record<CallStatus, string> = {
-  confirmed: 'It is happening. For anyone already travelling.',
-  go: 'Worth booking. The forecast has converged and every condition holds.',
-  watch: 'Something may be forming. Start watching flights, do not book yet.',
-  none: 'Not a day to travel for.',
-};
-
 export type Prominence = 'leading' | 'notable' | 'ordinary';
 
 function prominence(value: number, largest: number): Prominence {

@@ -56,6 +56,19 @@ CREATE TABLE IF NOT EXISTS forecast_hour (
     readings    TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS day_call (
+    date            TEXT PRIMARY KEY,
+    issued_at       TEXT NOT NULL,
+    issued_for_date TEXT NOT NULL,
+    status          TEXT NOT NULL,
+    lead_time_days  INTEGER NOT NULL,
+    reasons         TEXT NOT NULL,
+    predicted_hs    REAL NOT NULL,
+    unit            TEXT NOT NULL,
+    model           TEXT NOT NULL,
+    calibrated      INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS offshore_conditions_observed_at
     ON offshore_conditions (observed_at DESC);
 """
@@ -132,6 +145,8 @@ class Store:
             "FROM offshore_conditions LIMIT 0",
             "SELECT source, url, fetched_at, body FROM raw_response LIMIT 0",
             "SELECT valid_at, fetched_at, readings FROM forecast_hour LIMIT 0",
+            "SELECT date, issued_at, issued_for_date, status, lead_time_days, reasons, "
+            "predicted_hs, unit, model, calibrated FROM day_call LIMIT 0",
         )
         try:
             for probe in probes:
@@ -193,6 +208,7 @@ class Store:
         longitude: float,
         readings: dict[str, dict[str, Any]],
         hours: list[dict[str, Any]],
+        calls: list[dict[str, Any]] | None = None,
     ) -> None:
         """Store a Pipeline Run's conditions and forecast together, or not at all.
 
@@ -214,6 +230,27 @@ class Store:
                 "INSERT INTO forecast_hour (valid_at, fetched_at, readings) VALUES (?, ?, ?)",
                 [(hour["at"], stamp, json.dumps(hour["readings"])) for hour in hours],
             )
+            connection.execute("DELETE FROM day_call")
+            connection.executemany(
+                "INSERT INTO day_call (date, issued_at, issued_for_date, status, "
+                "lead_time_days, reasons, predicted_hs, unit, model, calibrated) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    (
+                        call["date"],
+                        stamp,
+                        call["issued_for_date"],
+                        call["status"],
+                        call["lead_time_days"],
+                        json.dumps(call["reasons"]),
+                        call["predicted_hs"],
+                        call["unit"],
+                        call["model"],
+                        int(call["calibrated"]),
+                    )
+                    for call in (calls or [])
+                ],
+            )
             connection.execute(
                 "INSERT INTO offshore_conditions "
                 "(observed_at, fetched_at, latitude, longitude, readings) "
@@ -234,6 +271,33 @@ class Store:
             }
             for row in rows
         ]
+
+    def calls(self) -> dict[str, dict[str, Any]]:
+        """The calls a Pipeline Run derived, keyed by the date they apply to.
+
+        Stored rather than computed on request. ADR 0005 makes the API strictly a reader
+        and the Pipeline Run the only thing that runs a model — and it promises that every
+        prediction the system has made is retained, which is the record ticket #11 needs to
+        score Go Call precision after the fact. Computing them per request produced none.
+        """
+        rows = self._connect().execute(
+            "SELECT date, issued_at, issued_for_date, status, lead_time_days, reasons, "
+            "predicted_hs, unit, model, calibrated FROM day_call"
+        )
+        return {
+            row["date"]: {
+                "issued_at": row["issued_at"],
+                "issued_for_date": row["issued_for_date"],
+                "status": row["status"],
+                "lead_time_days": row["lead_time_days"],
+                "reasons": json.loads(row["reasons"]),
+                "predicted_hs": row["predicted_hs"],
+                "unit": row["unit"],
+                "model": row["model"],
+                "calibrated": bool(row["calibrated"]),
+            }
+            for row in rows
+        }
 
     def latest_conditions(self) -> dict[str, Any] | None:
         """The most recently ingested Offshore Conditions, or None if the store is empty.

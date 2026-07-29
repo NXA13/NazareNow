@@ -20,9 +20,10 @@ const QUIET = forecast.days[0]!;
 const BIG = forecast.days[1]!;
 
 describe('calls', () => {
-  it('shows each status distinguishably', async () => {
-    // Three days carrying three different statuses. Asserting the rendered class rather
-    // than calling a helper: the agreed seam is what a user sees.
+  it('shows each status distinguishably, with the right label on each', async () => {
+    // Asserting only that three labels differ let Go and Watch swap places — a Go day
+    // reading "Watch — something may be forming, do not book yet". Which label belongs
+    // to which status is the whole point, so each is pinned by name.
     render(<ForecastRange />);
 
     const badges = await Promise.all(
@@ -30,11 +31,34 @@ describe('calls', () => {
     );
 
     expect(badges.map((b) => b.className)).toEqual([
-      'call call-none',
+      'call call-confirmed',
       'call call-go',
       'call call-watch',
     ]);
-    expect(new Set(badges.map((b) => b.textContent)).size).toBe(3);
+    expect(badges.map((b) => b.textContent)).toEqual(['Confirmed', 'Go', 'Watch']);
+  });
+
+  it('describes a Go Call as worth booking and a Watch as not yet', async () => {
+    render(<ForecastRange />);
+
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
+    expect(await screen.findByRole('note')).toHaveTextContent(/worth booking/i);
+
+    const easing = forecast.days[2]!;
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(easing.date) }));
+    const note = await screen.findByRole('note');
+    expect(note).toHaveTextContent(/do not book yet/i);
+    expect(note).not.toHaveTextContent(/worth booking/i);
+  });
+
+  it('does not claim the forecast has converged', async () => {
+    // Nothing measures convergence. ADR 0003 has the tiers driven by Model Spread, which
+    // ticket #8 introduces; until then a claim of convergence is an invented assurance.
+    render(<ForecastRange />);
+
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
+
+    expect(await screen.findByRole('note')).not.toHaveTextContent(/converged/i);
   });
 
   it('explains why a day got its call, and how far ahead', async () => {
