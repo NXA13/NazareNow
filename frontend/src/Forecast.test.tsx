@@ -12,6 +12,7 @@ import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 
 import { ForecastRange } from './Forecast';
+import { compassPoint } from './format';
 import { forecast } from './test/handlers';
 import { server } from './test/server';
 
@@ -30,7 +31,7 @@ describe('the forecast range', () => {
 
     expect(big.className).toContain('rank-leading');
     expect(quiet.className).toContain('rank-ordinary');
-    // The middle tier is a real band, not decoration: a day at 43% of the peak must be
+    // The middle tier is a real band, not decoration: a day at 70% of the peak must be
     // neither leading nor ordinary. Without this, widening either threshold to swallow
     // the tier passed every test.
     const easing = await screen.findByRole('button', { name: new RegExp(forecast.days[2]!.date) });
@@ -131,9 +132,17 @@ describe('the forecast range', () => {
     const rows = within(table).getAllByRole('row').slice(1);
     for (const hour of [0, 7, 23]) {
       const cells = within(rows[hour]!).getAllByRole('cell');
-      expect(cells[0]).toHaveTextContent(String(BIG.hours[hour]!.swell_height.value));
-      expect(cells[1]).toHaveTextContent(String(BIG.hours[hour]!.swell_period.value));
-      expect(cells[3]).toHaveTextContent(String(BIG.hours[hour]!.wind_speed.value));
+      const reading = BIG.hours[hour]!;
+      expect(cells[0]).toHaveTextContent(
+        `${reading.swell_height.value}${reading.swell_height.unit}`,
+      );
+      expect(cells[1]).toHaveTextContent(
+        `${reading.swell_period.value}${reading.swell_period.unit}`,
+      );
+      // Cell 2 is the direction column, previously skipped: freezing it, or rendering
+      // wind direction in it, passed every test.
+      expect(cells[2]).toHaveTextContent(compassPoint(reading.swell_direction.value));
+      expect(cells[3]).toHaveTextContent(`${reading.wind_speed.value}${reading.wind_speed.unit}`);
     }
   });
 
@@ -186,21 +195,33 @@ describe('the forecast range', () => {
   });
 
   it('shows a readable date on each day, not the raw ISO string', async () => {
-    // Days are found by aria-label, which carries the ISO date — so the visible label
-    // went unasserted, and dayLabel returning a constant survived every test.
+    // Days are found by aria-label, which carries the ISO date, so the visible label was
+    // unasserted and dayLabel returning a constant survived. A regex matching one
+    // expected label is not enough either — a constant satisfies it. Each day must
+    // render its own distinct label.
     render(<ForecastRange />);
 
-    const big = await screen.findByRole('button', { name: new RegExp(BIG.date) });
-    expect(big).toHaveTextContent(/Fri 13 Feb|13 Feb|Feb 13/);
-    expect(big).not.toHaveTextContent(BIG.date);
+    const labels = await Promise.all(
+      forecast.days.map(async (day) => {
+        const tile = await screen.findByRole('button', { name: new RegExp(day.date) });
+        return within(tile).getByTestId(`day-label-${day.date}`).textContent ?? '';
+      }),
+    );
+
+    expect(new Set(labels).size).toBe(forecast.days.length);
+    for (const [index, label] of labels.entries()) {
+      expect(label).not.toContain(forecast.days[index]!.date);
+      expect(label).toMatch(/\d/);
+    }
+    expect(labels[1]).toMatch(/13/);
   });
 
   it('says how many days the forecast covers', async () => {
     render(<ForecastRange />);
 
-    expect(
-      await screen.findByRole('heading', { name: `The next ${forecast.days.length} days` }),
-    ).toBeInTheDocument();
+    // The literal, not forecast.days.length — deriving the expectation from the same
+    // fixture made hardcoding the heading pass.
+    expect(await screen.findByRole('heading', { name: 'The next 3 days' })).toBeInTheDocument();
   });
 
   it('tells the user when the forecast cannot be loaded', async () => {

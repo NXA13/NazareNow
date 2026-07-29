@@ -201,22 +201,6 @@ class Store:
         )
         connection.commit()
 
-    def replace_forecast(self, hours: list[dict[str, Any]]) -> None:
-        """Store the forecast, discarding whatever the previous run left.
-
-        A forecast supersedes rather than accumulates: keeping both would leave the API
-        serving two answers for the same hour, and the older one is simply wrong.
-        Written in one transaction so a failure cannot leave the range half-replaced.
-        """
-        connection = self._connect()
-        stamp = now()
-        with connection:
-            connection.execute("DELETE FROM forecast_hour")
-            connection.executemany(
-                "INSERT INTO forecast_hour (valid_at, fetched_at, readings) VALUES (?, ?, ?)",
-                [(hour["at"], stamp, json.dumps(hour["readings"])) for hour in hours],
-            )
-
     def forecast(self) -> list[dict[str, Any]]:
         """Every stored forecast hour, earliest first."""
         rows = self._connect().execute(

@@ -122,9 +122,10 @@ cd frontend && npm run format:check
 cd frontend && npm run build
 ```
 
-Prettier is configured with `endOfLine: auto` so these pass on Windows. Without it,
-`format:check` fails on every checked-out file locally while CI stays green — CI clones
-with LF per `.gitattributes`, Windows checks out CRLF, and Prettier defaults to LF.
+Prettier is configured with `endOfLine: auto`. Most files are LF in the working tree
+because of `.gitattributes`, but any file written locally on Windows picks up CRLF, and
+Prettier's default of `lf` then fails it while CI — which clones with LF — stays green.
+That inversion trains people to ignore the check, so the setting removes it.
 
 **Analysis scripts** — linted only. Running them needs Copernicus credentials and the
 downloaded data, so CI checks them statically:

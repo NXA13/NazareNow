@@ -44,10 +44,13 @@ function hoursFor(date: string, swell: number, period: number, direction: number
     at: `${date}T${String(hour).padStart(2, '0')}:00`,
     swell_height: { value: Number((swell + hour * 0.11).toFixed(2)), unit: 'm' },
     swell_period: { value: Number((period + hour * 0.13).toFixed(2)), unit: 's' },
-    swell_direction: { value: direction + hour, unit: '°' },
+    // 15 degrees an hour, so the rendered compass point changes most hours. At one
+    // degree an hour the whole day spanned less than a single 22.5 degree sector,
+    // and a frozen Dir column was indistinguishable from a correct one.
+    swell_direction: { value: (direction + hour * 15) % 360, unit: '°' },
     significant_wave_height: { value: Number((swell + 0.3 + hour * 0.07).toFixed(2)), unit: 'm' },
     wave_period: { value: Number((period + hour * 0.09).toFixed(2)), unit: 's' },
-    wave_direction: { value: direction + hour * 2, unit: '°' },
+    wave_direction: { value: (direction + 40 + hour * 15) % 360, unit: '°' },
     water_temperature: { value: Number((15.2 + hour * 0.01).toFixed(2)), unit: '°C' },
     air_temperature: { value: Number((13.4 + hour * 0.02).toFixed(2)), unit: '°C' },
     wind_speed: { value: Number((11 + hour * 0.3).toFixed(2)), unit: 'km/h' },

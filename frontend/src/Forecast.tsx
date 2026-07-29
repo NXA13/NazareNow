@@ -65,7 +65,9 @@ function DaySummary({
       }
       onClick={onSelect}
     >
-      <span className="day-date">{dayLabel(day.date)}</span>
+      <span className="day-date" data-testid={`day-label-${day.date}`}>
+        {dayLabel(day.date)}
+      </span>
       <span className="day-swell">
         <span className="value">{formatValue(day.peak_swell_height.value)}</span>
         <span className="unit">{day.peak_swell_height.unit}</span>

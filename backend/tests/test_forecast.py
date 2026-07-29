@@ -71,9 +71,18 @@ def marine_with_hourly() -> dict:
             "swell_wave_height": heights,
             "swell_wave_period": periods,
             "swell_wave_direction": directions,
+            # Combined Sea carries its own values. Assigning the same list objects as
+            # Swell meant a summary reading the wrong family returned identical numbers,
+            # so nothing could tell them apart — the one distinction CLAUDE.md calls
+            # load-bearing.
             "wave_height": [round(h + 0.3, 2) for h in heights],
-            "wave_period": periods,
-            "wave_direction": directions,
+            # Not a monotonic shift of the swell period: adding a constant preserves the
+            # argmax, so `longest` computed over the wrong family picked the same hour
+            # and returned the same value. Combined Sea peaks at its own hour.
+            "wave_period": [
+                round(p + (9.0 if h % 24 == 3 else 1.7), 2) for h, p in enumerate(periods)
+            ],
+            "wave_direction": [(d + 31) % 360 for d in directions],
             "sea_surface_temperature": [15.0] * len(HOURS),
         },
     }
@@ -379,6 +388,18 @@ def test_the_fixture_can_tell_the_summary_apart_from_a_wrong_hour() -> None:
     # there appears nowhere else in the day — otherwise reading some other hour returns
     # the same number and no assertion can tell. Collapsing the period at hour 8 to the
     # day's baseline satisfies the argmax check while hollowing out the summary tests.
+    for swell_variable, sea_variable in (
+        ("swell_wave_period", "wave_period"),
+        ("swell_wave_direction", "wave_direction"),
+        ("swell_wave_height", "wave_height"),
+    ):
+        swell = [hourly[swell_variable][i] for i in peak_day]
+        sea = [hourly[sea_variable][i] for i in peak_day]
+        assert swell != sea, (
+            f"{swell_variable} and {sea_variable} hold the same values, so a summary "
+            f"reading Combined Sea where it should read Swell is undetectable"
+        )
+
     read_hour = hours["height"]
     for variable in ("swell_wave_period", "swell_wave_direction"):
         values = [hourly[variable][i] for i in peak_day]
@@ -401,12 +422,26 @@ def test_a_failure_partway_through_a_write_leaves_nothing_changed(store, client)
     conditions_before = client.get("/api/conditions/current").json()
     forecast_before = client.get("/api/conditions/forecast").json()
 
-    doomed = [
-        {"at": "2026-03-01T00:00", "readings": forecast_before["days"][0]["hours"][0]},
-        {"at": "2026-03-01T00:00", "readings": forecast_before["days"][0]["hours"][0]},
+    hour = forecast_before["days"][0]["hours"][0]
+
+    # (a) The forecast write fails. The conditions written alongside it must roll back.
+    duplicated = [
+        {"at": "2026-03-01T00:00", "readings": hour},
+        {"at": "2026-03-01T00:00", "readings": hour},
     ]
     with pytest.raises(sqlite3.IntegrityError):
-        store.record_run("2026-03-01T00:00", 1.0, 2.0, {"nonsense": {}}, doomed)
+        store.record_run("2026-03-01T00:00", 1.0, 2.0, {"nonsense": {}}, duplicated)
+
+    assert client.get("/api/conditions/current").json() == conditions_before
+    assert client.get("/api/conditions/forecast").json() == forecast_before
+
+    # (b) The conditions write fails. The forecast must be untouched — including the
+    # DELETE. Testing only (a) pinned write *ordering*, not one transaction: an
+    # implementation committing the conditions last also passed it.
+    with pytest.raises(sqlite3.IntegrityError):
+        store.record_run(
+            None, 1.0, 2.0, {"nonsense": {}}, [{"at": "2026-03-02T00:00", "readings": hour}]
+        )  # type: ignore[arg-type]
 
     assert client.get("/api/conditions/current").json() == conditions_before
     assert client.get("/api/conditions/forecast").json() == forecast_before

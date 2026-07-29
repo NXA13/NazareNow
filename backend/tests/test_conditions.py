@@ -450,8 +450,10 @@ def test_the_serving_store_cannot_write(store) -> None:
     ingest(store, provider())
     reader = Store(store.path, create=False)
     try:
+        # record_run, not record_conditions: production writes through record_run, and
+        # a read-only guard on a method nothing calls guards nothing.
         with pytest.raises(sqlite3.OperationalError, match="readonly"):
-            reader.record_conditions("2026-02-13T09:00", 0.0, 0.0, {})
+            reader.record_run("2026-02-13T09:00", 0.0, 0.0, {}, [])
     finally:
         reader.close()
 
