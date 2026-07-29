@@ -50,8 +50,12 @@ export interface ForecastDay {
   /** Height, period and direction are summarised separately and never collapsed into a
    * single size figure — a short-period 8m sea and an 8m groundswell are different days. */
   peak_swell_height: Reading;
-  peak_swell_period: Reading;
-  dominant_swell_direction: Reading;
+  /** Period and direction *of the largest hour* — not the day's maximum period. */
+  swell_period_at_peak: Reading;
+  swell_direction_at_peak: Reading;
+  /** The day's actual longest period, which can fall at a quieter hour and is the
+   * groundswell signal a big-wave forecast lives on. */
+  longest_swell_period: Reading;
   hours: ForecastHour[];
 }
 

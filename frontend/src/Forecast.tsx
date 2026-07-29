@@ -6,6 +6,21 @@ import { compassPoint, formatTimestamp, formatValue } from './format';
 type LoadState =
   { status: 'loading' } | { status: 'loaded'; forecast: Forecast } | { status: 'failed' };
 
+/** How big a day is, on a scale a reader can see rather than read.
+ *
+ * "Shown as such" in the ticket asks for more than presence: nine tiles carrying only
+ * digits are nine indistinguishable tiles, and the point of the overview is to find the
+ * one worth flying for without reading every number. Thresholds follow the surf
+ * community's rule of thumb for Nazaré, where a groundswell over 3m offshore is when it
+ * starts to matter.
+ */
+export function magnitude(metres: number): 'flat' | 'moderate' | 'large' | 'huge' {
+  if (metres >= 6) return 'huge';
+  if (metres >= 3) return 'large';
+  if (metres >= 1.5) return 'moderate';
+  return 'flat';
+}
+
 /** The day, as a weekday and date a reader can place without doing arithmetic. */
 function dayLabel(date: string): string {
   const parsed = new Date(`${date}T12:00:00Z`);
@@ -27,9 +42,18 @@ function DaySummary({
   return (
     <button
       type="button"
-      className={selected ? 'day selected' : 'day'}
+      className={`day size-${magnitude(day.peak_swell_height.value)}${selected ? ' selected' : ''}`}
       aria-pressed={selected}
-      aria-label={`${day.date} — peak swell ${day.peak_swell_height.value}${day.peak_swell_height.unit}`}
+      // The label carries every summarised figure. An earlier version named only the
+      // height, which overrode the card's content for screen readers and lost the
+      // period and direction entirely — the two values that separate a groundswell
+      // worth travelling for from a big messy sea.
+      aria-label={
+        `${day.date} — peak swell ${day.peak_swell_height.value}${day.peak_swell_height.unit}, ` +
+        `period ${day.swell_period_at_peak.value}${day.swell_period_at_peak.unit}, ` +
+        `from ${compassPoint(day.swell_direction_at_peak.value)}, ` +
+        `longest period ${day.longest_swell_period.value}${day.longest_swell_period.unit}`
+      }
       onClick={onSelect}
     >
       <span className="day-date">{dayLabel(day.date)}</span>
@@ -41,9 +65,9 @@ function DaySummary({
           An 8m short-period sea and an 8m groundswell are entirely different days, and
           the difference is the whole reason someone would get on a plane. */}
       <span className="day-detail">
-        <span className="value">{formatValue(day.peak_swell_period.value)}</span>
-        <span className="unit">{day.peak_swell_period.unit}</span>
-        <span className="bearing">{compassPoint(day.dominant_swell_direction.value)}</span>
+        <span className="value">{formatValue(day.swell_period_at_peak.value)}</span>
+        <span className="unit">{day.swell_period_at_peak.unit}</span>
+        <span className="bearing">{compassPoint(day.swell_direction_at_peak.value)}</span>
       </span>
     </button>
   );
@@ -53,10 +77,13 @@ function HourTable({ day }: { day: ForecastDay }) {
   return (
     <div className="hours-scroll">
       <table>
-        <caption>Hour by hour on {dayLabel(day.date)}</caption>
+        {/* Times are the provider's, in UTC, and labelled as such. Rendering them in
+            the viewer's zone beside a locally-formatted date would shift hours across
+            the day boundary and quietly disagree with the date above. */}
+        <caption>Hour by hour on {dayLabel(day.date)}, times in UTC</caption>
         <thead>
           <tr>
-            <th scope="col">Time</th>
+            <th scope="col">Time (UTC)</th>
             <th scope="col">Swell</th>
             <th scope="col">Period</th>
             <th scope="col">Dir</th>

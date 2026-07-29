@@ -127,11 +127,18 @@ class ForecastDay(BaseModel):
     peak_swell_height: Reading
     """The day's largest swell, which is what decides whether it is worth travelling for."""
 
-    peak_swell_period: Reading
-    dominant_swell_direction: Reading
-    """Height, period and direction are summarised separately and never collapsed into one
-    figure: a big short-period sea and a long-period groundswell of the same height are
-    entirely different days."""
+    swell_period_at_peak: Reading
+    swell_direction_at_peak: Reading
+    """The period and direction *of the largest hour*, not the day's maximum period.
+
+    Named for what they hold. Calling them peak period and dominant direction was a lie:
+    they were read from the peak-height hour, so a day whose longest period arrived at a
+    quieter hour reported the wrong number — on the two fields a travel decision most
+    turns on."""
+
+    longest_swell_period: Reading
+    """The day's actual maximum period, which is the groundswell signal a big-wave
+    forecast lives on and can fall at a different hour from the peak height."""
 
     hours: list[ForecastHour]
 
@@ -144,11 +151,13 @@ class Forecast(BaseModel):
 def summarise(date: str, hours: list[dict[str, Any]]) -> ForecastDay:
     """Reduce a day's hours to the figures a user scans the overview for."""
     peak = max(hours, key=lambda hour: hour["readings"]["swell_height"]["value"])
+    longest = max(hours, key=lambda hour: hour["readings"]["swell_period"]["value"])
     return ForecastDay(
         date=date,
         peak_swell_height=Reading(**peak["readings"]["swell_height"]),
-        peak_swell_period=Reading(**peak["readings"]["swell_period"]),
-        dominant_swell_direction=Reading(**peak["readings"]["swell_direction"]),
+        swell_period_at_peak=Reading(**peak["readings"]["swell_period"]),
+        swell_direction_at_peak=Reading(**peak["readings"]["swell_direction"]),
+        longest_swell_period=Reading(**longest["readings"]["swell_period"]),
         hours=[ForecastHour(at=hour["at"], **hour["readings"]) for hour in hours],
     )
 

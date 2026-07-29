@@ -157,7 +157,11 @@ def validate_hourly(parsed: OpenMeteoResponse, variables: list[str]) -> None:
     if without_units:
         raise ValueError(f"Open-Meteo hourly block is missing units for: {without_units}")
 
-    expected = len(parsed.hourly["time"])
+    axis = parsed.hourly["time"]
+    if len(set(axis)) != len(axis):
+        raise ValueError("Open-Meteo hourly time axis contains duplicate timestamps")
+
+    expected = len(axis)
     wrong = {
         name: len(parsed.hourly[name]) for name in variables if len(parsed.hourly[name]) != expected
     }

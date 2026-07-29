@@ -257,3 +257,33 @@ footer p {
   font-size: 0.75rem;
   margin-left: 0.15rem;
 }
+
+/* Magnitude, encoded so the overview can be scanned rather than read. A flat week and
+   a week with one XXL day must not look the same at a glance. */
+.day.size-flat .day-swell .value {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.day.size-moderate {
+  border-left-color: #6aa9c0;
+}
+
+.day.size-large {
+  border-left-color: var(--accent);
+  background: #f2f8fb;
+}
+
+.day.size-large .day-swell .value {
+  font-size: 1.6rem;
+}
+
+.day.size-huge {
+  border-left-color: #b5471f;
+  background: #fdf3ee;
+}
+
+.day.size-huge .day-swell .value {
+  font-size: 1.85rem;
+  color: #8f3213;
+}

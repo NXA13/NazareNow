@@ -9,7 +9,13 @@ from __future__ import annotations
 import httpx
 import pytest
 
+from nazarenow.api import ForecastHour, Reading
 from nazarenow.pipeline import run_pipeline
+from nazarenow.sources.open_meteo import (
+    FORECAST_DAYS,
+    MARINE_READINGS,
+    WEATHER_READINGS,
+)
 from test_conditions import MARINE_BODY, WEATHER_BODY, ingest
 
 # Three days of hourly data is enough to prove grouping, ordering and summarising
@@ -24,7 +30,17 @@ def marine_with_hourly() -> dict:
         day = stamp[8:10]
         base = {"12": 2.0, "13": 7.0, "14": 3.5}[day]
         heights.append(round(base + (index % 24) * 0.05, 2))
-        periods.append(round({"12": 9.0, "13": 17.0, "14": 12.0}[day], 1))
+        # Period varies across the day, and its maximum deliberately falls at a
+        # different hour from the peak height. A constant period made the summary
+        # assertion vacuous: it passed against a mutant reading hours[0].
+        # Period rises through the day *and* spikes at 15:00, so three hours give three
+        # different values: hour 0, the peak-height hour (23:00), and the longest-period
+        # hour. A fixture where any two of those agree cannot tell a correct summary
+        # from one reading the wrong hour — which is how the earlier version passed
+        # against a mutant sourcing hours[0].
+        base = {"12": 9.0, "13": 17.0, "14": 12.0}[day]
+        hour = index % 24
+        periods.append(round(base + hour * 0.1 + (5.0 if hour == 15 else 0.0), 2))
         directions.append({"12": 250, "13": 298, "14": 280}[day])
 
     return {
@@ -108,8 +124,13 @@ def test_each_day_summarises_swell_without_collapsing_it(store, client) -> None:
     peak = next(day for day in body["days"] if day["date"] == "2026-02-13")
 
     assert peak["peak_swell_height"] == {"value": 8.15, "unit": "m"}
-    assert peak["peak_swell_period"] == {"value": 17.0, "unit": "s"}
-    assert peak["dominant_swell_direction"] == {"value": 298, "unit": "°"}
+    # The height peaks at 23:00 and the period at 15:00, so a summary that read both
+    # from the same hour would get one of them wrong.
+    # 19.3 at the peak-height hour (23:00), 23.5 at the longest-period hour (15:00),
+    # and 17.0 at hour zero — all different, so any confusion between them shows.
+    assert peak["swell_period_at_peak"] == {"value": 19.3, "unit": "s"}
+    assert peak["swell_direction_at_peak"] == {"value": 298, "unit": "°"}
+    assert peak["longest_swell_period"] == {"value": 23.5, "unit": "s"}
 
 
 def test_a_day_carries_its_hours_in_order(store, client) -> None:
@@ -120,6 +141,7 @@ def test_a_day_carries_its_hours_in_order(store, client) -> None:
 
     assert len(day["hours"]) == 24
     assert [hour["at"] for hour in day["hours"]] == sorted(hour["at"] for hour in day["hours"])
+    assert day["hours"][0]["at"] == "2026-02-13T00:00"
     assert day["hours"][0]["swell_height"] == {"value": 7.0, "unit": "m"}
     assert day["hours"][0]["wind_speed"] == {"value": 10.0, "unit": "km/h"}
 
@@ -209,3 +231,68 @@ def test_hours_the_provider_could_not_model_are_dropped(store, client) -> None:
 
     assert [day["date"] for day in body["days"]] == ["2026-02-12", "2026-02-13"]
     assert all(day["hours"] for day in body["days"])
+
+
+def test_a_response_with_no_usable_hours_keeps_the_previous_forecast(store, client) -> None:
+    """An all-null response parses cleanly, yields nothing, and used to delete the lot.
+
+    Verified before the fix: seventy-two good hours became zero, the run exited without
+    error, and the page then said no pipeline run had stored a forecast — blaming
+    absence for a successful-looking run that had just destroyed nine real days.
+    """
+    ingest(store, forecasting_provider())
+    assert len(client.get("/api/conditions/forecast").json()["days"]) == 3
+
+    dead = marine_with_hourly()
+    for name in dead["hourly"]:
+        if name != "time":
+            dead["hourly"][name] = [None] * len(dead["hourly"]["time"])
+
+    with pytest.raises(ValueError, match="no usable forecast hours"):
+        ingest(store, forecasting_provider(marine=dead))
+
+    assert len(client.get("/api/conditions/forecast").json()["days"]) == 3
+
+
+def test_a_duplicated_hour_is_rejected(store, client) -> None:
+    """A repeated timestamp silently drops an hour and hands its reading to another."""
+    duplicated = marine_with_hourly()
+    axis = duplicated["hourly"]["time"]
+    duplicated["hourly"]["time"] = [axis[0], axis[0], *axis[2:]]
+
+    with pytest.raises(ValueError, match="duplicate timestamps"):
+        ingest(store, forecasting_provider(marine=duplicated))
+
+
+def test_the_provider_is_asked_for_the_whole_range_hour_by_hour(store) -> None:
+    """Nothing pinned the request itself: dropping forecast_days left the suite green
+    while the provider quietly fell back to its seven-day default."""
+    asked: list[httpx.URL] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        asked.append(request.url)
+        marine = "marine" in request.url.host
+        return httpx.Response(200, json=marine_with_hourly() if marine else weather_with_hourly())
+
+    with httpx.Client(transport=httpx.MockTransport(handle)) as http:
+        run_pipeline(store, http, sleep=lambda _: None)
+
+    for url in asked:
+        assert url.params.get("forecast_days") == str(FORECAST_DAYS)
+        assert url.params.get("hourly"), "the hourly block must be requested"
+        assert url.params.get("current"), "current conditions must still be requested"
+
+
+def test_every_ingested_hourly_reading_is_served_by_the_api() -> None:
+    """The same guard the current-conditions endpoint has. Without it, dropping two
+    fields from ForecastHour left the whole suite green while the readings were
+    ingested, stored, and silently discarded on the way out."""
+    ingested = set(MARINE_READINGS) | set(WEATHER_READINGS)
+    served = {
+        name for name, field in ForecastHour.model_fields.items() if field.annotation is Reading
+    }
+
+    assert ingested == served, (
+        f"ingested but never served: {sorted(ingested - served)}; "
+        f"served but never ingested: {sorted(served - ingested)}"
+    )

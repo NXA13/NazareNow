@@ -11,7 +11,7 @@ import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 
-import { ForecastRange } from './Forecast';
+import { ForecastRange, magnitude } from './Forecast';
 import { forecast } from './test/handlers';
 import { server } from './test/server';
 
@@ -19,6 +19,52 @@ const QUIET = forecast.days[0]!;
 const BIG = forecast.days[1]!;
 
 describe('the forecast range', () => {
+  it('encodes magnitude so a big day is visible without reading the numbers', async () => {
+    // "Shown as such" asks for more than presence. Nine tiles carrying only digits are
+    // nine indistinguishable tiles, and finding the day worth flying for is the point.
+    expect(magnitude(0.6)).toBe('flat');
+    expect(magnitude(2.0)).toBe('moderate');
+    expect(magnitude(4.0)).toBe('large');
+    expect(magnitude(8.1)).toBe('huge');
+
+    render(<ForecastRange />);
+
+    const quiet = await screen.findByRole('button', { name: new RegExp(QUIET.date) });
+    const big = await screen.findByRole('button', { name: new RegExp(BIG.date) });
+    expect(quiet.className).not.toBe(big.className);
+    expect(big.className).toContain('size-huge');
+  });
+
+  it('names every summarised figure for a screen reader', async () => {
+    // aria-label overrides the card's content, so anything it omits is lost entirely.
+    render(<ForecastRange />);
+
+    const day = await screen.findByRole('button', { name: new RegExp(BIG.date) });
+    const label = day.getAttribute('aria-label') ?? '';
+    expect(label).toContain(String(BIG.peak_swell_height.value));
+    expect(label).toContain(String(BIG.swell_period_at_peak.value));
+    expect(label).toContain('WNW');
+  });
+
+  it('shows the day label and hours in order, marked as UTC', async () => {
+    // Surviving mutants before this: dayLabel returning a constant, the hour rows
+    // reversed, and the Time column frozen on the first hour.
+    render(<ForecastRange />);
+
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
+    const table = await screen.findByRole('table');
+
+    // Both the caption and the Time column say UTC; either alone would do.
+    expect(within(table).getAllByText(/UTC/).length).toBeGreaterThan(0);
+    const times = within(table)
+      .getAllByRole('row')
+      .slice(1)
+      .map((row) => within(row).getAllByRole('rowheader')[0]?.textContent ?? '');
+    expect(times[0]).toBe('00:00');
+    expect(times[23]).toBe('23:00');
+    expect([...times]).toEqual([...times].sort());
+  });
+
   it('lists every day the forecast covers', async () => {
     render(<ForecastRange />);
 
@@ -40,7 +86,7 @@ describe('the forecast range', () => {
 
     const day = await screen.findByRole('button', { name: new RegExp(BIG.date) });
     expect(within(day).getByText(String(BIG.peak_swell_height.value))).toBeInTheDocument();
-    expect(within(day).getByText(String(BIG.peak_swell_period.value))).toBeInTheDocument();
+    expect(within(day).getByText(String(BIG.swell_period_at_peak.value))).toBeInTheDocument();
     expect(within(day).getByText(/WNW/)).toBeInTheDocument();
   });
 

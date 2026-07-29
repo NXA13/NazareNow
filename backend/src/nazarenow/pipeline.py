@@ -107,9 +107,16 @@ def run_pipeline(store: Store, client: httpx.Client, sleep=time.sleep) -> None:
         readings=readings,
     )
 
-    store.replace_forecast(
-        merge_hourly(
-            collect_hourly(marine_body, MARINE_READINGS),
-            collect_hourly(weather_body, WEATHER_READINGS),
-        )
+    hours = merge_hourly(
+        collect_hourly(marine_body, MARINE_READINGS),
+        collect_hourly(weather_body, WEATHER_READINGS),
     )
+    if not hours:
+        # A response that parses but yields no usable hour is a provider fault, not an
+        # empty forecast. Storing it would delete a good forecast and leave the page
+        # saying no run had happened — blaming absence for a successful-looking run that
+        # destroyed nine real days. ADR 0005 promises stale-but-honest instead.
+        raise ValueError(
+            "Providers returned no usable forecast hours; keeping the previous forecast"
+        )
+    store.replace_forecast(hours)
