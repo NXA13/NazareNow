@@ -170,9 +170,18 @@ This is enforced rather than asserted, in both suites:
 
 ## Status
 
-Early. Current Offshore Conditions and a nine-day forecast range are ingested from
-Open-Meteo, stored, and displayed, with hour-by-hour detail for any day. No model and no
-Watch or Go Calls yet — those are tickets #6 onward.
+Slice 1 complete. Current Offshore Conditions and a ten-day forecast are ingested from
+Open-Meteo, stored, and displayed with hour-by-hour detail — and every day now carries a
+**Watch**, **Go**, **Confirmed** or **No call**, with the conditions that produced it.
+
+The Amplification Model behind those calls is the Heuristic Baseline of ADR 0006: the
+surf community's rule of thumb, with no machine learning in it. It ships as the
+permanent benchmark a learned model must beat in #13, and the interface says plainly
+that its thresholds are not yet calibrated — #12 fits them to Gold Days.
+
+It predicts Significant Wave Height, not Face Height. The canyon's famous threefold
+amplification applies to the wave a surfer rides; multiplying the instrument's measure
+by a face-height factor would produce a confident, plausible, wrong number.
 
 The range is nine days rather than sixteen because that is where the provider stops
 modelling swell. It pads its time axis to whatever is requested and nulls the hours it

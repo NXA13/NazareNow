@@ -19,6 +19,68 @@ import { server } from './test/server';
 const QUIET = forecast.days[0]!;
 const BIG = forecast.days[1]!;
 
+describe('calls', () => {
+  it('shows each status distinguishably', async () => {
+    // Three days carrying three different statuses. Asserting the rendered class rather
+    // than calling a helper: the agreed seam is what a user sees.
+    render(<ForecastRange />);
+
+    const badges = await Promise.all(
+      forecast.days.map((day) => screen.findByTestId(`call-${day.date}`)),
+    );
+
+    expect(badges.map((b) => b.className)).toEqual([
+      'call call-none',
+      'call call-go',
+      'call call-watch',
+    ]);
+    expect(new Set(badges.map((b) => b.textContent)).size).toBe(3);
+  });
+
+  it('explains why a day got its call, and how far ahead', async () => {
+    render(<ForecastRange />);
+
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
+    const note = await screen.findByRole('note');
+
+    for (const reason of BIG.call.reasons) {
+      expect(note).toHaveTextContent(reason);
+    }
+    expect(note).toHaveTextContent(`${BIG.call.lead_time_days} days ahead`);
+  });
+
+  it('shows the predicted wave height and says it is not the face height', async () => {
+    // CONTEXT.md calls this distinction load-bearing: the canyon's amplification applies
+    // to the face a surfer rides, not to the instrument's measure of the sea.
+    render(<ForecastRange />);
+
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
+    const note = await screen.findByRole('note');
+
+    expect(note).toHaveTextContent(String(BIG.call.predicted_significant_wave_height.value));
+    expect(note).toHaveTextContent(/not the height of the wave face/i);
+  });
+
+  it('warns that the thresholds are not calibrated', async () => {
+    render(<ForecastRange />);
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/rule of thumb/i);
+  });
+
+  it('drops the warning once the model is calibrated', async () => {
+    server.use(
+      http.get('*/api/conditions/forecast', () =>
+        HttpResponse.json({ ...forecast, calibrated: true }),
+      ),
+    );
+
+    render(<ForecastRange />);
+
+    await screen.findByTestId(`call-${BIG.date}`);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+});
+
 describe('the forecast range', () => {
   it('marks the standout day so the overview can be scanned, not read', async () => {
     // Asserted through the rendered class, not by calling the helper: the agreed seam

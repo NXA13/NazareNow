@@ -8,6 +8,7 @@ the store, which this API serves. Nothing here should ever grow a network call o
 from __future__ import annotations
 
 import os
+from datetime import date as date_module
 from functools import lru_cache
 from typing import Annotated, Any
 
@@ -16,7 +17,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from nazarenow.decision import Call, Status, decide
+from nazarenow.models import HeuristicBaseline
 from nazarenow.store import Store, StoreUnavailable
+
+# The active Amplification Model. ADR 0006 keeps the Heuristic Baseline permanently;
+# ticket #13 swaps a learned model in behind the same interface without anything below
+# this line changing.
+MODEL = HeuristicBaseline()
 
 app = FastAPI(
     title="NazareNow",
@@ -121,8 +129,19 @@ class ForecastHour(BaseModel):
     wind_direction: Reading
 
 
+class DayCall(BaseModel):
+    status: Status
+    lead_time_days: int
+    """Days from the day this forecast was fetched. A Go Call is only worth anything if
+    it arrives while flights are still bookable, so the number travels with the call."""
+
+    reasons: list[str]
+    predicted_significant_wave_height: Reading
+
+
 class ForecastDay(BaseModel):
     date: str
+    call: DayCall
 
     peak_swell_height: Reading
     """The day's largest swell, which is what decides whether it is worth travelling for."""
@@ -145,15 +164,39 @@ class ForecastDay(BaseModel):
 
 class Forecast(BaseModel):
     fetched_at: str
+    model: str
+    calibrated: bool
+    """False while thresholds are the surf community's rule of thumb rather than values
+    fitted to Gold Days. Ticket #12 changes that; until then the interface must not imply
+    a precision the numbers do not have."""
+
     days: list[ForecastDay]
 
 
-def summarise(date: str, hours: list[dict[str, Any]]) -> ForecastDay:
-    """Reduce a day's hours to the figures a user scans the overview for."""
+def summarise(date: str, hours: list[dict[str, Any]], lead_time_days: int) -> ForecastDay:
+    """Reduce a day's hours to the figures a user scans the overview for, plus its call.
+
+    The call is judged on the peak hour: the question is whether the day is worth
+    travelling for, and a day is worth travelling for if its best hours are.
+    """
     peak = max(hours, key=lambda hour: hour["readings"]["swell_height"]["value"])
     longest = max(hours, key=lambda hour: hour["readings"]["swell_period"]["value"])
+
+    call: Call = decide(
+        MODEL.predict({name: value["value"] for name, value in peak["readings"].items()}),
+        lead_time_days,
+    )
+
     return ForecastDay(
         date=date,
+        call=DayCall(
+            status=call.status,
+            lead_time_days=call.lead_time_days,
+            reasons=list(call.reasons),
+            predicted_significant_wave_height=Reading(
+                value=call.predicted_significant_wave_height, unit=call.unit
+            ),
+        ),
         peak_swell_height=Reading(**peak["readings"]["swell_height"]),
         swell_period_at_peak=Reading(**peak["readings"]["swell_period"]),
         swell_direction_at_peak=Reading(**peak["readings"]["swell_direction"]),
@@ -181,9 +224,20 @@ def forecast(store: Annotated[Store, Depends(get_store)]) -> Forecast:
     for hour in hours:
         by_date.setdefault(hour["at"][:10], []).append(hour)
 
+    # Lead Time is measured from the first day the forecast covers, which is the day it
+    # was fetched. Deriving it from the data rather than the wall clock keeps the API
+    # deterministic for a given store.
+    dates = sorted(by_date)
+    first = date_module.fromisoformat(dates[0])
+
     return Forecast(
         fetched_at=hours[0]["fetched_at"],
-        days=[summarise(date, by_date[date]) for date in sorted(by_date)],
+        model=MODEL.name,
+        calibrated=MODEL.calibrated,
+        days=[
+            summarise(day, by_date[day], (date_module.fromisoformat(day) - first).days)
+            for day in dates
+        ],
     )
 
 

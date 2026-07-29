@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { fetchForecast, type Forecast, type ForecastDay } from './api';
+import { fetchForecast, type CallStatus, type Forecast, type ForecastDay } from './api';
 import { compassPoint, formatTimestamp, formatValue } from './format';
 
 type LoadState =
@@ -18,6 +18,21 @@ type LoadState =
  * Comparing each day with the largest day shown needs no domain knowledge and always
  * distinguishes the standout day, whether the week peaks at 1.2m or at 12m.
  */
+/** What each status says, in the fewest words that are still honest. */
+const CALL_LABELS: Record<CallStatus, string> = {
+  confirmed: 'Confirmed',
+  go: 'Go',
+  watch: 'Watch',
+  none: 'No call',
+};
+
+const CALL_MEANINGS: Record<CallStatus, string> = {
+  confirmed: 'It is happening. For anyone already travelling.',
+  go: 'Worth booking. The forecast has converged and every condition holds.',
+  watch: 'Something may be forming. Start watching flights, do not book yet.',
+  none: 'Not a day to travel for.',
+};
+
 export type Prominence = 'leading' | 'notable' | 'ordinary';
 
 function prominence(value: number, largest: number): Prominence {
@@ -67,6 +82,9 @@ function DaySummary({
     >
       <span className="day-date" data-testid={`day-label-${day.date}`}>
         {dayLabel(day.date)}
+      </span>
+      <span className={`call call-${day.call.status}`} data-testid={`call-${day.date}`}>
+        {CALL_LABELS[day.call.status]}
       </span>
       <span className="day-swell">
         <span className="value">{formatValue(day.peak_swell_height.value)}</span>
@@ -173,9 +191,40 @@ export function ForecastRange() {
       </div>
 
       {open ? (
-        <HourTable day={open} />
+        <>
+          <div className="call-detail" role="note" aria-label={`Why ${dayLabel(open.date)}`}>
+            <p>
+              <strong>{CALL_LABELS[open.call.status]}</strong> — {CALL_MEANINGS[open.call.status]}
+              {open.call.status !== 'none' && <> Issued {open.call.lead_time_days} days ahead.</>}
+            </p>
+            <ul>
+              {open.call.reasons.map((reason) => (
+                <li key={reason}>{reason}</li>
+              ))}
+            </ul>
+            <p className="provenance">
+              Predicted significant wave height{' '}
+              <strong>
+                {formatValue(open.call.predicted_significant_wave_height.value)}
+                {open.call.predicted_significant_wave_height.unit}
+              </strong>
+              . That is the instrument's measure of the sea, not the height of the wave face a
+              surfer rides — the canyon makes the face far larger, and this system does not yet
+              predict it.
+            </p>
+          </div>
+          <HourTable day={open} />
+        </>
       ) : (
         <p className="hint">Select a day to see how it develops hour by hour.</p>
+      )}
+
+      {!state.forecast.calibrated && (
+        <p role="status" className="alert">
+          These calls come from the surf community's rule of thumb, not from thresholds fitted to
+          days Nazaré is known to have gone giant. Treat them as a starting point rather than a
+          forecast.
+        </p>
       )}
 
       <p className="provenance">

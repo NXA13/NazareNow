@@ -280,3 +280,54 @@ footer p {
   background: #e6f2f7;
   box-shadow: inset 0 0 0 1px var(--accent);
 }
+
+/* --- calls ---------------------------------------------------------------- */
+
+.call {
+  align-self: flex-start;
+  border-radius: 0.25rem;
+  padding: 0.05rem 0.35rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.call-none {
+  background: #eef2f4;
+  color: var(--muted);
+}
+
+.call-watch {
+  background: #fdf0d5;
+  color: #7a5410;
+}
+
+.call-go {
+  background: #b5471f;
+  color: #fff;
+}
+
+.call-confirmed {
+  background: #0b5d7a;
+  color: #fff;
+}
+
+.call-detail {
+  margin-top: 1rem;
+  padding: 0.9rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+}
+
+.call-detail p {
+  margin: 0 0 0.5rem;
+}
+
+.call-detail ul {
+  margin: 0 0 0.5rem;
+  padding-left: 1.1rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}

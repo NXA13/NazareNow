@@ -12,7 +12,7 @@
 
 import { http, HttpResponse } from 'msw';
 
-import type { CurrentConditions, Forecast } from '../api';
+import type { CallStatus, CurrentConditions, Forecast } from '../api';
 
 export const currentConditions: CurrentConditions = {
   observed_at: '2026-02-13T09:00',
@@ -73,12 +73,25 @@ function hoursFor(date: string, peak: number, longestPeriod: number, direction: 
 }
 
 /** A day whose summary is derived from its own hours, so the two cannot contradict. */
-function dayFrom(date: string, peak: number, longestPeriod: number, direction: number) {
+function dayFrom(
+  date: string,
+  peak: number,
+  longestPeriod: number,
+  direction: number,
+  call: CallStatus = 'none',
+  leadTime = 0,
+) {
   const hours = hoursFor(date, peak, longestPeriod, direction);
   const peakHour = hours.reduce((a, b) => (b.swell_height.value > a.swell_height.value ? b : a));
   const longestHour = hours.reduce((a, b) => (b.swell_period.value > a.swell_period.value ? b : a));
   return {
     date,
+    call: {
+      status: call,
+      lead_time_days: leadTime,
+      reasons: [`swell period ${peakHour.swell_period.value}s`, 'wind is offshore and light'],
+      predicted_significant_wave_height: peakHour.swell_height,
+    },
     peak_swell_height: peakHour.swell_height,
     swell_period_at_peak: peakHour.swell_period,
     swell_direction_at_peak: peakHour.swell_direction,
@@ -91,12 +104,14 @@ function dayFrom(date: string, peak: number, longestPeriod: number, direction: n
  * rather than hidden, and that height, period and direction stay separate. */
 export const forecast: Forecast = {
   fetched_at: '2026-02-11T09:04:11.221000+00:00',
+  model: 'heuristic-baseline',
+  calibrated: false,
   days: [
-    dayFrom('2026-02-12', 1.4, 8, 250),
+    dayFrom('2026-02-12', 1.4, 8, 250, 'none', 0),
     // Base chosen so the peak hour (15:00, +75 degrees) lands on 298 = WNW, which the
     // tests assert as a literal rather than recomputing it with compassPoint.
-    dayFrom('2026-02-13', 8.1, 17, 223),
-    dayFrom('2026-02-14', 5.7, 12, 280),
+    dayFrom('2026-02-13', 8.1, 17, 223, 'go', 4),
+    dayFrom('2026-02-14', 5.7, 12, 280, 'watch', 9),
   ],
 };
 
