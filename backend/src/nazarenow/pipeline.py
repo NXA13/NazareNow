@@ -119,10 +119,10 @@ def run_pipeline(store: Store, client: httpx.Client, sleep=time.sleep) -> None:
             f"{MINIMUM_FORECAST_HOURS} a real run produces; keeping the previous forecast"
         )
 
-    store.record_conditions(
+    store.record_run(
         observed_at=earliest(marine_body["current"]["time"], weather_body["current"]["time"]),
         latitude=marine_body["latitude"],
         longitude=marine_body["longitude"],
         readings=readings,
+        hours=hours,
     )
-    store.replace_forecast(hours)

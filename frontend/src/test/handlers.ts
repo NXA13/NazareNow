@@ -31,19 +31,27 @@ export const currentConditions: CurrentConditions = {
   wind_direction: { value: 115, unit: '°' },
 };
 
+/**
+ * Every hour differs from every other, in every column the table renders.
+ *
+ * A fixture of 24 identical hours cannot tell a table that renders each hour from one
+ * that renders hour zero 24 times — freezing the swell, period, direction and wind
+ * cells all passed. That is the fifth degenerate fixture on this branch, and the first
+ * on this side of the seam.
+ */
 function hoursFor(date: string, swell: number, period: number, direction: number) {
   return Array.from({ length: 24 }, (_, hour) => ({
     at: `${date}T${String(hour).padStart(2, '0')}:00`,
-    swell_height: { value: swell, unit: 'm' },
-    swell_period: { value: period, unit: 's' },
-    swell_direction: { value: direction, unit: '°' },
-    significant_wave_height: { value: swell + 0.3, unit: 'm' },
-    wave_period: { value: period, unit: 's' },
-    wave_direction: { value: direction, unit: '°' },
-    water_temperature: { value: 15.2, unit: '°C' },
-    air_temperature: { value: 13.4, unit: '°C' },
-    wind_speed: { value: 11, unit: 'km/h' },
-    wind_direction: { value: 115, unit: '°' },
+    swell_height: { value: Number((swell + hour * 0.11).toFixed(2)), unit: 'm' },
+    swell_period: { value: Number((period + hour * 0.13).toFixed(2)), unit: 's' },
+    swell_direction: { value: direction + hour, unit: '°' },
+    significant_wave_height: { value: Number((swell + 0.3 + hour * 0.07).toFixed(2)), unit: 'm' },
+    wave_period: { value: Number((period + hour * 0.09).toFixed(2)), unit: 's' },
+    wave_direction: { value: direction + hour * 2, unit: '°' },
+    water_temperature: { value: Number((15.2 + hour * 0.01).toFixed(2)), unit: '°C' },
+    air_temperature: { value: Number((13.4 + hour * 0.02).toFixed(2)), unit: '°C' },
+    wind_speed: { value: Number((11 + hour * 0.3).toFixed(2)), unit: 'km/h' },
+    wind_direction: { value: 115 + hour * 3, unit: '°' },
   }));
 }
 
@@ -70,7 +78,9 @@ export const forecast: Forecast = {
     },
     {
       date: '2026-02-14',
-      peak_swell_height: { value: 3.5, unit: 'm' },
+      // 5.7 of a 8.1 peak is 70% — deliberately inside the middle tier, so a test can
+      // prove that tier exists rather than only its two extremes.
+      peak_swell_height: { value: 5.7, unit: 'm' },
       swell_period_at_peak: { value: 12, unit: 's' },
       swell_direction_at_peak: { value: 280, unit: '°' },
       longest_swell_period: { value: 14, unit: 's' },

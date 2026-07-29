@@ -159,13 +159,6 @@ footer p {
   border-color: var(--accent);
 }
 
-.day.selected {
-  border-color: var(--accent);
-  border-left-width: 3px;
-  border-left-color: var(--accent);
-  background: #f0f7fa;
-}
-
 .day-date {
   font-size: 0.75rem;
   text-transform: uppercase;

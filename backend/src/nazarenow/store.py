@@ -231,6 +231,36 @@ class Store:
             for row in rows
         ]
 
+    def record_run(
+        self,
+        observed_at: str,
+        latitude: float,
+        longitude: float,
+        readings: dict[str, dict[str, Any]],
+        hours: list[dict[str, Any]],
+    ) -> None:
+        """Store a Pipeline Run's conditions and forecast together, or not at all.
+
+        Two separate commits meant a fault between them advanced the current conditions
+        while the forecast stayed behind — the half-updated picture the pipeline's own
+        docstring promises never happens. Validating earlier did not fix that; only one
+        transaction does.
+        """
+        connection = self._connect()
+        stamp = now()
+        with connection:
+            connection.execute(
+                "INSERT INTO offshore_conditions "
+                "(observed_at, fetched_at, latitude, longitude, readings) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (observed_at, stamp, latitude, longitude, json.dumps(readings)),
+            )
+            connection.execute("DELETE FROM forecast_hour")
+            connection.executemany(
+                "INSERT INTO forecast_hour (valid_at, fetched_at, readings) VALUES (?, ?, ?)",
+                [(hour["at"], stamp, json.dumps(hour["readings"])) for hour in hours],
+            )
+
     def latest_conditions(self) -> dict[str, Any] | None:
         """The most recently ingested Offshore Conditions, or None if the store is empty.
 

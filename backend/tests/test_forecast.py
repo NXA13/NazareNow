@@ -6,6 +6,8 @@ executed, the result read back through the API.
 
 from __future__ import annotations
 
+import sqlite3
+
 import httpx
 import pytest
 
@@ -371,3 +373,40 @@ def test_the_fixture_can_tell_the_summary_apart_from_a_wrong_hour() -> None:
     assert len(set(hours.values())) == 3, f"two quantities peak at the same hour: {hours}"
     assert 0 not in hours.values(), f"a quantity peaks at hour zero: {hours}"
     assert 23 not in hours.values(), f"a quantity peaks at the last hour: {hours}"
+
+    # Distinct argmax hours are only a proxy. `summarise` reads period and direction at
+    # the *peak-height* hour, so what actually has to hold is that the value it reads
+    # there appears nowhere else in the day — otherwise reading some other hour returns
+    # the same number and no assertion can tell. Collapsing the period at hour 8 to the
+    # day's baseline satisfies the argmax check while hollowing out the summary tests.
+    read_hour = hours["height"]
+    for variable in ("swell_wave_period", "swell_wave_direction"):
+        values = [hourly[variable][i] for i in peak_day]
+        assert values.count(values[read_hour]) == 1, (
+            f"{variable} at the hour summarise reads ({read_hour}:00) is not unique in "
+            f"the day, so reading the wrong hour would be undetectable"
+        )
+
+
+def test_a_failure_partway_through_a_write_leaves_nothing_changed(store, client) -> None:
+    """Conditions and forecast are written in one transaction, or not at all.
+
+    They used to be two commits, so a fault between them advanced the current conditions
+    while the forecast stayed behind — the half-updated picture the pipeline's docstring
+    promises never happens. Moving validation earlier did not fix that; only sharing a
+    transaction does. A repeated timestamp makes SQLite reject the second insert, which
+    must roll back the first.
+    """
+    ingest(store, forecasting_provider())
+    conditions_before = client.get("/api/conditions/current").json()
+    forecast_before = client.get("/api/conditions/forecast").json()
+
+    doomed = [
+        {"at": "2026-03-01T00:00", "readings": forecast_before["days"][0]["hours"][0]},
+        {"at": "2026-03-01T00:00", "readings": forecast_before["days"][0]["hours"][0]},
+    ]
+    with pytest.raises(sqlite3.IntegrityError):
+        store.record_run("2026-03-01T00:00", 1.0, 2.0, {"nonsense": {}}, doomed)
+
+    assert client.get("/api/conditions/current").json() == conditions_before
+    assert client.get("/api/conditions/forecast").json() == forecast_before
