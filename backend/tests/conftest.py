@@ -10,9 +10,16 @@ convenient `requests.get` inside an endpoint, this fails immediately rather than
 producing a suite that quietly depends on the network being up.
 """
 
+from __future__ import annotations
+
 import socket
+from collections.abc import Iterator
 
 import pytest
+from fastapi.testclient import TestClient
+
+from nazarenow.api import app, get_store
+from nazarenow.store import Store
 
 _real_socket_connect = socket.socket.connect
 
@@ -34,3 +41,28 @@ def block_outbound_network(monkeypatch: pytest.MonkeyPatch) -> None:
         return _real_socket_connect(self, address)
 
     monkeypatch.setattr(socket.socket, "connect", guarded_connect)
+
+
+@pytest.fixture
+def store(tmp_path) -> Iterator[Store]:
+    """A temporary store, closed afterwards.
+
+    Windows holds a file lock while any connection is open, which leaves pytest unable
+    to clean up its temporary directories.
+    """
+    store = Store(tmp_path / "test.db")
+    yield store
+    store.close()
+
+
+@pytest.fixture
+def client(store: Store) -> Iterator[TestClient]:
+    """A client bound to a temporary store.
+
+    Every test goes through this rather than constructing `TestClient(app)` directly.
+    A bare client falls through to the real configured database, so the suite would
+    read whatever the developer last ingested — passing or failing on machine state.
+    """
+    app.dependency_overrides[get_store] = lambda: store
+    yield TestClient(app)
+    app.dependency_overrides.clear()

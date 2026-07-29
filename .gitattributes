@@ -1,0 +1,9 @@
+# Normalise line endings so Windows checkouts do not show every file as modified.
+# Stored as LF in the repository; Git converts on checkout where the platform wants it.
+* text=auto eol=lf
+
+# Binary, never converted.
+*.png binary
+*.jpg binary
+*.nc  binary
+*.db  binary

@@ -67,7 +67,22 @@ python -m venv .venv
 cd frontend && npm install && cd ..
 ```
 
-Two processes, in separate terminals:
+Fetch some conditions before starting anything — the API has nothing to serve until a
+Pipeline Run has stored something, and says so with a 503 rather than inventing zeros:
+
+```bash
+.venv/Scripts/python.exe -m nazarenow ingest
+```
+
+That contacts Open-Meteo, keeps the raw responses, and writes the parsed readings to
+`data/nazarenow.db` at the repository root. The path is anchored to the repository
+rather than the working directory, so ingesting and serving cannot end up on different
+databases — they did, and the API reported no conditions while holding a good row.
+
+Per ADR 0005 this is the only part of the system that talks to a third party; ticket #7
+puts it on a schedule.
+
+Then two processes, in separate terminals:
 
 ```bash
 # Backend on http://127.0.0.1:8000
@@ -115,6 +130,22 @@ downloaded data, so CI checks them statically:
 .venv/Scripts/python.exe -m ruff format --check analysis/
 ```
 
+### Known gaps
+
+**Mobile layout has no automated protection.** jsdom has no layout engine, so the
+frontend suite cannot measure it. It was verified by hand at 320, 360 and 390px — all
+ten readings render, no horizontal overflow, and the grid reflows from two columns to
+one at the narrowest. The CSS uses only fluid units, but nothing stops a regression;
+a browser-driven test would close this.
+
+**The site shows more than ticket #4 asked for.** The ticket enumerates seven readings;
+ten are displayed, adding significant wave height, wave period and wave direction under
+a *Combined sea* heading. Significant Wave Height is the Proxy Target the whole project
+is built on (ADR 0002), so showing it seemed worth the deviation — but it is a
+deviation, recorded here rather than left for a reader to notice. The footer also states
+that wind and air temperature come from a different forecast cell than the swell
+readings, which the ticket did not ask for but which would otherwise be misleading.
+
 ### No test contacts a third-party service
 
 This is enforced rather than asserted, in both suites:
@@ -134,7 +165,8 @@ This is enforced rather than asserted, in both suites:
 
 ## Status
 
-In design. No implementation yet.
+Early. Current Offshore Conditions are ingested from Open-Meteo, stored, and displayed.
+No forecasting, no model, and no Watch or Go Calls yet — those are tickets #5 onward.
 
 ## Acknowledgements
 
