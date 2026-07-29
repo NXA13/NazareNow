@@ -186,35 +186,6 @@ class Store:
         )
         connection.commit()
 
-    def record_conditions(
-        self,
-        observed_at: str,
-        latitude: float,
-        longitude: float,
-        readings: dict[str, dict[str, Any]],
-    ) -> None:
-        connection = self._connect()
-        connection.execute(
-            "INSERT INTO offshore_conditions "
-            "(observed_at, fetched_at, latitude, longitude, readings) VALUES (?, ?, ?, ?, ?)",
-            (observed_at, now(), latitude, longitude, json.dumps(readings)),
-        )
-        connection.commit()
-
-    def forecast(self) -> list[dict[str, Any]]:
-        """Every stored forecast hour, earliest first."""
-        rows = self._connect().execute(
-            "SELECT valid_at, fetched_at, readings FROM forecast_hour ORDER BY valid_at"
-        )
-        return [
-            {
-                "at": row["valid_at"],
-                "fetched_at": row["fetched_at"],
-                "readings": json.loads(row["readings"]),
-            }
-            for row in rows
-        ]
-
     def record_run(
         self,
         observed_at: str,
@@ -233,17 +204,36 @@ class Store:
         connection = self._connect()
         stamp = now()
         with connection:
+            # Forecast first, conditions last. With conditions first, whichever write
+            # failed the other had not happened yet, so neither failure direction
+            # actually exercised the rollback. This way a failing forecast insert must
+            # undo the DELETE, and a failing conditions insert must undo the whole
+            # forecast replacement.
+            connection.execute("DELETE FROM forecast_hour")
+            connection.executemany(
+                "INSERT INTO forecast_hour (valid_at, fetched_at, readings) VALUES (?, ?, ?)",
+                [(hour["at"], stamp, json.dumps(hour["readings"])) for hour in hours],
+            )
             connection.execute(
                 "INSERT INTO offshore_conditions "
                 "(observed_at, fetched_at, latitude, longitude, readings) "
                 "VALUES (?, ?, ?, ?, ?)",
                 (observed_at, stamp, latitude, longitude, json.dumps(readings)),
             )
-            connection.execute("DELETE FROM forecast_hour")
-            connection.executemany(
-                "INSERT INTO forecast_hour (valid_at, fetched_at, readings) VALUES (?, ?, ?)",
-                [(hour["at"], stamp, json.dumps(hour["readings"])) for hour in hours],
-            )
+
+    def forecast(self) -> list[dict[str, Any]]:
+        """Every stored forecast hour, earliest first."""
+        rows = self._connect().execute(
+            "SELECT valid_at, fetched_at, readings FROM forecast_hour ORDER BY valid_at"
+        )
+        return [
+            {
+                "at": row["valid_at"],
+                "fetched_at": row["fetched_at"],
+                "readings": json.loads(row["readings"]),
+            }
+            for row in rows
+        ]
 
     def latest_conditions(self) -> dict[str, Any] | None:
         """The most recently ingested Offshore Conditions, or None if the store is empty.

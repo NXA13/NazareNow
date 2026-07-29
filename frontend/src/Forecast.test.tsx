@@ -6,7 +6,7 @@
  * static copy — a mistake this suite has shipped twice.
  */
 
-import { render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
@@ -82,6 +82,9 @@ describe('the forecast range', () => {
 
     // Both the caption and the Time column say UTC; either alone would do.
     expect(within(table).getAllByText(/UTC/).length).toBeGreaterThan(0);
+    // The caption carries the same readable date as the tile; the raw ISO form survived.
+    expect(table.querySelector('caption')?.textContent).toMatch(/[A-Za-z]{3}/);
+    expect(table.querySelector('caption')?.textContent).not.toContain(BIG.date);
     const times = within(table)
       .getAllByRole('row')
       .slice(1)
@@ -211,6 +214,9 @@ describe('the forecast range', () => {
     expect(new Set(labels).size).toBe(forecast.days.length);
     for (const [index, label] of labels.entries()) {
       expect(label).not.toContain(forecast.days[index]!.date);
+      // A month name, not just digits. Requiring only distinctness let "13" and
+      // "20260213" pass a test whose name promises a readable date.
+      expect(label).toMatch(/[A-Za-z]{3}/);
       expect(label).toMatch(/\d/);
     }
     expect(labels[1]).toMatch(/13/);
@@ -219,9 +225,20 @@ describe('the forecast range', () => {
   it('says how many days the forecast covers', async () => {
     render(<ForecastRange />);
 
-    // The literal, not forecast.days.length — deriving the expectation from the same
-    // fixture made hardcoding the heading pass.
+    // Two forecasts of different lengths. With one fixture, a heading hardcoded to
+    // "The next 3 days" passed whether the expectation was a literal or derived — the
+    // fixture was what made it blind, not the expectation.
     expect(await screen.findByRole('heading', { name: 'The next 3 days' })).toBeInTheDocument();
+
+    server.use(
+      http.get('*/api/conditions/forecast', () =>
+        HttpResponse.json({ ...forecast, days: forecast.days.slice(0, 2) }),
+      ),
+    );
+    cleanup();
+    render(<ForecastRange />);
+
+    expect(await screen.findByRole('heading', { name: 'The next 2 days' })).toBeInTheDocument();
   });
 
   it('tells the user when the forecast cannot be loaded', async () => {

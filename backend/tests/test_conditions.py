@@ -529,7 +529,7 @@ def test_a_path_containing_uri_syntax_still_opens_read_only(tmp_path) -> None:
     target = awkward / "nazarenow.db"
 
     writer = Store(target)
-    writer.record_conditions("2026-02-13T09:00", 39.5, -9.2, {})
+    writer.record_run("2026-02-13T09:00", 39.5, -9.2, {}, [])
     writer.close()
 
     reader = Store(target, create=False)

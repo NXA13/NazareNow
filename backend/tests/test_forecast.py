@@ -75,7 +75,14 @@ def marine_with_hourly() -> dict:
             # Swell meant a summary reading the wrong family returned identical numbers,
             # so nothing could tell them apart — the one distinction CLAUDE.md calls
             # load-bearing.
-            "wave_height": [round(h + 0.3, 2) for h in heights],
+            # Its own peak hour, not swell + a constant. A constant offset preserves the
+            # argmax, so selecting the peak hour by Combined Sea picked the same hour and
+            # nothing could tell — on real data the two families peak apart on a third of
+            # days. This is the same hazard the wave_period comment below describes; it
+            # was applied there and missed here.
+            "wave_height": [
+                round(h + (2.5 if i % 24 == 17 else 0.3), 2) for i, h in enumerate(heights)
+            ],
             # Not a monotonic shift of the swell period: adding a constant preserves the
             # argmax, so `longest` computed over the wrong family picked the same hour
             # and returned the same value. Combined Sea peaks at its own hour.
@@ -398,6 +405,13 @@ def test_the_fixture_can_tell_the_summary_apart_from_a_wrong_hour() -> None:
         assert swell != sea, (
             f"{swell_variable} and {sea_variable} hold the same values, so a summary "
             f"reading Combined Sea where it should read Swell is undetectable"
+        )
+        # Differing values are not enough. `summarise` selects an hour by maximum, and a
+        # constant offset leaves the maximum in the same place — so the two families must
+        # peak at different hours, not merely hold different numbers.
+        assert swell.index(max(swell)) != sea.index(max(sea)), (
+            f"{swell_variable} and {sea_variable} peak at the same hour, so selecting "
+            f"that hour by the wrong family is undetectable"
         )
 
     read_hour = hours["height"]
