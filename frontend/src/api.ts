@@ -38,6 +38,36 @@ export interface CurrentConditions {
   wind_direction: Reading;
 }
 
+export interface ForecastHour extends Omit<
+  CurrentConditions,
+  'observed_at' | 'fetched_at' | 'latitude' | 'longitude'
+> {
+  at: string;
+}
+
+export interface ForecastDay {
+  date: string;
+  /** Height, period and direction are summarised separately and never collapsed into a
+   * single size figure — a short-period 8m sea and an 8m groundswell are different days. */
+  peak_swell_height: Reading;
+  peak_swell_period: Reading;
+  dominant_swell_direction: Reading;
+  hours: ForecastHour[];
+}
+
+export interface Forecast {
+  fetched_at: string;
+  days: ForecastDay[];
+}
+
+export async function fetchForecast(): Promise<Forecast> {
+  const response = await fetch(`${API_BASE}/api/conditions/forecast`);
+  if (!response.ok) {
+    throw new Error(`Forecast request failed with status ${response.status}`);
+  }
+  return (await response.json()) as Forecast;
+}
+
 export async function fetchCurrentConditions(): Promise<CurrentConditions> {
   const response = await fetch(`${API_BASE}/api/conditions/current`);
   if (!response.ok) {

@@ -51,6 +51,10 @@ WEATHER_READINGS = {
 MARINE_VARIABLES = sorted(set(MARINE_READINGS.values()))
 WEATHER_VARIABLES = sorted(set(WEATHER_READINGS.values()))
 
+# The provider returns sixteen days of hourly data in the same response as the current
+# conditions, so the forecast range costs no additional requests against a free API.
+FORECAST_DAYS = 16
+
 MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = 2.0
 # However long a provider asks us to wait, a Pipeline Run must still finish. An unbounded
@@ -69,6 +73,8 @@ class OpenMeteoResponse(BaseModel):
     longitude: float
     current_units: dict[str, str]
     current: dict[str, Any]
+    hourly_units: dict[str, str]
+    hourly: dict[str, list[Any]]
 
 
 def is_rate_limited(response: httpx.Response) -> bool:
@@ -130,6 +136,37 @@ def validate(body: dict[str, Any], variables: list[str]) -> None:
     if without_units:
         raise ValueError(f"Open-Meteo response is missing units for: {without_units}")
 
+    validate_hourly(parsed, variables)
+
+
+def validate_hourly(parsed: OpenMeteoResponse, variables: list[str]) -> None:
+    """The hourly block must carry every variable, with units, all the same length.
+
+    Length matters more than it looks: a short array does not raise, it silently
+    truncates the forecast or misaligns every reading against the wrong hour. That reads
+    as data rather than as a fault, which is this project's characteristic failure.
+    """
+    if "time" not in parsed.hourly:
+        raise ValueError("Open-Meteo hourly block has no time axis")
+
+    missing = [name for name in variables if name not in parsed.hourly]
+    if missing:
+        raise ValueError(f"Open-Meteo hourly block is missing variables: {missing}")
+
+    without_units = [name for name in variables if name not in parsed.hourly_units]
+    if without_units:
+        raise ValueError(f"Open-Meteo hourly block is missing units for: {without_units}")
+
+    expected = len(parsed.hourly["time"])
+    wrong = {
+        name: len(parsed.hourly[name]) for name in variables if len(parsed.hourly[name]) != expected
+    }
+    if wrong:
+        raise ValueError(
+            f"Open-Meteo hourly arrays disagree in length with the time axis "
+            f"({expected} hours): {wrong}"
+        )
+
 
 def fetch(
     client: httpx.Client, url: str, variables: list[str], sleep=time.sleep
@@ -144,6 +181,8 @@ def fetch(
         "latitude": LATITUDE,
         "longitude": LONGITUDE,
         "current": ",".join(variables),
+        "hourly": ",".join(variables),
+        "forecast_days": FORECAST_DAYS,
         "timezone": "UTC",
     }
 

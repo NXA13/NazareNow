@@ -133,10 +133,10 @@ downloaded data, so CI checks them statically:
 ### Known gaps
 
 **Mobile layout has no automated protection.** jsdom has no layout engine, so the
-frontend suite cannot measure it. It was verified by hand at 320, 360 and 390px — all
-ten readings render, no horizontal overflow, and the grid reflows from two columns to
-one at the narrowest. The CSS uses only fluid units, but nothing stops a regression;
-a browser-driven test would close this.
+frontend suite cannot measure it. It was verified by hand at 320, 360 and 390px — every
+reading and all nine forecast days render, the page never scrolls horizontally, and the
+hourly table scrolls inside its own box rather than the page. The CSS uses only fluid
+units, but nothing stops a regression; a browser-driven test would close this.
 
 **The site shows more than ticket #4 asked for.** The ticket enumerates seven readings;
 ten are displayed, adding significant wave height, wave period and wave direction under
@@ -165,8 +165,14 @@ This is enforced rather than asserted, in both suites:
 
 ## Status
 
-Early. Current Offshore Conditions are ingested from Open-Meteo, stored, and displayed.
-No forecasting, no model, and no Watch or Go Calls yet — those are tickets #5 onward.
+Early. Current Offshore Conditions and a nine-day forecast range are ingested from
+Open-Meteo, stored, and displayed, with hour-by-hour detail for any day. No model and no
+Watch or Go Calls yet — those are tickets #6 onward.
+
+The range is nine days rather than sixteen because that is where the provider stops
+modelling swell. It pads its time axis to whatever is requested and nulls the hours it
+cannot fill; those hours are dropped rather than stored, since a null has no honest
+rendering and a zero would draw a flat calm sea.
 
 ## Acknowledgements
 

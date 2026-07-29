@@ -50,6 +50,12 @@ CREATE TABLE IF NOT EXISTS offshore_conditions (
     readings    TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS forecast_hour (
+    valid_at    TEXT PRIMARY KEY,
+    fetched_at  TEXT NOT NULL,
+    readings    TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS offshore_conditions_observed_at
     ON offshore_conditions (observed_at DESC);
 """
@@ -125,6 +131,7 @@ class Store:
             "SELECT observed_at, fetched_at, latitude, longitude, readings "
             "FROM offshore_conditions LIMIT 0",
             "SELECT source, url, fetched_at, body FROM raw_response LIMIT 0",
+            "SELECT valid_at, fetched_at, readings FROM forecast_hour LIMIT 0",
         )
         try:
             for probe in probes:
@@ -193,6 +200,36 @@ class Store:
             (observed_at, now(), latitude, longitude, json.dumps(readings)),
         )
         connection.commit()
+
+    def replace_forecast(self, hours: list[dict[str, Any]]) -> None:
+        """Store the forecast, discarding whatever the previous run left.
+
+        A forecast supersedes rather than accumulates: keeping both would leave the API
+        serving two answers for the same hour, and the older one is simply wrong.
+        Written in one transaction so a failure cannot leave the range half-replaced.
+        """
+        connection = self._connect()
+        stamp = now()
+        with connection:
+            connection.execute("DELETE FROM forecast_hour")
+            connection.executemany(
+                "INSERT INTO forecast_hour (valid_at, fetched_at, readings) VALUES (?, ?, ?)",
+                [(hour["at"], stamp, json.dumps(hour["readings"])) for hour in hours],
+            )
+
+    def forecast(self) -> list[dict[str, Any]]:
+        """Every stored forecast hour, earliest first."""
+        rows = self._connect().execute(
+            "SELECT valid_at, fetched_at, readings FROM forecast_hour ORDER BY valid_at"
+        )
+        return [
+            {
+                "at": row["valid_at"],
+                "fetched_at": row["fetched_at"],
+                "readings": json.loads(row["readings"]),
+            }
+            for row in rows
+        ]
 
     def latest_conditions(self) -> dict[str, Any] | None:
         """The most recently ingested Offshore Conditions, or None if the store is empty.

@@ -36,6 +36,49 @@ def collect(body: dict[str, Any], mapping: dict[str, str]) -> dict[str, dict[str
     }
 
 
+def collect_hourly(
+    body: dict[str, Any], mapping: dict[str, str]
+) -> dict[str, dict[str, dict[str, Any]]]:
+    """Readings for every forecast hour, keyed by timestamp.
+
+    Validation has already established that every mapped variable is present, carries a
+    unit, and has exactly as many values as the time axis — so zipping them here cannot
+    misalign a reading against the wrong hour.
+    """
+    hourly = body["hourly"]
+    units = body["hourly_units"]
+    by_hour: dict[str, dict[str, dict[str, Any]]] = {}
+
+    for index, stamp in enumerate(hourly["time"]):
+        values = {name: hourly[source][index] for name, source in mapping.items()}
+        # The provider pads its time axis to the requested range and fills the hours it
+        # cannot model with nulls — marine data currently stops around nine days while
+        # the axis runs to sixteen. Those hours are dropped rather than stored: a null
+        # reading has no honest rendering, and a zero would draw a flat calm sea.
+        if any(value is None for value in values.values()):
+            continue
+        by_hour[stamp] = {
+            name: {"value": values[name], "unit": units[source]} for name, source in mapping.items()
+        }
+
+    return by_hour
+
+
+def merge_hourly(
+    marine: dict[str, dict[str, dict[str, Any]]],
+    weather: dict[str, dict[str, dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    """One record per hour both providers cover.
+
+    Only hours present in both are kept. An hour with half its readings would render as
+    a gap-toothed row that looks like calm weather rather than like missing data.
+    """
+    return [
+        {"at": stamp, "readings": marine[stamp] | weather[stamp]}
+        for stamp in sorted(set(marine) & set(weather))
+    ]
+
+
 def earliest(*timestamps: str) -> str:
     """The oldest of several observation times.
 
@@ -62,4 +105,11 @@ def run_pipeline(store: Store, client: httpx.Client, sleep=time.sleep) -> None:
         latitude=marine_body["latitude"],
         longitude=marine_body["longitude"],
         readings=readings,
+    )
+
+    store.replace_forecast(
+        merge_hourly(
+            collect_hourly(marine_body, MARINE_READINGS),
+            collect_hourly(weather_body, WEATHER_READINGS),
+        )
     )

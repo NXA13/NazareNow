@@ -107,6 +107,77 @@ class CurrentConditions(BaseModel):
     wind_direction: Reading
 
 
+class ForecastHour(BaseModel):
+    at: str
+    swell_height: Reading
+    swell_period: Reading
+    swell_direction: Reading
+    significant_wave_height: Reading
+    wave_period: Reading
+    wave_direction: Reading
+    water_temperature: Reading
+    air_temperature: Reading
+    wind_speed: Reading
+    wind_direction: Reading
+
+
+class ForecastDay(BaseModel):
+    date: str
+
+    peak_swell_height: Reading
+    """The day's largest swell, which is what decides whether it is worth travelling for."""
+
+    peak_swell_period: Reading
+    dominant_swell_direction: Reading
+    """Height, period and direction are summarised separately and never collapsed into one
+    figure: a big short-period sea and a long-period groundswell of the same height are
+    entirely different days."""
+
+    hours: list[ForecastHour]
+
+
+class Forecast(BaseModel):
+    fetched_at: str
+    days: list[ForecastDay]
+
+
+def summarise(date: str, hours: list[dict[str, Any]]) -> ForecastDay:
+    """Reduce a day's hours to the figures a user scans the overview for."""
+    peak = max(hours, key=lambda hour: hour["readings"]["swell_height"]["value"])
+    return ForecastDay(
+        date=date,
+        peak_swell_height=Reading(**peak["readings"]["swell_height"]),
+        peak_swell_period=Reading(**peak["readings"]["swell_period"]),
+        dominant_swell_direction=Reading(**peak["readings"]["swell_direction"]),
+        hours=[ForecastHour(at=hour["at"], **hour["readings"]) for hour in hours],
+    )
+
+
+@app.get("/api/conditions/forecast")
+def forecast(store: Annotated[Store, Depends(get_store)]) -> Forecast:
+    """Every forecast hour a Pipeline Run stored, grouped by day.
+
+    Quiet days are returned like any other. Omitting them would leave gaps a reader
+    cannot distinguish from missing data, and a flat spell is a real answer to "when
+    should I go".
+    """
+    hours = store.forecast()
+    if not hours:
+        raise HTTPException(
+            status_code=503,
+            detail="No forecast has been ingested yet. Run the pipeline first.",
+        )
+
+    by_date: dict[str, list[dict[str, Any]]] = {}
+    for hour in hours:
+        by_date.setdefault(hour["at"][:10], []).append(hour)
+
+    return Forecast(
+        fetched_at=hours[0]["fetched_at"],
+        days=[summarise(date, by_date[date]) for date in sorted(by_date)],
+    )
+
+
 @app.get("/api/conditions/current")
 def current_conditions(store: Annotated[Store, Depends(get_store)]) -> CurrentConditions:
     """The most recent Offshore Conditions a Pipeline Run stored.
