@@ -42,9 +42,9 @@ weather services separate a *watch* from a *warning*.
 
 | | |
 |---|---|
-| **Inputs** | Open-Meteo Marine API — swell height, period, direction, wind. Multiple independent wave models queried per date; their disagreement serves as the uncertainty estimate. |
-| **Training target** | Significant wave height from Monican02, the Instituto Hidrográfico mooring 15km off Nazaré near the canyon head. Hourly from 2010, via the Copernicus Marine In Situ TAC. Fourteen usable seasons — coverage is uneven and two winters are missing entirely. |
-| **Calibration** | A hand-verified set of days confirmed as genuinely giant — contest days, ratified records — used to establish what a predicted height actually means. |
+| **Inputs** | Open-Meteo Marine API — swell height, period, direction, wind. One model today. ADR 0003 calls for several independent wave models per date, using their disagreement as the uncertainty estimate; ticket #8 introduces that, so **no uncertainty estimate exists yet**. |
+| **Training target** | *Planned, not yet built.* Significant wave height from Monican02, the Instituto Hidrográfico mooring 15km off Nazaré near the canyon head. Hourly from 2010, via the Copernicus Marine In Situ TAC. Fourteen usable seasons — coverage is uneven and two winters are missing entirely. No buoy data reaches the running system: it is analysed in `analysis/buoy_coverage/` and becomes a dataset in ticket #9. |
+| **Calibration** | *Researched, not yet applied.* A hand-verified set of days confirmed as genuinely giant — contest days, ratified records — to establish what a predicted height actually means. Thirty-eight such days are sourced in `analysis/gold_days/`; ticket #12 fits thresholds to them. Until it does, the thresholds in use are an uncalibrated rule of thumb and the interface says so. |
 | **Baseline** | The surf community's rule of thumb, implemented first and retained permanently as the benchmark any learned model must beat. |
 
 ## Running it locally

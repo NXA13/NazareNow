@@ -248,6 +248,87 @@ def test_a_payload_missing_a_unit_is_rejected(store, client) -> None:
     assert client.get("/api/conditions/current").status_code == 503
 
 
+def test_every_request_pins_the_units_it_wants(store) -> None:
+    """Checking the response is not enough on its own.
+
+    Verifying what arrived catches a drift after it happens; asking for the units we want
+    stops the common case — a provider changing a default — from happening at all. Without
+    this the params could be deleted and every test still passed, because the stub returns
+    the units the code expects whatever it is asked for.
+    """
+    seen: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        body = MARINE_BODY if "marine" in request.url.host else WEATHER_BODY
+        return httpx.Response(200, json=body)
+
+    ingest(store, httpx.MockTransport(handle))
+
+    assert seen, "no request reached the provider"
+    for request in seen:
+        assert request.url.params.get("wind_speed_unit") == "kmh"
+        assert request.url.params.get("temperature_unit") == "celsius"
+        assert request.url.params.get("length_unit") == "metric"
+
+
+def test_a_payload_whose_units_are_not_the_ones_we_assume_is_rejected(store, client) -> None:
+    """A unit that merely exists proves nothing.
+
+    The rule of thumb compares bare numbers against thresholds named in metres, seconds
+    and km/h, and prints those names into the reasons a user reads — but units were carried
+    for display and dropped before any decision used them. Validation checked only that a
+    unit was present, so a body declaring every marine unit as "furlongs" was accepted. A
+    provider flipping km/h to m/s would have applied a 35 km/h threshold to a value in m/s
+    and issued a Go Call through a 126 km/h gale, captioned "35 km/h".
+    """
+    wrong_units = {
+        **MARINE_BODY,
+        "current_units": {**MARINE_BODY["current_units"], "swell_wave_height": "furlongs"},
+    }
+
+    with pytest.raises(ValueError, match="unexpected units"):
+        ingest(store, provider(marine=wrong_units))
+
+    assert client.get("/api/conditions/current").status_code == 503
+
+
+def test_a_payload_whose_hourly_units_differ_is_rejected(store, client) -> None:
+    """The forecast range is judged by the same thresholds as the current conditions, so
+    its units need the same guard. Checking only the current block would leave every call
+    in the range decided on an unverified scale."""
+    wrong_hourly = {
+        **MARINE_BODY,
+        "hourly_units": {**MARINE_BODY["hourly_units"], "wave_height": "ft"},
+    }
+
+    with pytest.raises(ValueError, match="unexpected units"):
+        ingest(store, provider(marine=wrong_hourly))
+
+    assert client.get("/api/conditions/current").status_code == 503
+
+
+def test_a_null_current_reading_is_rejected_rather_than_stored(store, client) -> None:
+    """Present but null is not present.
+
+    Checking keys alone let `sea_surface_temperature: null` through. It was committed, the
+    CLI then raised while formatting it *after* the commit, and the API rejected the stored
+    null — so current conditions returned 500 until the next good run. `open_meteo.py`'s
+    docstring already promised a missing field "fails the run rather than becoming a null
+    in the store"; the hourly path dropped nulls and this one did not.
+    """
+    with_null = {
+        **MARINE_BODY,
+        "current": {**MARINE_BODY["current"], "sea_surface_temperature": None},
+    }
+
+    with pytest.raises(ValueError, match="null current readings"):
+        ingest(store, provider(marine=with_null))
+
+    # Nothing was committed, so this is an empty store rather than a poisoned one.
+    assert client.get("/api/conditions/current").status_code == 503
+
+
 def test_a_structurally_malformed_payload_is_rejected(store, client) -> None:
     with pytest.raises(ValueError, match="Unexpected Open-Meteo payload"):
         ingest(store, provider(marine={"current": {}}))

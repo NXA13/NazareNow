@@ -131,11 +131,19 @@ export function App() {
               </time>
               .
             </p>
-            <p className="provenance">
-              Swell and sea measured at {state.conditions.latitude.toFixed(2)}°N,{' '}
-              {Math.abs(state.conditions.longitude).toFixed(2)}°W — roughly 15km offshore, near the
-              head of the Nazare Canyon. Wind and air temperature come from the nearest land
-              forecast cell, which is not the same point.
+            {/* "Measured" was a lie, and a flattering one. Nothing on this page is an
+                observation: every figure is Open-Meteo model output at a grid point, and no
+                buoy reading reaches the live system at all — Monican02's record exists only
+                in the analysis directory, for training a model that does not exist yet. A
+                modelled figure described as measured invites a reader to trust it more than
+                it deserves, which is the whole failure this project is built to avoid. */}
+            <p className="provenance" data-testid="provenance">
+              Swell and sea are <strong>modelled</strong>, not measured — Open-Meteo's forecast for{' '}
+              {state.conditions.latitude.toFixed(2)}°N,{' '}
+              {Math.abs(state.conditions.longitude).toFixed(2)}
+              °W, roughly 15km offshore near the head of the Nazaré Canyon. No buoy reading reaches
+              this page. Wind and air temperature come from the nearest land forecast cell, which is
+              not the same point.
             </p>
           </footer>
         </>

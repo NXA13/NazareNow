@@ -51,6 +51,39 @@ WEATHER_READINGS = {
 MARINE_VARIABLES = sorted(set(MARINE_READINGS.values()))
 WEATHER_VARIABLES = sorted(set(WEATHER_READINGS.values()))
 
+# The unit each variable must arrive in, checked on every response.
+#
+# The Heuristic Baseline compares bare floats against thresholds named in metres, seconds
+# and km/h, and prints those unit names into the reasons a user reads. Nothing connected
+# the provider's declared unit to the one the rule assumes: units were carried through for
+# display and dropped before any decision used them, and validation only checked that a
+# unit *existed*. A response declaring every marine unit as "furlongs" was accepted, and a
+# provider default flipping km/h to m/s would have applied a 35 km/h threshold to a value
+# in m/s — a Go Call issued through a 126 km/h gale, with "35 km/h" written beside it.
+#
+# Requesting units explicitly (below) stops a default from drifting. Checking the response
+# stops a drift we did not anticipate. Both are needed: the request is a preference, and
+# only the response is evidence.
+EXPECTED_UNITS = {
+    "wave_height": "m",
+    "swell_wave_height": "m",
+    "swell_wave_period": "s",
+    "swell_wave_direction": "°",
+    "wave_period": "s",
+    "wave_direction": "°",
+    "sea_surface_temperature": "°C",
+    "temperature_2m": "°C",
+    "wind_speed_10m": "km/h",
+    "wind_direction_10m": "°",
+}
+
+# Sent on every request so a provider-side default cannot change what arrives.
+UNIT_PARAMS = {
+    "temperature_unit": "celsius",
+    "wind_speed_unit": "kmh",
+    "length_unit": "metric",
+}
+
 # The provider returns sixteen days of hourly data in the same response as the current
 # conditions, so the forecast range costs no additional requests against a free API.
 FORECAST_DAYS = 16
@@ -132,11 +165,50 @@ def validate(body: dict[str, Any], variables: list[str]) -> None:
     if missing:
         raise ValueError(f"Open-Meteo response is missing requested variables: {missing}")
 
+    # Present but null is not present. Checking keys alone let `sea_surface_temperature:
+    # null` through: it was committed to the store, the CLI then raised while formatting
+    # it *after* the commit, and the API rejected the stored null so current conditions
+    # returned 500 until the next good run. This module's docstring already promised a
+    # missing field fails the run rather than becoming a null in the store — the hourly
+    # path dropped nulls, and this one did not.
+    null = [name for name in variables if parsed.current[name] is None]
+    if null:
+        raise ValueError(f"Open-Meteo response has null current readings for: {null}")
+
     without_units = [name for name in variables if name not in parsed.current_units]
     if without_units:
         raise ValueError(f"Open-Meteo response is missing units for: {without_units}")
 
+    validate_units(parsed.current_units, variables, "current")
     validate_hourly(parsed, variables)
+
+
+def validate_units(units: dict[str, str], variables: list[str], block: str) -> None:
+    """Every variable must arrive in the unit the thresholds and labels assume.
+
+    A unit that merely exists proves nothing. The rule of thumb compares bare numbers to
+    thresholds named in metres, seconds and km/h, so a provider changing scale would not
+    fail anything — it would quietly change what the thresholds mean while the interface
+    kept printing the old unit name beside the new value.
+    """
+    wrong = {
+        name: units[name]
+        for name in variables
+        if name in EXPECTED_UNITS and units.get(name) != EXPECTED_UNITS[name]
+    }
+    if wrong:
+        expected = {name: EXPECTED_UNITS[name] for name in wrong}
+        raise ValueError(
+            f"Open-Meteo {block} block reports unexpected units {wrong}; "
+            f"this system's thresholds and labels assume {expected}"
+        )
+
+    unknown = [name for name in variables if name not in EXPECTED_UNITS]
+    if unknown:
+        raise ValueError(
+            f"No expected unit is declared for {unknown}, so their scale cannot be "
+            "checked; add them to EXPECTED_UNITS before requesting them"
+        )
 
 
 def validate_hourly(parsed: OpenMeteoResponse, variables: list[str]) -> None:
@@ -156,6 +228,8 @@ def validate_hourly(parsed: OpenMeteoResponse, variables: list[str]) -> None:
     without_units = [name for name in variables if name not in parsed.hourly_units]
     if without_units:
         raise ValueError(f"Open-Meteo hourly block is missing units for: {without_units}")
+
+    validate_units(parsed.hourly_units, variables, "hourly")
 
     axis = parsed.hourly["time"]
     if len(set(axis)) != len(axis):
@@ -188,6 +262,9 @@ def fetch(
         "hourly": ",".join(variables),
         "forecast_days": FORECAST_DAYS,
         "timezone": "UTC",
+        # Explicit, so a provider-side default cannot silently change the scale the
+        # thresholds are written against. Verified against the response as well.
+        **UNIT_PARAMS,
     }
 
     for attempt in range(1, MAX_ATTEMPTS + 1):

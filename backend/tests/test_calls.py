@@ -165,6 +165,106 @@ class TestCallContent:
 
         assert calls(client)[SOON]["status"] == "go"
 
+    def test_a_bigger_hour_never_weakens_a_day_s_call(self, store, client) -> None:
+        """A day is called at the best call any of its hours supports, so adding an hour
+        can only ever strengthen it.
+
+        The rule this replaces ranked hours by how many conditions they failed, which is
+        tier-blind. A Watch ignores wind, so an 8m hour failing only period tied with a
+        clean 3.5m hour failing only wind, won the tie on size, and took the day to no
+        call — a bigger wave *removing* a Watch, destroying exactly the recall ADR 0003
+        asks the Watch tier to protect, in code whose docstring claimed to have fixed it.
+        """
+        clean = {**GIANT, "significant_wave_height": 3.5, "wind_direction": 270}
+        # Larger, offshore, but far too short-period to be worth travelling for.
+        big_and_short = {**GIANT, "significant_wave_height": 8.0, "swell_period": 10.0}
+
+        ingest(
+            store,
+            forecast_provider(
+                {FAR: clean},
+                today=TODAY,
+                only_hours={FAR: tuple(range(0, 12))},
+            ),
+        )
+        without_the_big_hour = calls(client)[FAR]["status"]
+
+        ingest(
+            store,
+            forecast_provider(
+                {FAR: clean},
+                today=TODAY,
+                only_hours={FAR: tuple(range(0, 12))},
+                also_hours={FAR: (big_and_short, (15,))},
+            ),
+        )
+        with_the_big_hour = calls(client)[FAR]["status"]
+
+        assert without_the_big_hour == "watch"
+        assert with_the_big_hour == "watch", "a bigger wave removed the Watch"
+
+    def test_a_go_hour_outranks_a_watch_hour_on_the_same_day(self, store, client) -> None:
+        """When one hour earns a Go Call and another only a Watch, the day is a Go Call.
+
+        The tier ordering has to be pinned in both directions. Nothing else here compares
+        two *different* statuses on one day, so inverting Go and Watch in the ordering
+        table changed real behaviour with the suite still green.
+        """
+        onshore = {**GIANT, "wind_direction": 270}
+
+        ingest(
+            store,
+            forecast_provider(
+                {SOON: onshore},
+                today=TODAY,
+                only_hours={SOON: tuple(range(0, 12))},
+                also_hours={SOON: (GIANT, (15,))},
+            ),
+        )
+
+        assert calls(client)[SOON]["status"] == "go"
+
+    def test_between_two_hours_earning_the_same_call_the_larger_sea_is_reported(
+        self, store, client
+    ) -> None:
+        """The tie-break direction needs its own case: every hour in the test above that
+        could win carried the same height, so reversing the tie-break changed nothing."""
+        ingest(
+            store,
+            forecast_provider(
+                {SOON: {**GIANT, "significant_wave_height": 3.5}},
+                today=TODAY,
+                only_hours={SOON: tuple(range(0, 12))},
+                also_hours={SOON: ({**GIANT, "significant_wave_height": 6.0}, (15,))},
+            ),
+        )
+
+        issued = calls(client)[SOON]
+
+        assert issued["status"] == "go"
+        assert issued["predicted_significant_wave_height"]["value"] == 6.0
+
+    def test_a_call_reports_the_hour_that_earned_it(self, store, client) -> None:
+        """The reasons and the height are the winning hour's. Reporting some other hour's
+        would explain the call with conditions that did not produce it."""
+        clean = {**GIANT, "significant_wave_height": 3.5, "wind_direction": 270}
+        big_and_short = {**GIANT, "significant_wave_height": 8.0, "swell_period": 10.0}
+
+        ingest(
+            store,
+            forecast_provider(
+                {FAR: clean},
+                today=TODAY,
+                only_hours={FAR: tuple(range(0, 12))},
+                also_hours={FAR: (big_and_short, (15,))},
+            ),
+        )
+
+        issued = calls(client)[FAR]
+
+        assert issued["predicted_significant_wave_height"]["value"] == 3.5
+        assert any("swell period 16.5s" in reason for reason in issued["reasons"])
+
     def test_a_call_explains_itself(self, store, client) -> None:
         ingest(store, forecast_provider({SOON: GIANT}, today=TODAY))
 

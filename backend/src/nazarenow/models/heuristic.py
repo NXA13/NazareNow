@@ -22,10 +22,17 @@ SWELL_ARC = (255.0, 330.0)
 
 OFFSHORE_WIND_ARC = (20.0, 180.0)
 """Praia do Norte faces west, so wind blowing off the land arrives from the eastern half
-of the compass — north-north-east round through south. The previous arc of 45-200
-accepted 199 degrees, which has an onshore component, and rejected the north-easterlies
-that are among the cleanest winds the spot gets: real data showed wind from 15 degrees
-reported to users as onshore."""
+of the compass — north-north-east round through south. The previous arc of 45-200 accepted
+199 degrees, which has an onshore component, and rejected north-easterlies that are among
+the cleanest winds the spot gets.
+
+The lower bound is the weakest number here and it is not settled. An earlier version of
+this docstring justified 20 degrees by citing a real observation of wind from **15**
+degrees being reported to users as onshore — which this arc still rejects, so the comment
+claimed a fix it did not make. Whether the offshore arc truly begins at 20, or nearer 10,
+is a question about the coastline and not one this file can answer honestly: ticket #12
+fits these thresholds to the Gold Days and owns it. Until then the bound stands as a
+provisional guess and is documented as one, which is the part that was wrong before."""
 
 MAXIMUM_WIND_SPEED_KMH = 35.0
 
