@@ -25,8 +25,8 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from helpers import ingest
 from nazarenow.api import CurrentConditions, Reading
-from nazarenow.pipeline import run_pipeline
 from nazarenow.sources.open_meteo import (
     MARINE_READINGS,
     MAX_BACKOFF_SECONDS,
@@ -115,11 +115,6 @@ WEATHER_BODY = {
 }
 
 
-def no_sleep(_seconds: float) -> None:
-    """Backoff is real behaviour, but waiting for it makes the suite slow enough that
-    people stop running it. Injected so the retry path is exercised at speed."""
-
-
 def provider(marine=MARINE_BODY, weather=WEATHER_BODY):
     def handle(request: httpx.Request) -> httpx.Response:
         body = marine if "marine" in request.url.host else weather
@@ -147,11 +142,6 @@ def unreachable_provider():
         raise httpx.ConnectError("refused")
 
     return httpx.MockTransport(handle), seen
-
-
-def ingest(store, transport, sleep=no_sleep) -> None:
-    with httpx.Client(transport=transport) as http:
-        run_pipeline(store, http, sleep=sleep)
 
 
 # --- serving -----------------------------------------------------------------
@@ -453,7 +443,7 @@ def test_the_serving_store_cannot_write(store) -> None:
         # record_run, not record_conditions: production writes through record_run, and
         # a read-only guard on a method nothing calls guards nothing.
         with pytest.raises(sqlite3.OperationalError, match="readonly"):
-            reader.record_run("2026-02-13T09:00", 0.0, 0.0, {}, [])
+            reader.record_run("2026-02-13T09:00", 0.0, 0.0, {}, [], [])
     finally:
         reader.close()
 
@@ -529,7 +519,7 @@ def test_a_path_containing_uri_syntax_still_opens_read_only(tmp_path) -> None:
     target = awkward / "nazarenow.db"
 
     writer = Store(target)
-    writer.record_run("2026-02-13T09:00", 39.5, -9.2, {}, [])
+    writer.record_run("2026-02-13T09:00", 39.5, -9.2, {}, [], [])
     writer.close()
 
     reader = Store(target, create=False)

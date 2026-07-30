@@ -1,10 +1,34 @@
 import { useEffect, useState } from 'react';
 
-import { fetchForecast, type Forecast, type ForecastDay } from './api';
+import { fetchForecast, type CallStatus, type Forecast, type ForecastDay } from './api';
 import { compassPoint, formatTimestamp, formatValue } from './format';
 
 type LoadState =
   { status: 'loading' } | { status: 'loaded'; forecast: Forecast } | { status: 'failed' };
+
+/** A day the backend has no call for at all, which is not the same as a call of `none`.
+ * That one was judged and found not worth travelling for; this one was never judged. */
+const UNJUDGED = 'unjudged';
+
+/** What each status says, in the fewest words that are still honest. */
+const CALL_LABELS: Record<CallStatus | typeof UNJUDGED, string> = {
+  confirmed: 'Confirmed',
+  go: 'Go',
+  watch: 'Watch',
+  none: 'No call',
+  [UNJUDGED]: 'Not judged',
+};
+
+const CALL_MEANINGS: Record<CallStatus | typeof UNJUDGED, string> = {
+  confirmed: 'It is happening. For anyone already travelling.',
+  // "Every condition holds" without qualification overstated it: a day is judged on its
+  // best matching hour, so that can be one hour in twenty-four. The reasons below carry
+  // the count, and this sentence now points at it rather than talking past it.
+  go: "Worth booking. Every condition of the rule holds at this day's best hour.",
+  watch: 'Something may be forming. Start watching flights, do not book yet.',
+  none: 'Not a day to travel for.',
+  [UNJUDGED]: 'No pipeline run has assessed this day. Its hours below are still real.',
+};
 
 /** How a day compares with the rest of the range on screen.
  *
@@ -68,6 +92,12 @@ function DaySummary({
       <span className="day-date" data-testid={`day-label-${day.date}`}>
         {dayLabel(day.date)}
       </span>
+      <span
+        className={`call call-${day.call?.status ?? UNJUDGED}`}
+        data-testid={`call-${day.date}`}
+      >
+        {CALL_LABELS[day.call?.status ?? UNJUDGED]}
+      </span>
       <span className="day-swell">
         <span className="value">{formatValue(day.peak_swell_height.value)}</span>
         <span className="unit">{day.peak_swell_height.unit}</span>
@@ -81,6 +111,46 @@ function DaySummary({
         <span className="bearing">{compassPoint(day.swell_direction_at_peak.value)}</span>
       </span>
     </button>
+  );
+}
+
+/** Why a day got the call it did, and what the predicted number does and does not mean. */
+function CallDetail({ day }: { day: ForecastDay }) {
+  const status = day.call?.status ?? UNJUDGED;
+
+  return (
+    <div className="call-detail" role="note" aria-label={`Why ${dayLabel(day.date)}`}>
+      <p>
+        <strong>{CALL_LABELS[status]}</strong> — {CALL_MEANINGS[status]}
+        {day.call && status !== 'none' && <> Issued {day.call.lead_time_days} days ahead.</>}
+      </p>
+      {day.call && (
+        <>
+          <ul>
+            {day.call.reasons.map((reason) => (
+              <li key={reason}>{reason}</li>
+            ))}
+          </ul>
+          <p className="provenance">
+            Predicted significant wave height{' '}
+            <strong>
+              {formatValue(day.call.predicted_significant_wave_height.value)}
+              {day.call.predicted_significant_wave_height.unit}
+            </strong>
+            . That is the instrument's measure of the sea, not the height of the wave face a surfer
+            rides — the canyon makes the face far larger, and this system does not yet predict it.
+          </p>
+          {/* The baseline applies no amplification at all, so this number is the offshore
+              forecast's own height. Labelling it "predicted" without saying so invites a
+              reader to think the canyon has been modelled. It has not been — #13 is what
+              earns a different number, and this is the floor it has to beat. */}
+          <p className="provenance">
+            The rule of thumb does not scale that height: it is the offshore forecast's own figure,
+            carried through unchanged. Nothing here models what the canyon does to it yet.
+          </p>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -173,9 +243,20 @@ export function ForecastRange() {
       </div>
 
       {open ? (
-        <HourTable day={open} />
+        <>
+          <CallDetail day={open} />
+          <HourTable day={open} />
+        </>
       ) : (
         <p className="hint">Select a day to see how it develops hour by hour.</p>
+      )}
+
+      {!state.forecast.calibrated && (
+        <p role="status" className="alert">
+          These calls come from the surf community's rule of thumb, not from thresholds fitted to
+          days Nazaré is known to have gone giant. Treat them as a starting point rather than a
+          forecast.
+        </p>
       )}
 
       <p className="provenance">

@@ -29,3 +29,33 @@ rather than the prediction.
 
 Watch and Go Call must be evaluated against different metrics. Reporting a single accuracy
 figure for the system would be meaningless.
+
+## Implementation status
+
+As of ticket #6 the tiers are decided by Lead Time alone. Model Spread does not exist
+yet — ticket #8 introduces it — so nothing in the system measures forecast agreement, and
+no part of it may claim a forecast has "converged". A Watch is kept genuinely looser than
+a Go Call in the meantime by dropping the wind condition, which carries little information
+at range; without that the two tiers were one rule with two names, which is what this ADR
+exists to prevent.
+
+Which conditions gate which tier is decided on **condition identity**, and every tier names
+the conditions it requires. Neither half of that is incidental. An early implementation
+substring-matched the Heuristic Baseline's own English failure messages, so rewording a
+message moved days between tiers and any other implementation of the interface — the swap
+ADR 0006 exists to allow — had every day it judged fall into Watch. The fix for that named
+the Watch tier's conditions and left a Go Call asking only whether every condition a model
+*chose to judge* held, which let a model that never judges wind issue a Go Call through an
+onshore gale. Both are the same failure: a tier deciding on something other than the
+conditions it is defined by.
+
+A day is judged on its best *matching* hour rather than its largest, so a clean morning
+window under an onshore afternoon peak is not discarded. That protects the recall a Watch
+is optimised for, but it cuts against the precision a Go Call is optimised for: a single
+clean hour in twenty-four can currently earn one. No minimum window is imposed here
+because ticket #12 calibrates thresholds against the Gold Days and should own that number.
+Until it does, every call states how many of the day's hours matched, so a call resting on
+one hour says so in the reasons the user reads. That count is taken against the conditions
+the call itself rests on — a Watch ignores wind by design, so counting every condition made
+a genuine Watch day report "0 of 24 forecast hours match every condition" beside its own
+badge: true arithmetic, and nonsense as an explanation of that call.

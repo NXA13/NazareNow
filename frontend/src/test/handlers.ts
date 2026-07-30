@@ -12,7 +12,7 @@
 
 import { http, HttpResponse } from 'msw';
 
-import type { CurrentConditions, Forecast } from '../api';
+import type { CallStatus, CurrentConditions, Forecast } from '../api';
 
 export const currentConditions: CurrentConditions = {
   observed_at: '2026-02-13T09:00',
@@ -72,13 +72,48 @@ function hoursFor(date: string, peak: number, longestPeriod: number, direction: 
   });
 }
 
-/** A day whose summary is derived from its own hours, so the two cannot contradict. */
-function dayFrom(date: string, peak: number, longestPeriod: number, direction: number) {
+/** A day whose summary is derived from its own hours, so the two cannot contradict.
+ *
+ * `call` of null is a day the backend holds no call for, which the API returns as
+ * `call: null` — distinct from a call whose status is `none`. That one was judged and
+ * found not worth travelling for; this one was never judged.
+ */
+export function dayFrom(
+  date: string,
+  peak: number,
+  longestPeriod: number,
+  direction: number,
+  call: CallStatus | null = 'none',
+  leadTime = 0,
+) {
   const hours = hoursFor(date, peak, longestPeriod, direction);
   const peakHour = hours.reduce((a, b) => (b.swell_height.value > a.swell_height.value ? b : a));
   const longestHour = hours.reduce((a, b) => (b.swell_period.value > a.swell_period.value ? b : a));
   return {
     date,
+    call:
+      call === null
+        ? null
+        : {
+            status: call,
+            lead_time_days: leadTime,
+            reasons: [
+              `swell period ${peakHour.swell_period.value}s`,
+              'wind is offshore and light',
+              // Tier-accurate, as the backend emits it: a Watch is judged on the swell
+              // alone, so counting every condition would print "0 of 24" beside a Watch.
+              call === 'watch'
+                ? '24 of 24 forecast hours carry the swell behind this Watch'
+                : '3 of 24 forecast hours match every condition',
+            ],
+            // Its own object with its own value. Sharing peak_swell_height's object made
+            // rendering the wrong one undetectable, and they are different quantities:
+            // CONTEXT.md lists swell height under significant wave height's avoided synonyms.
+            predicted_significant_wave_height: {
+              value: Number((peakHour.swell_height.value + 0.4).toFixed(2)),
+              unit: 'm',
+            },
+          },
     peak_swell_height: peakHour.swell_height,
     swell_period_at_peak: peakHour.swell_period,
     swell_direction_at_peak: peakHour.swell_direction,
@@ -91,12 +126,14 @@ function dayFrom(date: string, peak: number, longestPeriod: number, direction: n
  * rather than hidden, and that height, period and direction stay separate. */
 export const forecast: Forecast = {
   fetched_at: '2026-02-11T09:04:11.221000+00:00',
+  amplification_model: 'heuristic-baseline',
+  calibrated: false,
   days: [
-    dayFrom('2026-02-12', 1.4, 8, 250),
+    dayFrom('2026-02-12', 1.4, 8, 250, 'confirmed', 1),
     // Base chosen so the peak hour (15:00, +75 degrees) lands on 298 = WNW, which the
     // tests assert as a literal rather than recomputing it with compassPoint.
-    dayFrom('2026-02-13', 8.1, 17, 223),
-    dayFrom('2026-02-14', 5.7, 12, 280),
+    dayFrom('2026-02-13', 8.1, 17, 223, 'go', 4),
+    dayFrom('2026-02-14', 5.7, 12, 280, 'watch', 9),
   ],
 };
 

@@ -5,9 +5,11 @@ database would add operational weight this project has no use for yet. Swapping 
 means changing this module and nothing else, which is the point of keeping the store
 internal to the backend seam (ADR 0005).
 
-Two things are stored for every run: the provider's response as received, and the values
-parsed out of it. Retaining the raw response means derived data can be rebuilt without
-refetching, and that a provider changing shape can be diagnosed after the fact.
+Three things are stored for every run: the provider's response as received, the values
+parsed out of it, and the calls derived from those values. Retaining the raw response
+means derived data can be rebuilt without refetching, and that a provider changing shape
+can be diagnosed after the fact. Retaining the calls is ADR 0005's promise that every
+prediction the system has made survives, which is what ticket #11 scores.
 """
 
 from __future__ import annotations
@@ -56,9 +58,46 @@ CREATE TABLE IF NOT EXISTS forecast_hour (
     readings    TEXT NOT NULL
 );
 
+-- Append-only, and deliberately so. ADR 0005: "Every prediction the system has ever made
+-- is retained by construction. That gives us the record needed to evaluate Go Call
+-- precision after the fact." An earlier shape keyed this table on `date` and cleared it
+-- at the start of every run, so each Pipeline Run destroyed the record ticket #11 exists
+-- to score -- while the module claiming retention sat directly above it.
+--
+-- A date therefore accumulates one row per run, and the succession of calls made about a
+-- single date as it approaches is itself the thing #11 measures: a Watch at ten days that
+-- became a Go Call at four and then a flat sea is a different failure from one never
+-- called at all.
+CREATE TABLE IF NOT EXISTS day_call (
+    id                  INTEGER PRIMARY KEY,
+    date                TEXT NOT NULL,
+    issued_at           TEXT NOT NULL,
+    issued_for_date     TEXT NOT NULL,
+    status              TEXT NOT NULL,
+    lead_time_days      INTEGER NOT NULL,
+    reasons             TEXT NOT NULL,
+    predicted_significant_wave_height REAL NOT NULL,
+    unit                TEXT NOT NULL,
+    amplification_model TEXT NOT NULL,
+    calibrated          INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS offshore_conditions_observed_at
     ON offshore_conditions (observed_at DESC);
+
+CREATE INDEX IF NOT EXISTS day_call_date
+    ON day_call (date, id DESC);
 """
+
+
+# Written once. The same ten columns were spelled out in the schema probe and in every
+# read, so adding or renaming one meant finding all of them — and a rename that missed the
+# probe would pass construction and fail inside an endpoint, which is the bare-500 outcome
+# eager verification exists to prevent.
+CALL_COLUMNS = (
+    "date, issued_at, issued_for_date, status, lead_time_days, reasons, "
+    "predicted_significant_wave_height, unit, amplification_model, calibrated"
+)
 
 
 class StoreUnavailable(RuntimeError):
@@ -132,6 +171,7 @@ class Store:
             "FROM offshore_conditions LIMIT 0",
             "SELECT source, url, fetched_at, body FROM raw_response LIMIT 0",
             "SELECT valid_at, fetched_at, readings FROM forecast_hour LIMIT 0",
+            f"SELECT id, {CALL_COLUMNS} FROM day_call LIMIT 0",
         )
         try:
             for probe in probes:
@@ -193,13 +233,19 @@ class Store:
         longitude: float,
         readings: dict[str, dict[str, Any]],
         hours: list[dict[str, Any]],
+        calls: list[dict[str, Any]],
     ) -> None:
-        """Store a Pipeline Run's conditions and forecast together, or not at all.
+        """Store a Pipeline Run's conditions, forecast and calls together, or not at all.
 
         Two separate commits meant a fault between them advanced the current conditions
         while the forecast stayed behind — the half-updated picture the pipeline's own
         docstring promises never happens. Validating earlier did not fix that; only one
         transaction does.
+
+        `calls` is required rather than defaulted. ADR 0005 retains every prediction "by
+        construction", and a construction with an opt-out is a convention: as an optional
+        argument, a caller that forgot it stored a forecast with no calls and reported
+        success.
         """
         connection = self._connect()
         stamp = now()
@@ -213,6 +259,30 @@ class Store:
             connection.executemany(
                 "INSERT INTO forecast_hour (valid_at, fetched_at, readings) VALUES (?, ?, ?)",
                 [(hour["at"], stamp, json.dumps(hour["readings"])) for hour in hours],
+            )
+            # Appended, never cleared. Each run adds this run's calls beside every call
+            # the system has already made, which is what ADR 0005 promises and what
+            # ticket #11 scores.
+            connection.executemany(
+                "INSERT INTO day_call (date, issued_at, issued_for_date, status, "
+                "lead_time_days, reasons, predicted_significant_wave_height, unit, "
+                "amplification_model, calibrated) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    (
+                        call["date"],
+                        stamp,
+                        call["issued_for_date"],
+                        call["status"],
+                        call["lead_time_days"],
+                        json.dumps(call["reasons"]),
+                        call["predicted_significant_wave_height"],
+                        call["unit"],
+                        call["amplification_model"],
+                        int(call["calibrated"]),
+                    )
+                    for call in calls
+                ],
             )
             connection.execute(
                 "INSERT INTO offshore_conditions "
@@ -234,6 +304,71 @@ class Store:
             }
             for row in rows
         ]
+
+    def calls(self) -> dict[str, dict[str, Any]]:
+        """The most recent call made about each date, keyed by that date.
+
+        Stored rather than computed on request. ADR 0005 makes the API strictly a reader
+        and the Pipeline Run the only thing that runs a model — and it promises that every
+        prediction the system has made is retained, which is the record ticket #11 needs to
+        score Go Call precision after the fact. Computing them per request produced none.
+
+        Latest per date by insertion order, not by `issued_at`. The timestamp usually
+        agrees — it carries microseconds, so runs rarely tie — but it is a wall clock, and
+        a wall clock can be adjusted backwards by NTP or a timezone change, which silently
+        inverts the ordering and serves a superseded call as current. Insertion order
+        cannot go backwards. What a reader wants is the newest call, and that is the one
+        inserted last.
+        """
+        rows = self._connect().execute(
+            f"SELECT {CALL_COLUMNS} FROM day_call "
+            "WHERE id IN (SELECT MAX(id) FROM day_call GROUP BY date) ORDER BY date"
+        )
+        return {row["date"]: self._call(row) for row in rows}
+
+    def latest_call(self) -> dict[str, Any] | None:
+        """The most recently stored call, whichever date it applies to, or None if empty.
+
+        Which Amplification Model produced the current calls, and whether its thresholds
+        are calibrated, are properties of the run rather than of any one date — so the
+        answer comes from here rather than being reconstructed by the reader. The reader's
+        version sorted by `issued_at`, the comparison `calls()` above rules out: a wall
+        clock adjusted backwards inverts it, and identical timestamps leave the winner to
+        whichever row SQLite happened to return first. It also asked the reader to know
+        that the newest call is the newest run, which is the store's business.
+        """
+        row = (
+            self._connect()
+            .execute(f"SELECT {CALL_COLUMNS} FROM day_call ORDER BY id DESC LIMIT 1")
+            .fetchone()
+        )
+        return None if row is None else self._call(row)
+
+    def call_history(self) -> list[dict[str, Any]]:
+        """Every call ever made, oldest first, including superseded ones.
+
+        No HTTP surface exposes these yet — ticket #11 scores Go Call precision from this
+        record, and #16 publishes the result. Like `raw_responses`, this is a deliberate
+        narrow exception to the backend seam: retention across runs is required by ADR
+        0005 and there is nothing else that can observe it. When the track record gets an
+        endpoint, the test should move to it.
+        """
+        rows = self._connect().execute(f"SELECT {CALL_COLUMNS} FROM day_call ORDER BY id")
+        return [self._call(row) | {"date": row["date"]} for row in rows]
+
+    @staticmethod
+    def _call(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "issued_at": row["issued_at"],
+            "issued_for_date": row["issued_for_date"],
+            "status": row["status"],
+            "lead_time_days": row["lead_time_days"],
+            "reasons": json.loads(row["reasons"]),
+            "predicted_significant_wave_height": row["predicted_significant_wave_height"],
+            "unit": row["unit"],
+            "amplification_model": row["amplification_model"],
+            "calibrated": bool(row["calibrated"]),
+        }
 
     def latest_conditions(self) -> dict[str, Any] | None:
         """The most recently ingested Offshore Conditions, or None if the store is empty.

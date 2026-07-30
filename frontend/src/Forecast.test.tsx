@@ -13,11 +13,162 @@ import { describe, expect, it } from 'vitest';
 
 import { ForecastRange } from './Forecast';
 import { compassPoint } from './format';
-import { forecast } from './test/handlers';
+import { dayFrom, forecast } from './test/handlers';
 import { server } from './test/server';
 
 const QUIET = forecast.days[0]!;
 const BIG = forecast.days[1]!;
+const BIG_CALL = BIG.call!;
+
+/** Serve a forecast whose days are the ones given, leaving the rest of it alone. */
+function serveDays(days: (typeof forecast)['days']) {
+  server.use(http.get('*/api/conditions/forecast', () => HttpResponse.json({ ...forecast, days })));
+}
+
+describe('calls', () => {
+  it('shows each status distinguishably, with the right label on each', async () => {
+    // Asserting only that three labels differ let Go and Watch swap places — a Go day
+    // reading "Watch — something may be forming, do not book yet". Which label belongs
+    // to which status is the whole point, so each is pinned by name.
+    render(<ForecastRange />);
+
+    const badges = await Promise.all(
+      forecast.days.map((day) => screen.findByTestId(`call-${day.date}`)),
+    );
+
+    expect(badges.map((b) => b.className)).toEqual([
+      'call call-confirmed',
+      'call call-go',
+      'call call-watch',
+    ]);
+    expect(badges.map((b) => b.textContent)).toEqual(['Confirmed', 'Go', 'Watch']);
+  });
+
+  it('shows a day judged not worth travelling for, and says so', async () => {
+    // The `none` status had no fixture anywhere, so nothing rendered it and nothing
+    // asserted it — the one status a real quiet week produces on every single day.
+    const quiet = dayFrom('2026-02-15', 1.1, 7, 250, 'none', 6);
+    serveDays([quiet]);
+
+    render(<ForecastRange />);
+
+    const badge = await screen.findByTestId(`call-${quiet.date}`);
+    expect(badge).toHaveTextContent('No call');
+    expect(badge.className).toBe('call call-none');
+
+    await userEvent.click(screen.getByRole('button', { name: new RegExp(quiet.date) }));
+    expect(await screen.findByRole('note')).toHaveTextContent(/not a day to travel for/i);
+  });
+
+  it('distinguishes a day nothing has judged from one judged not worth travelling for', async () => {
+    // A gap in the call record is not a verdict. Rendering it as "No call" would report
+    // an absence of data as advice.
+    const unjudged = dayFrom('2026-02-16', 6.4, 15, 290, null);
+    serveDays([unjudged]);
+
+    render(<ForecastRange />);
+
+    const badge = await screen.findByTestId(`call-${unjudged.date}`);
+    expect(badge).toHaveTextContent('Not judged');
+    expect(badge.className).toBe('call call-unjudged');
+
+    await userEvent.click(screen.getByRole('button', { name: new RegExp(unjudged.date) }));
+    const note = await screen.findByRole('note');
+    expect(note).toHaveTextContent(/no pipeline run has assessed this day/i);
+    // No lead time, no reasons and no predicted height: there is no call to report them.
+    expect(note).not.toHaveTextContent(/days ahead/i);
+    expect(note).not.toHaveTextContent(/predicted significant wave height/i);
+  });
+
+  it('keeps the hourly detail for a day nothing has judged', async () => {
+    // The hours are real even when the call record is empty; dropping them would throw
+    // away what the forecast range delivers over a missing call.
+    const unjudged = dayFrom('2026-02-16', 6.4, 15, 290, null);
+    serveDays([unjudged]);
+
+    render(<ForecastRange />);
+
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(unjudged.date) }));
+
+    expect(within(await screen.findByRole('table')).getAllByRole('row')).toHaveLength(25);
+  });
+
+  it('says the predicted height is the offshore figure carried through unchanged', async () => {
+    // The Heuristic Baseline applies no amplification, so "predicted" without that
+    // sentence invites a reader to think the canyon has been modelled. It has not been.
+    render(<ForecastRange />);
+
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
+
+    expect(await screen.findByRole('note')).toHaveTextContent(/carried through unchanged/i);
+  });
+
+  it('describes a Go Call as worth booking and a Watch as not yet', async () => {
+    render(<ForecastRange />);
+
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
+    expect(await screen.findByRole('note')).toHaveTextContent(/worth booking/i);
+
+    const easing = forecast.days[2]!;
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(easing.date) }));
+    const note = await screen.findByRole('note');
+    expect(note).toHaveTextContent(/do not book yet/i);
+    expect(note).not.toHaveTextContent(/worth booking/i);
+  });
+
+  it('does not claim the forecast has converged', async () => {
+    // Nothing measures convergence. ADR 0003 has the tiers driven by Model Spread, which
+    // ticket #8 introduces; until then a claim of convergence is an invented assurance.
+    render(<ForecastRange />);
+
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
+
+    expect(await screen.findByRole('note')).not.toHaveTextContent(/converged/i);
+  });
+
+  it('explains why a day got its call, and how far ahead', async () => {
+    render(<ForecastRange />);
+
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
+    const note = await screen.findByRole('note');
+
+    for (const reason of BIG_CALL.reasons) {
+      expect(note).toHaveTextContent(reason);
+    }
+    expect(note).toHaveTextContent(`${BIG_CALL.lead_time_days} days ahead`);
+  });
+
+  it('shows the predicted wave height and says it is not the face height', async () => {
+    // CONTEXT.md calls this distinction load-bearing: the canyon's amplification applies
+    // to the face a surfer rides, not to the instrument's measure of the sea.
+    render(<ForecastRange />);
+
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
+    const note = await screen.findByRole('note');
+
+    expect(note).toHaveTextContent(String(BIG_CALL.predicted_significant_wave_height.value));
+    expect(note).toHaveTextContent(/not the height of the wave face/i);
+  });
+
+  it('warns that the thresholds are not calibrated', async () => {
+    render(<ForecastRange />);
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/rule of thumb/i);
+  });
+
+  it('drops the warning once the model is calibrated', async () => {
+    server.use(
+      http.get('*/api/conditions/forecast', () =>
+        HttpResponse.json({ ...forecast, calibrated: true }),
+      ),
+    );
+
+    render(<ForecastRange />);
+
+    await screen.findByTestId(`call-${BIG.date}`);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+});
 
 describe('the forecast range', () => {
   it('marks the standout day so the overview can be scanned, not read', async () => {

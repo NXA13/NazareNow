@@ -1,8 +1,10 @@
 """The read-only HTTP API.
 
 Per ADR 0005 this layer only ever reads. It evaluates no model and contacts no
-third-party service — a Pipeline Run does that on a schedule and writes its results to
-the store, which this API serves. Nothing here should ever grow a network call outward.
+third-party service, and it derives no calls — a Pipeline Run does all of that on a
+schedule and writes its results to the store, which this API serves. Deriving calls
+here was an ADR 0005 breach that also destroyed the retained-prediction record.
+Nothing here should ever grow a network call outward.
 """
 
 from __future__ import annotations
@@ -16,6 +18,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from nazarenow.days import group_by_date
+from nazarenow.decision import Status
 from nazarenow.store import Store, StoreUnavailable
 
 app = FastAPI(
@@ -121,8 +125,28 @@ class ForecastHour(BaseModel):
     wind_direction: Reading
 
 
+class DayCall(BaseModel):
+    status: Status
+    lead_time_days: int
+    """Days from the first day the forecast covers, fixed when the call was issued rather
+    than recomputed against the wall clock. A Go Call is only worth anything if it arrives
+    while flights are still bookable, so the number travels with the call."""
+
+    reasons: list[str]
+    predicted_significant_wave_height: Reading
+
+
 class ForecastDay(BaseModel):
     date: str
+
+    call: DayCall | None
+    """None when no Pipeline Run has yet made a call about this day.
+
+    Distinct from a call whose status is `none`, which is a judgement — the conditions
+    were examined and this is not a day to travel for. Absent means nothing has judged it.
+    Collapsing the two would let a gap in the record read as an answer, and dropping the
+    day entirely — which this endpoint used to do — left a hole a reader cannot tell from
+    missing data."""
 
     peak_swell_height: Reading
     """The day's largest swell, which is what decides whether it is worth travelling for."""
@@ -145,15 +169,42 @@ class ForecastDay(BaseModel):
 
 class Forecast(BaseModel):
     fetched_at: str
+
+    amplification_model: str | None
+    """None when the store holds no calls, so nothing has named a model. The interface
+    says so rather than guessing at one."""
+
+    calibrated: bool
+    """False while thresholds are the surf community's rule of thumb rather than values
+    fitted to Gold Days. Ticket #12 changes that; until then the interface must not imply
+    a precision the numbers do not have."""
+
     days: list[ForecastDay]
 
 
-def summarise(date: str, hours: list[dict[str, Any]]) -> ForecastDay:
-    """Reduce a day's hours to the figures a user scans the overview for."""
+def summarise(date: str, hours: list[dict[str, Any]], call: dict[str, Any] | None) -> ForecastDay:
+    """Reduce a day's hours to the figures a user scans the overview for, plus its call.
+
+    The call is read from the store, never computed. ADR 0005 makes this layer a reader,
+    and CONTEXT.md makes a Pipeline Run the only thing that runs a model. A day the store
+    has no call for is returned with none — synthesising one here would be this layer
+    making a judgement, which is the breach the calls were moved to the pipeline to end.
+    """
     peak = max(hours, key=lambda hour: hour["readings"]["swell_height"]["value"])
     longest = max(hours, key=lambda hour: hour["readings"]["swell_period"]["value"])
+
     return ForecastDay(
         date=date,
+        call=None
+        if call is None
+        else DayCall(
+            status=Status(call["status"]),
+            lead_time_days=call["lead_time_days"],
+            reasons=call["reasons"],
+            predicted_significant_wave_height=Reading(
+                value=call["predicted_significant_wave_height"], unit=call["unit"]
+            ),
+        ),
         peak_swell_height=Reading(**peak["readings"]["swell_height"]),
         swell_period_at_peak=Reading(**peak["readings"]["swell_period"]),
         swell_direction_at_peak=Reading(**peak["readings"]["swell_direction"]),
@@ -177,13 +228,24 @@ def forecast(store: Annotated[Store, Depends(get_store)]) -> Forecast:
             detail="No forecast has been ingested yet. Run the pipeline first.",
         )
 
-    by_date: dict[str, list[dict[str, Any]]] = {}
-    for hour in hours:
-        by_date.setdefault(hour["at"][:10], []).append(hour)
+    by_date = group_by_date(hours)
+    stored = store.calls()
+
+    # A forecast with no calls behind it is still served. ADR 0005 asks that the site stay
+    # up and honest, and the days, their hours and their heights are all real; failing the
+    # whole endpoint because the call record is empty threw away everything ticket #5
+    # delivered over something ticket #6 added.
+    #
+    # The store answers which call is newest. Doing it here meant sorting by `issued_at`,
+    # which the store's own docstring rules out because two runs inside one second tie.
+    newest = store.latest_call()
 
     return Forecast(
         fetched_at=hours[0]["fetched_at"],
-        days=[summarise(date, by_date[date]) for date in sorted(by_date)],
+        amplification_model=None if newest is None else newest["amplification_model"],
+        # Nothing to say the thresholds were fitted, so the interface must not imply it.
+        calibrated=newest is not None and newest["calibrated"],
+        days=[summarise(day, by_date[day], stored.get(day)) for day in sorted(by_date)],
     )
 
 

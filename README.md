@@ -143,6 +143,19 @@ reading and all nine forecast days render, the page never scrolls horizontally, 
 hourly table scrolls inside its own box rather than the page. The CSS uses only fluid
 units, but nothing stops a regression; a browser-driven test would close this.
 
+**No conditions at Praia do Norte are predicted yet — only offshore ones are shown.**
+Ticket #6 asks for "predicted conditions at Praia do Norte … not only Offshore
+Conditions", and that criterion is *not* met. The Heuristic Baseline passes the offshore
+Significant Wave Height through unchanged, so the number labelled as predicted is the
+offshore figure. The interface says so on every call, but disclosure is not the same as
+satisfying the requirement, and this is recorded as unmet rather than ticked.
+
+It is deliberately not fixed here. Predicting what the canyon does to a swell is what the
+learned model in #13 earns; the only way to produce a different number today would be to
+multiply by an invented amplification factor, which is precisely the confident, plausible,
+wrong number ADR 0006 and `CONTEXT.md` exist to prevent. Slice 1 therefore ships real
+advice built on a real rule of thumb, and no prediction of the break itself.
+
 **The site shows more than ticket #4 asked for.** The ticket enumerates seven readings;
 ten are displayed, adding significant wave height, wave period and wave direction under
 a *Combined sea* heading. Significant Wave Height is the Proxy Target the whole project
@@ -170,9 +183,30 @@ This is enforced rather than asserted, in both suites:
 
 ## Status
 
-Early. Current Offshore Conditions and a nine-day forecast range are ingested from
-Open-Meteo, stored, and displayed, with hour-by-hour detail for any day. No model and no
-Watch or Go Calls yet — those are tickets #6 onward.
+Slice 1 complete. Current Offshore Conditions and a nine-day forecast are ingested from
+Open-Meteo, stored, and displayed with hour-by-hour detail — and every day now carries a
+**Watch**, **Go**, **Confirmed** or **No call**, with the conditions that produced it.
+Every call is kept: the store appends rather than replaces, so the succession of calls
+made about a date as it approaches survives, which is the record #11 scores.
+
+The Amplification Model behind those calls is the Heuristic Baseline of ADR 0006: the
+surf community's rule of thumb, with no machine learning in it. It ships as the
+permanent benchmark a learned model must beat in #13, and the interface says plainly
+that its thresholds are not yet calibrated — #12 fits them to Gold Days.
+
+The tiers are decided by Lead Time alone for now. ADR 0003 has them driven by Model
+Spread — disagreement between independent wave models — which ticket #8 introduces; a
+Watch is kept looser than a Go Call in the meantime by not requiring the wind
+condition, and nothing claims the forecast has converged, because nothing measures it.
+
+It predicts Significant Wave Height, not Face Height. The canyon's famous threefold
+amplification applies to the wave a surfer rides; multiplying the instrument's measure
+by a face-height factor would produce a confident, plausible, wrong number.
+
+The baseline applies no amplification at all: the height it "predicts" is the offshore
+forecast's own figure, carried through unchanged, and the interface says so on every
+call. That is not an oversight — it is the floor #13's learned model has to clear, and
+inventing a multiplier would have made the benchmark meaningless as well as wrong.
 
 The range is nine days rather than sixteen because that is where the provider stops
 modelling swell. It pads its time axis to whatever is requested and nulls the hours it
