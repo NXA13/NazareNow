@@ -41,12 +41,26 @@ A deployment running before October collects a full season of forward record; on
 slips past it collects none, and #11's precision figure waits a year. This is the only
 piece of work in the project with a deadline set by the ocean rather than by us.
 
-**The site will be publicly reachable while its thresholds are uncalibrated.** The interface
-already says so — it states that the calls come from a rule of thumb rather than values
-fitted to Gold Days, that the predicted height is the offshore figure carried through
-unchanged, and that no buoy reading reaches the page. Deploying does not change what the
-system knows; it changes how many people can act on it. That is a reason to keep the
-disclosures prominent, not a reason to wait, because waiting also costs a season.
+**Deployed, but not published.** The site goes up behind authentication and stays that way
+until its thresholds are calibrated.
+
+This costs nothing, because visibility is not what the deployment is for. The record
+accumulates because the *scheduler* runs continuously; whether anyone can load the page is
+unrelated. Running it locally instead would invert that trade — no audience either way, and
+a record with a gap for every closed laptop lid.
+
+It also removes a real risk. The interface is honest about being uncalibrated, about the
+predicted height being the offshore figure unchanged, and about nothing being measured —
+but honest disclaimers are a weaker protection than a login when the underlying advice is
+"fly to Portugal". The disclaimers stay prominent regardless; the wall comes down when #12
+has fitted the thresholds and #11 has produced a number.
+
+**The API lives behind the same wall, on the same origin.** A private page in front of a
+public `/api/conditions/forecast` is not private — that endpoint is the store. Serving both
+from one origin closes that, and removes CORS from the deployment entirely: the allowlist
+in `api.py` exists because the two seams mock the boundary between them, so a drifting
+origin fails only in a browser, invisibly to both suites. One origin means there is nothing
+to drift.
 
 **Open-Meteo's free tier is non-commercial.** A freely accessible site is within it. If this
 ever carries advertising, subscriptions or referral revenue, the licence has to change with
