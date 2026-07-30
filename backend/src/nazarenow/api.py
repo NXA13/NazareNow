@@ -149,7 +149,14 @@ class ForecastDay(BaseModel):
     missing data."""
 
     peak_swell_height: Reading
-    """The day's largest swell, which is what decides whether it is worth travelling for."""
+    """The day's largest swell, shown so a reader can scan the range at a glance.
+
+    It decides nothing. The rule of thumb is applied to **Significant Wave Height**, which
+    travels on the call as `predicted_significant_wave_height`, and `CONTEXT.md` lists
+    "swell height" among that term's avoided synonyms precisely because they are different
+    variables measuring different things. Saying this field was "what decides whether it is
+    worth travelling for" put the conflation the model was corrected for back into the
+    interface's own prose, one field above the quantity that actually decides."""
 
     swell_period_at_peak: Reading
     swell_direction_at_peak: Reading
