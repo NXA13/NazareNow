@@ -69,6 +69,20 @@ export function App() {
 
       {state.status === 'loaded' && (
         <>
+          {/* Above everything, not in the footer. ADR 0005 promises the site stays up and
+              honest when the provider is unreachable — and a timestamp at the bottom of
+              the page is not honest enough on its own. Someone deciding whether to book a
+              flight should learn the data is old before they read the data, not after.
+              Whether it *is* old is the backend's judgement, not this layer's. */}
+          {state.conditions.stale && (
+            <p role="alert" className="alert stale">
+              <strong>These conditions are out of date.</strong> No forecast has been retrieved for
+              at least {state.conditions.stale_after_hours} hours, so this is the last data we
+              received rather than the current picture. Treat the calls below as history, not
+              advice.
+            </p>
+          )}
+
           <section aria-labelledby="swell-heading">
             <h2 id="swell-heading">Swell</h2>
             <dl className="readings">

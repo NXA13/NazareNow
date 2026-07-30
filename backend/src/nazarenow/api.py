@@ -10,6 +10,7 @@ Nothing here should ever grow a network call outward.
 from __future__ import annotations
 
 import os
+from datetime import UTC, datetime
 from functools import lru_cache
 from typing import Annotated, Any
 
@@ -18,6 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from nazarenow.cycle import STALE_AFTER_HOURS, STALE_AFTER_SECONDS
 from nazarenow.days import group_by_date
 from nazarenow.decision import Status
 from nazarenow.store import Store, StoreUnavailable
@@ -78,6 +80,37 @@ def get_store() -> Store:
         raise HTTPException(status_code=500, detail=f"Store unavailable: {error}") from error
 
 
+def utc_now() -> datetime:
+    """The wall clock, isolated so tests can move it.
+
+    Deliberately the only clock reading in this layer. Lead Time is fixed when a call is
+    issued and stored with it, precisely so a stale forecast cannot present an elapsed Go
+    Call as fresh advice — nothing about a *prediction* may depend on when it is read.
+    Freshness is the exception that proves it: how old the data is is a fact about now.
+    """
+    return datetime.now(UTC)
+
+
+def is_stale(fetched_at: str) -> bool:
+    """Whether results fetched at this moment are too old to present as current.
+
+    ADR 0005 promises the site "stays up and honest — showing stale results with a
+    timestamp" when the provider is unreachable. A timestamp alone is not honest enough:
+    "fetched 09:04" reads as current to anyone not doing arithmetic, and this system exists
+    to make people act. So the judgement is made here and stated outright.
+
+    An unparseable timestamp counts as stale. The alternative is reporting data as current
+    because we could not work out how old it was.
+    """
+    try:
+        fetched = datetime.fromisoformat(fetched_at)
+    except ValueError:
+        return True
+    if fetched.tzinfo is None:
+        fetched = fetched.replace(tzinfo=UTC)
+    return (utc_now() - fetched).total_seconds() > STALE_AFTER_SECONDS
+
+
 class Reading(BaseModel):
     """One measured quantity, carrying the unit the provider reported it in.
 
@@ -96,6 +129,19 @@ class CurrentConditions(BaseModel):
     least this old."""
 
     fetched_at: str
+
+    stale: bool
+    """True when no Pipeline Run has succeeded for two whole cycles. The interface says so
+    prominently rather than leaving a reader to subtract timestamps."""
+
+    stale_after_hours: int
+    """How old results must be before `stale` turns true.
+
+    Sent so the interface can state the figure without knowing it. It was written into the
+    page as the literal "at least six hours" while a docstring claimed the number was
+    single-sourced — so changing the cadence would have left the page asserting a duration
+    that was no longer true, with no test to notice."""
+
     latitude: float
     longitude: float
 
@@ -177,6 +223,12 @@ class ForecastDay(BaseModel):
 class Forecast(BaseModel):
     fetched_at: str
 
+    stale: bool
+    """As on CurrentConditions. Both endpoints serve the same Pipeline Run, so a reader
+    seeing one of them must not have to consult the other to learn the data is old."""
+
+    stale_after_hours: int
+
     amplification_model: str | None
     """None when the store holds no calls, so nothing has named a model. The interface
     says so rather than guessing at one."""
@@ -249,6 +301,8 @@ def forecast(store: Annotated[Store, Depends(get_store)]) -> Forecast:
 
     return Forecast(
         fetched_at=hours[0]["fetched_at"],
+        stale=is_stale(hours[0]["fetched_at"]),
+        stale_after_hours=STALE_AFTER_HOURS,
         amplification_model=None if newest is None else newest["amplification_model"],
         # Nothing to say the thresholds were fitted, so the interface must not imply it.
         calibrated=newest is not None and newest["calibrated"],
@@ -274,6 +328,8 @@ def current_conditions(store: Annotated[Store, Depends(get_store)]) -> CurrentCo
     return CurrentConditions(
         observed_at=latest["observed_at"],
         fetched_at=latest["fetched_at"],
+        stale=is_stale(latest["fetched_at"]),
+        stale_after_hours=STALE_AFTER_HOURS,
         latitude=latest["latitude"],
         longitude=latest["longitude"],
         **latest["readings"],

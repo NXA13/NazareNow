@@ -32,6 +32,28 @@ figure for the system would be meaningless.
 
 ## Implementation status
 
+**The roster named above cannot be implemented as written.** Requested on its own at Praia
+do Norte, `ecmwf_wam` returns `swell_wave_height: null` — it carries a combined `wave_height`
+and no swell partition, and `ecmwf_wam025` behaves the same way. The Amplification Model
+consumes swell, so ECMWF WAM is unusable here whatever the quality of its wave model. Three
+of the four models this ADR names do work. Ticket #8 revises the roster rather than
+implementing it; the per-model evidence table is in `analysis/forecast_models/`.
+
+Three further corrections from the same investigation bear on #8. The documented identifiers
+`gfs_wave025` and `gfs_wave016` are rejected by the API — the working forms are
+`ncep_gfswave025` and `ncep_gfswave016`. `gfs_seamless`, `gfs_global` and
+`meteofrance_seamless` all return 200 with null values here, so an implementation trusting a
+success response would record a model as agreeing when it had said nothing at all. And EWAM
+and GWAM are both DWD: counting them as two independent opinions overstates the ensemble
+this ADR's uncertainty estimate rests on.
+
+One consequence is sharp enough to belong here rather than in the ticket. The working models
+do not publish on the same cycle — MeteoFrance and DWD twelve-hourly, NCEP six-hourly — so at
+many moments one model's forecast is up to six hours older than another's. Differencing them
+naively measures our sampling of their publication schedules alongside genuine disagreement
+and reports the sum as uncertainty. #8 must align model runs before differencing, or this
+ADR's central mechanism will be reading staleness as doubt.
+
 As of ticket #6 the tiers are decided by Lead Time alone. Model Spread does not exist
 yet — ticket #8 introduces it — so nothing in the system measures forecast agreement, and
 no part of it may claim a forecast has "converged". A Watch is kept genuinely looser than

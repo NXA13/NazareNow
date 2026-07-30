@@ -39,8 +39,16 @@ const READINGS: [string, keyof typeof currentConditions][] = [
   ['Water temperature', 'water_temperature'],
 ];
 
-/** Fields describing the observation rather than being readings. */
-const METADATA = ['observed_at', 'fetched_at', 'latitude', 'longitude'];
+/** Fields describing the observation rather than being readings. `stale` belongs here:
+ * it is a judgement about the run's age, surfaced as a warning rather than a value. */
+const METADATA = [
+  'observed_at',
+  'fetched_at',
+  'latitude',
+  'longitude',
+  'stale',
+  'stale_after_hours',
+];
 
 describe('current conditions', () => {
   it('covers every reading the API returns', () => {
@@ -82,6 +90,60 @@ describe('current conditions', () => {
     expect(freshness).toHaveTextContent(/09:00/);
     expect(freshness).toHaveTextContent(/09:04/);
     expect(freshness).toHaveTextContent(/13/);
+  });
+
+  it('warns prominently when the data is stale', async () => {
+    // ADR 0005 promises the site stays up and honest when the provider is unreachable.
+    // The warning is an alert and sits above the readings, because someone deciding
+    // whether to book a flight must learn the data is old before they read the data.
+    server.use(
+      http.get('*/api/conditions/current', () =>
+        HttpResponse.json({ ...currentConditions, stale: true }),
+      ),
+    );
+
+    render(<App />);
+
+    const warning = await screen.findByRole('alert');
+    expect(warning).toHaveTextContent(/out of date/i);
+    expect(warning).toHaveTextContent(/history, not advice/i);
+    // The duration comes from the backend, not from a literal typed into the page. It was
+    // "at least six hours" here while a docstring claimed the number was single-sourced,
+    // so a change of cadence would have left this sentence quietly untrue.
+    expect(warning).toHaveTextContent(`${currentConditions.stale_after_hours} hours`);
+
+    // Above the readings, not after them: a warning below the numbers is read second.
+    const swell = screen.getByRole('group', { name: 'Swell height' });
+    expect(warning.compareDocumentPosition(swell)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it('shows no staleness warning when the data is current', async () => {
+    // The warning must be driven by the flag, not always rendered. A permanently visible
+    // "out of date" banner is worse than none: it trains the reader to ignore it.
+    render(<App />);
+
+    await screen.findByRole('group', { name: 'Swell height' });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('does not decide staleness for itself', async () => {
+    // The backend owns "too old to trust" — ADR 0005 makes this layer a reader, and an
+    // earlier version of this codebase reimplemented domain thresholds in the presentation
+    // layer and got them wrong. A fetched_at from 2019 with stale: false must stay quiet.
+    server.use(
+      http.get('*/api/conditions/current', () =>
+        HttpResponse.json({
+          ...currentConditions,
+          fetched_at: '2019-01-01T00:00:00+00:00',
+          stale: false,
+        }),
+      ),
+    );
+
+    render(<App />);
+
+    await screen.findByRole('group', { name: 'Swell height' });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('does not claim any reading was measured', async () => {
