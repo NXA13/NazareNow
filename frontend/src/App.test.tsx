@@ -84,6 +84,21 @@ describe('current conditions', () => {
     expect(freshness).toHaveTextContent(/13/);
   });
 
+  it('does not claim any reading was measured', async () => {
+    // The page said "Swell and sea measured at 39.54°N, 9.21°W — roughly 15km offshore,
+    // near the head of the Nazaré Canyon". Nothing on it is an observation: every figure
+    // is Open-Meteo model output at a grid point, and no buoy reading reaches the live
+    // system — Monican02's record lives only in analysis/, for a model not yet built.
+    // Describing a modelled figure as measured invites a reader to trust it further than
+    // it deserves. Nothing asserted this wording, so the claim went unguarded.
+    render(<App />);
+
+    const provenance = await screen.findByTestId('provenance');
+    expect(provenance).toHaveTextContent(/modelled/i);
+    expect(provenance).toHaveTextContent(/not measured/i);
+    expect(provenance).not.toHaveTextContent(/sea measured at/i);
+  });
+
   it('exposes the raw timestamps in machine-readable form', async () => {
     render(<App />);
 

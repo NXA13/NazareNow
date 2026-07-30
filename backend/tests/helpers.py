@@ -66,16 +66,23 @@ def forecast_provider(
     days: int = 14,
     only_hours: dict[str, tuple[int, ...]] | None = None,
     peak_but_onshore: dict[str, tuple[int, ...]] | None = None,
+    also_hours: dict[str, tuple[dict[str, float], tuple[int, ...]]] | None = None,
 ) -> httpx.MockTransport:
     """A provider returning `days` days from `today`, quiet except where overridden.
 
     `only_hours` restricts a date's overridden conditions to those hours, leaving the
     rest of the day quiet. Without it a day is uniform, which cannot distinguish a rule
     judging the best matching hour from one judging the peak or the first.
+
+    `also_hours` overlays a *second*, different set of conditions onto named hours of a
+    date, as `{date: (conditions, hours)}`. A day needs two genuinely different windows to
+    show which one a call was judged on — one clean but modest, one large but failing a
+    different condition. With a single window every rule for choosing an hour agrees.
     """
     by_date = by_date or {}
     only_hours = only_hours or {}
     peak_but_onshore = peak_but_onshore or {}
+    also_hours = also_hours or {}
     start = date.fromisoformat(today)
     stamps: list[str] = []
     marine: dict[str, list[Any]] = {name: [] for name in MARINE_UNITS if name != "time"}
@@ -87,9 +94,12 @@ def forecast_provider(
         window = only_hours.get(day)
 
         biggest = peak_but_onshore.get(day, ())
+        overlay = also_hours.get(day)
         for hour in range(24):
             applies = override and (window is None or hour in window)
             conditions = {**QUIET, **(override if applies else {})}
+            if overlay is not None and hour in overlay[1]:
+                conditions = {**conditions, **overlay[0]}
             if hour in biggest:
                 # The day's largest sea, but blowing onshore: a peak that fails the
                 # rule, so judging the peak differs from judging the best match.

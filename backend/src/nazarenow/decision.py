@@ -60,6 +60,21 @@ class Status(StrEnum):
     NONE = "none"
 
 
+# How much a call says, strongest first. A day is called at the best call any of its hours
+# supports, so this orders them.
+_STRENGTH = {Status.CONFIRMED: 3, Status.GO: 2, Status.WATCH: 1, Status.NONE: 0}
+
+
+def strength(status: Status) -> int:
+    """How strong a call this status is, for choosing between calls about the same day.
+
+    Confirmed and Go differ only by Lead Time, which is fixed for a given day, so within one
+    day the ordering is really "matched every condition" above "matched the swell" above
+    "matched neither".
+    """
+    return _STRENGTH[status]
+
+
 @dataclass(frozen=True)
 class Call:
     status: Status

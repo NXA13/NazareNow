@@ -19,7 +19,7 @@ from typing import Any
 import httpx
 
 from nazarenow.days import group_by_date
-from nazarenow.decision import Status, conditions_behind, decide
+from nazarenow.decision import Status, conditions_behind, decide, strength
 from nazarenow.models import AmplificationModel, HeuristicBaseline
 from nazarenow.sources import open_meteo
 from nazarenow.sources.open_meteo import MARINE_READINGS, WEATHER_READINGS
@@ -116,17 +116,24 @@ def derive_calls(hours: list[dict[str, Any]]) -> list[dict[str, Any]]:
     #11 needs to score Go Call precision after the fact. Deciding per request produced no
     record at all.
 
-    The call is judged on the day's best *matching* hour rather than its biggest. A day
-    with a clean 3m offshore window at 09:00 and an onshore peak at 15:00 is worth
-    surfacing, and judging the peak alone silently discarded it -- costing exactly the
-    recall ADR 0003 asks the Watch tier to protect.
+    **A day is called at the best call any of its hours supports.** Every hour is decided on
+    its own and the strongest resulting call wins, the largest sea breaking a tie.
 
-    That rule cuts against precision, though, and a Go Call is the tier optimised for it:
-    one clean hour in twenty-four is enough to earn "book a flight". Rather than invent a
-    minimum window -- ticket #12 calibrates thresholds against Gold Days and should own
-    that number -- every call states how many of the day's hours actually matched, so a
-    day resting on a single hour says so in the reasons a user reads. ADR 0003 records
-    the trade.
+    Choosing a representative hour *before* deciding cannot work, and two attempts at it
+    failed the same way. Ranking hours by how many conditions they failed is tier-blind: a
+    Watch ignores wind by design, so an 8m hour failing only *period* ties with a clean 3.5m
+    hour failing only *wind*, wins the tie on size, and takes the day down to no call --
+    a bigger wave *removing* a Watch. Judging the peak hour alone had the same shape. Any
+    pre-selection must guess which conditions matter, and only the tier knows that.
+
+    Deciding first and comparing calls afterwards cannot have that fault: each hour is
+    judged against the conditions its own tier requires.
+
+    A Go Call can still rest on a single clean hour, and it is the tier optimised for
+    precision. Rather than invent a minimum window -- ticket #12 calibrates thresholds
+    against Gold Days and should own that number -- every call states how many hours
+    supported it, so a day resting on one says so in the reasons a user reads. ADR 0003
+    records the trade.
     """
     by_date = group_by_date(hours)
     issued_for = min(by_date)
@@ -139,13 +146,17 @@ def derive_calls(hours: list[dict[str, Any]]) -> list[dict[str, Any]]:
             )
             for hour in by_date[day]
         ]
-        # Fewest failed conditions wins; the largest sea breaks a tie.
-        best = min(
-            predictions,
-            key=lambda p: (len(p.unmatched), -p.significant_wave_height),
-        )
         lead_time = (date.fromisoformat(day) - date.fromisoformat(issued_for)).days
-        call = decide(best, lead_time)
+        # Decide every hour, then take the strongest call. The reasons and the height
+        # reported are the winning hour's, so what a user reads is the hour that earned
+        # the call rather than whichever hour some earlier heuristic preferred.
+        call = max(
+            (decide(prediction, lead_time) for prediction in predictions),
+            key=lambda issued: (
+                strength(issued.status),
+                issued.predicted_significant_wave_height,
+            ),
+        )
         # Counted against the conditions this call rests on, not always against all four.
         # A Watch ignores wind by design, so counting every condition made a genuine Watch
         # day report "0 of 24 forecast hours match every condition" beside its own badge.
