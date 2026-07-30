@@ -24,6 +24,9 @@ export interface CurrentConditions {
   /** The older of the two providers' observation times: the picture is at least this old. */
   observed_at: string;
   fetched_at: string;
+  /** True when no pipeline run has succeeded for two whole cycles. The backend decides
+   * this — "too old to trust" is domain knowledge, and ADR 0005 makes this layer a reader. */
+  stale: boolean;
   latitude: number;
   longitude: number;
   swell_height: Reading;
@@ -38,9 +41,12 @@ export interface CurrentConditions {
   wind_direction: Reading;
 }
 
+/** An hour carries readings only. Everything describing the *run* — when it happened,
+ * where, and whether it is now too old to trust — belongs to the response, not to each
+ * of its hours. */
 export interface ForecastHour extends Omit<
   CurrentConditions,
-  'observed_at' | 'fetched_at' | 'latitude' | 'longitude'
+  'observed_at' | 'fetched_at' | 'latitude' | 'longitude' | 'stale'
 > {
   at: string;
 }
@@ -77,6 +83,8 @@ export interface ForecastDay {
 
 export interface Forecast {
   fetched_at: string;
+  /** As on CurrentConditions: both endpoints serve the same pipeline run. */
+  stale: boolean;
   /** Null when the backend holds no calls, so nothing has named a model. */
   amplification_model: string | null;
   /** False while thresholds are a rule of thumb rather than values fitted to Gold Days.

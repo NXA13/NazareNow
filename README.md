@@ -79,8 +79,26 @@ That contacts Open-Meteo, keeps the raw responses, and writes the parsed reading
 rather than the working directory, so ingesting and serving cannot end up on different
 databases — they did, and the API reported no conditions while holding a good row.
 
-Per ADR 0005 this is the only part of the system that talks to a third party; ticket #7
-puts it on a schedule.
+To keep it current without touching it, run the schedule instead:
+
+```bash
+.venv/Scripts/python.exe -m nazarenow schedule
+```
+
+That runs immediately and then every three hours, logging each run's outcome. A failed
+run loses the run, never the schedule — Open-Meteo will be unreachable sooner or later,
+and a system that dies on one bad fetch stops silently while the site goes on serving old
+data. Nothing is written by a failed run, and once no run has succeeded for six hours the
+interface says so at the top of the page rather than leaving a reader to subtract
+timestamps.
+
+Three hours, not six, on evidence: `best_match` at Praia do Norte resolves to
+MeteoFrance's wave model, which publishes twice a day, so this keeps the site within
+three hours of a published run instead of up to half an update behind. See
+[`analysis/forecast_models/`](./analysis/forecast_models/). It buys freshness, not
+accuracy.
+
+Per ADR 0005 these are the only parts of the system that talk to a third party.
 
 Then two processes, in separate terminals:
 

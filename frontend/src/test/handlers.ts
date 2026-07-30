@@ -17,6 +17,7 @@ import type { CallStatus, CurrentConditions, Forecast } from '../api';
 export const currentConditions: CurrentConditions = {
   observed_at: '2026-02-13T09:00',
   fetched_at: '2026-02-13T09:04:11.221000+00:00',
+  stale: false,
   latitude: 39.541664,
   longitude: -9.208328,
   swell_height: { value: 8.1, unit: 'm' },
@@ -126,6 +127,7 @@ export function dayFrom(
  * rather than hidden, and that height, period and direction stay separate. */
 export const forecast: Forecast = {
   fetched_at: '2026-02-11T09:04:11.221000+00:00',
+  stale: false,
   amplification_model: 'heuristic-baseline',
   calibrated: false,
   days: [
