@@ -18,6 +18,7 @@ export const currentConditions: CurrentConditions = {
   observed_at: '2026-02-13T09:00',
   fetched_at: '2026-02-13T09:04:11.221000+00:00',
   stale: false,
+  stale_after_hours: 6,
   latitude: 39.541664,
   longitude: -9.208328,
   swell_height: { value: 8.1, unit: 'm' },
@@ -128,6 +129,7 @@ export function dayFrom(
 export const forecast: Forecast = {
   fetched_at: '2026-02-11T09:04:11.221000+00:00',
   stale: false,
+  stale_after_hours: 6,
   amplification_model: 'heuristic-baseline',
   calibrated: false,
   days: [

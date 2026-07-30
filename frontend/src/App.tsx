@@ -77,8 +77,9 @@ export function App() {
           {state.conditions.stale && (
             <p role="alert" className="alert stale">
               <strong>These conditions are out of date.</strong> No forecast has been retrieved for
-              at least six hours, so this is the last data we received rather than the current
-              picture. Treat the calls below as history, not advice.
+              at least {state.conditions.stale_after_hours} hours, so this is the last data we
+              received rather than the current picture. Treat the calls below as history, not
+              advice.
             </p>
           )}
 

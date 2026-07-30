@@ -85,12 +85,16 @@ To keep it current without touching it, run the schedule instead:
 .venv/Scripts/python.exe -m nazarenow schedule
 ```
 
-That runs immediately and then every three hours, logging each run's outcome. A failed
+That runs immediately and then on the forecast cycle, logging each run's outcome. A failed
 run loses the run, never the schedule — Open-Meteo will be unreachable sooner or later,
 and a system that dies on one bad fetch stops silently while the site goes on serving old
-data. Nothing is written by a failed run, and once no run has succeeded for six hours the
-interface says so at the top of the page rather than leaving a reader to subtract
-timestamps.
+data. Nothing is written by a failed run, and once two whole cycles have passed without a
+successful one, the interface says so at the top of the page rather than leaving a reader
+to subtract timestamps.
+
+Both intervals live in `backend/src/nazarenow/cycle.py`, and the figure the page shows a
+user is sent by the API rather than written into the page — it was typed there as a
+literal once, which a change of cadence would have silently made untrue.
 
 Three hours, not six, on evidence: `best_match` at Praia do Norte resolves to
 MeteoFrance's wave model, which publishes twice a day, so this keeps the site within

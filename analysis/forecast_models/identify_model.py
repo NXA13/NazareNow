@@ -39,6 +39,10 @@ LATITUDE = 39.56
 LONGITUDE = -9.21
 
 # Every model Open-Meteo offers for this endpoint. Coverage notes are the provider's.
+# Note the NCEP identifiers. Open-Meteo's documentation calls them `gfs_wave025` and
+# `gfs_wave016`; the API rejects both with "Cannot initialize MultiDomains from invalid
+# String value". The working names are below, and this script listing the documented ones
+# meant it could not reproduce the table in the README beside it.
 MODELS = [
     "best_match",
     "ecmwf_wam",
@@ -46,8 +50,8 @@ MODELS = [
     "meteofrance_wave",
     "dwd_ewam",  # Europe only
     "dwd_gwam",
-    "gfs_wave025",
-    "gfs_wave016",  # 52.5°N–15°S, so Nazaré at 39.56°N is inside it
+    "ncep_gfswave025",
+    "ncep_gfswave016",  # 52.5°N–15°S, so Nazaré at 39.56°N is inside it
 ]
 
 # The variables the pipeline actually reads, so a match here means a match on the data the
@@ -79,6 +83,19 @@ def series(body: dict[str, Any]) -> list[tuple[Any, ...]]:
     return [row for row in rows if any(value is not None for value in row)]
 
 
+def missing_variables(body: dict[str, Any]) -> list[str]:
+    """Variables a model returns nothing for, though it answered 200.
+
+    ECMWF WAM carries combined wave height at Nazaré and no swell partition, so it cannot
+    take part in the Model Spread of #8 on the variables this project reads. Judging a
+    model by its status code alone would record it as agreeing when it had said nothing:
+    `gfs_seamless`, `gfs_global` and `meteofrance_seamless` all answer 200 here with every
+    value null.
+    """
+    hourly = body.get("hourly", {})
+    return [name for name in VARIABLES if all(value is None for value in hourly.get(name, [None]))]
+
+
 def main() -> int:
     results: dict[str, list[tuple[Any, ...]]] = {}
     for model in MODELS:
@@ -90,7 +107,9 @@ def main() -> int:
         rows = series(body)
         results[model] = rows
         first = rows[0] if rows else None
-        print(f"{model:<20} {len(rows):>4} usable hours   first hour: {first}")
+        absent = missing_variables(body)
+        note = f"   no data for: {', '.join(absent)}" if absent else ""
+        print(f"{model:<20} {len(rows):>4} usable hours   first hour: {first}{note}")
 
     reference = results.get("best_match")
     if not reference:

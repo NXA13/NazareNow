@@ -27,6 +27,10 @@ export interface CurrentConditions {
   /** True when no pipeline run has succeeded for two whole cycles. The backend decides
    * this — "too old to trust" is domain knowledge, and ADR 0005 makes this layer a reader. */
   stale: boolean;
+  /** How old results must be before `stale` turns true. Sent so this layer can state the
+   * figure without knowing it: it was once written here as the literal "six hours", which
+   * a change of cadence would have silently made untrue. */
+  stale_after_hours: number;
   latitude: number;
   longitude: number;
   swell_height: Reading;
@@ -46,7 +50,7 @@ export interface CurrentConditions {
  * of its hours. */
 export interface ForecastHour extends Omit<
   CurrentConditions,
-  'observed_at' | 'fetched_at' | 'latitude' | 'longitude' | 'stale'
+  'observed_at' | 'fetched_at' | 'latitude' | 'longitude' | 'stale' | 'stale_after_hours'
 > {
   at: string;
 }
@@ -85,6 +89,7 @@ export interface Forecast {
   fetched_at: string;
   /** As on CurrentConditions: both endpoints serve the same pipeline run. */
   stale: boolean;
+  stale_after_hours: number;
   /** Null when the backend holds no calls, so nothing has named a model. */
   amplification_model: string | null;
   /** False while thresholds are a rule of thumb rather than values fitted to Gold Days.

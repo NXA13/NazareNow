@@ -5,8 +5,10 @@ Pipeline Runs unattended, so a test that substituted a fake one would assert the
 called something, not that the system stayed current — and the interesting failures all
 live in what happens when a real run goes wrong.
 
-The interval and the waiting are injected, so the suite exercises the cadence without
-sleeping through it.
+Every wait is injected — the cycle interval and the provider retry backoff alike — so the
+suite exercises the cadence without living through it. That is worth stating precisely,
+because an earlier version of this line claimed it while `run_scheduled` forwarded no
+`sleep` to the Pipeline Run, and the suite sat through 24 seconds of real backoff.
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ from nazarenow.schedule import INTERVAL_SECONDS, STALE_AFTER_SECONDS, run_schedu
 TODAY = "2026-02-09"
 
 
-def flaky_provider(fail_first: int) -> tuple[httpx.MockTransport, list[float]]:
+def flaky_provider(fail_first: int) -> httpx.MockTransport:
     """A provider that refuses the first `fail_first` requests, then behaves.
 
     Connection errors rather than error statuses: a provider being unreachable is the
@@ -30,15 +32,16 @@ def flaky_provider(fail_first: int) -> tuple[httpx.MockTransport, list[float]]:
     status-code path in the fetch logic.
     """
     good = forecast_provider({"2026-02-13": GIANT}, today=TODAY)
-    seen: list[float] = []
+    attempts = 0
 
     def handle(request: httpx.Request) -> httpx.Response:
-        seen.append(len(seen))
-        if len(seen) <= fail_first:
+        nonlocal attempts
+        attempts += 1
+        if attempts <= fail_first:
             raise httpx.ConnectError("provider unreachable")
         return good.handler(request)
 
-    return httpx.MockTransport(handle), seen
+    return httpx.MockTransport(handle)
 
 
 def test_a_failed_run_does_not_stop_the_schedule(store) -> None:
@@ -48,7 +51,7 @@ def test_a_failed_run_does_not_stop_the_schedule(store) -> None:
     lost, not the schedule.
     """
     # Enough failures to exhaust every retry of the first run, then a clean provider.
-    transport, _ = flaky_provider(fail_first=3)
+    transport = flaky_provider(fail_first=3)
     slept: list[float] = []
 
     with httpx.Client(transport=transport) as client:
@@ -92,7 +95,7 @@ def test_a_run_that_raises_something_unexpected_is_survived_too(store) -> None:
 def test_the_schedule_reports_what_happened_on_each_run(store, capsys) -> None:
     """A scheduler nobody can see is a scheduler nobody trusts. Each run says whether it
     succeeded, so an operator reading logs can tell a quiet system from a stuck one."""
-    transport, _ = flaky_provider(fail_first=3)
+    transport = flaky_provider(fail_first=3)
 
     with httpx.Client(transport=transport) as client:
         run_scheduled(store, client, runs=2, sleep=lambda _: None)
@@ -175,7 +178,7 @@ class TestStaleness:
         ingest(store, forecast_provider({"2026-02-13": GIANT}, today=TODAY))
         good = client.get("/api/conditions/current").json()
 
-        transport, _ = flaky_provider(fail_first=99)
+        transport = flaky_provider(fail_first=99)
         with httpx.Client(transport=transport) as failing:
             completed = run_scheduled(store, failing, runs=2, sleep=lambda _: None)
 
@@ -192,13 +195,30 @@ class TestStaleness:
 
 
 @pytest.mark.parametrize("command", ["ingest", "schedule"])
-def test_both_commands_are_reachable_from_the_command_line(command) -> None:
-    """The scheduler is only useful if something can start it. `main` returning 2 for a
-    command the module documents is the whole feature failing at the last step."""
+def test_each_command_dispatches_to_its_own_handler(command, monkeypatch) -> None:
+    """The scheduler is only useful if something can start it.
+
+    The handler is substituted rather than run: `schedule` loops forever against the real
+    Open-Meteo, which no test may do. What is asserted is the dispatch — that this argument
+    reaches this handler and not the other one. An earlier version of this test only
+    checked the command was a key in the mapping, so wiring both names to `ingest` would
+    have passed it while the scheduler could never be started.
+    """
     from nazarenow.__main__ import COMMANDS, main
 
-    assert command in COMMANDS
+    called: list[str] = []
+    for name in COMMANDS:
+        monkeypatch.setitem(COMMANDS, name, lambda name=name: called.append(name) or 0)
+
+    assert main(["nazarenow", command]) == 0
+    assert called == [command]
+
+
+def test_an_unknown_command_is_refused() -> None:
+    from nazarenow.__main__ import main
+
     assert main(["nazarenow", "nonsense"]) == 2
+    assert main(["nazarenow"]) == 2
 
 
 @pytest.mark.parametrize("runs", [0, 1])

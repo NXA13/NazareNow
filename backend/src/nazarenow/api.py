@@ -19,9 +19,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from nazarenow.cycle import STALE_AFTER_HOURS, STALE_AFTER_SECONDS
 from nazarenow.days import group_by_date
 from nazarenow.decision import Status
-from nazarenow.schedule import STALE_AFTER_SECONDS
 from nazarenow.store import Store, StoreUnavailable
 
 app = FastAPI(
@@ -134,6 +134,14 @@ class CurrentConditions(BaseModel):
     """True when no Pipeline Run has succeeded for two whole cycles. The interface says so
     prominently rather than leaving a reader to subtract timestamps."""
 
+    stale_after_hours: int
+    """How old results must be before `stale` turns true.
+
+    Sent so the interface can state the figure without knowing it. It was written into the
+    page as the literal "at least six hours" while a docstring claimed the number was
+    single-sourced — so changing the cadence would have left the page asserting a duration
+    that was no longer true, with no test to notice."""
+
     latitude: float
     longitude: float
 
@@ -219,6 +227,8 @@ class Forecast(BaseModel):
     """As on CurrentConditions. Both endpoints serve the same Pipeline Run, so a reader
     seeing one of them must not have to consult the other to learn the data is old."""
 
+    stale_after_hours: int
+
     amplification_model: str | None
     """None when the store holds no calls, so nothing has named a model. The interface
     says so rather than guessing at one."""
@@ -292,6 +302,7 @@ def forecast(store: Annotated[Store, Depends(get_store)]) -> Forecast:
     return Forecast(
         fetched_at=hours[0]["fetched_at"],
         stale=is_stale(hours[0]["fetched_at"]),
+        stale_after_hours=STALE_AFTER_HOURS,
         amplification_model=None if newest is None else newest["amplification_model"],
         # Nothing to say the thresholds were fitted, so the interface must not imply it.
         calibrated=newest is not None and newest["calibrated"],
@@ -318,6 +329,7 @@ def current_conditions(store: Annotated[Store, Depends(get_store)]) -> CurrentCo
         observed_at=latest["observed_at"],
         fetched_at=latest["fetched_at"],
         stale=is_stale(latest["fetched_at"]),
+        stale_after_hours=STALE_AFTER_HOURS,
         latitude=latest["latitude"],
         longitude=latest["longitude"],
         **latest["readings"],

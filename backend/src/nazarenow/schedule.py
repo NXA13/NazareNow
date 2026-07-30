@@ -29,19 +29,14 @@ from collections.abc import Callable
 
 import httpx
 
+from nazarenow.cycle import INTERVAL_SECONDS, STALE_AFTER_SECONDS
 from nazarenow.pipeline import run_pipeline
 from nazarenow.store import Store
 
-# Three hours, in seconds. See the module docstring for why this number and not six.
-INTERVAL_SECONDS = 3 * 60 * 60
-
-# When results stop being presentable as current: two whole cycles without a successful
-# run. One missed run is a blip — a provider hiccup, a restart — and calling that stale
-# would train users to ignore the warning. Two means something is actually wrong.
-#
-# It lives beside the interval rather than in the API, so a change to the cadence cannot
-# leave the staleness threshold describing a schedule that no longer exists.
-STALE_AFTER_SECONDS = 2 * INTERVAL_SECONDS
+# Both live in `cycle`, which neither reads a provider nor serves a request, so the
+# read-only API can learn the staleness threshold without importing this module and the
+# network call behind it.
+__all__ = ["INTERVAL_SECONDS", "STALE_AFTER_SECONDS", "run_scheduled"]
 
 
 def run_scheduled(
@@ -58,8 +53,14 @@ def run_scheduled(
     serving nothing — or three-hour-old data — for a full cycle after every restart, which
     is exactly when someone is most likely to be watching.
 
-    `runs` bounds the loop; None means forever, which is what the CLI passes. The tests
-    bound it, and `sleep` is injected so they exercise the cadence without waiting for it.
+    `runs` bounds the loop; None means forever, which is what the CLI passes.
+
+    `sleep` covers **every** wait this loop performs: the cycle interval, and the retry
+    backoff inside a Pipeline Run. Forwarding it was not optional bookkeeping — an earlier
+    version passed it only to the interval, so the suite really did sit through the
+    provider backoff of every failing run and took 25 seconds, while the test module's own
+    docstring claimed it exercised the cadence "without sleeping through it". A slow suite
+    is a suite people stop running.
     """
     completed: list[bool] = []
 
@@ -68,7 +69,7 @@ def run_scheduled(
             sleep(interval)
 
         try:
-            run_pipeline(store, client)
+            run_pipeline(store, client, sleep=sleep)
         except Exception as error:  # noqa: BLE001 — surviving the unanticipated is the job
             # Both the kind and the detail: "failed" alone cannot distinguish a provider
             # outage from a payload this system has stopped understanding, and those need

@@ -41,7 +41,14 @@ const READINGS: [string, keyof typeof currentConditions][] = [
 
 /** Fields describing the observation rather than being readings. `stale` belongs here:
  * it is a judgement about the run's age, surfaced as a warning rather than a value. */
-const METADATA = ['observed_at', 'fetched_at', 'latitude', 'longitude', 'stale'];
+const METADATA = [
+  'observed_at',
+  'fetched_at',
+  'latitude',
+  'longitude',
+  'stale',
+  'stale_after_hours',
+];
 
 describe('current conditions', () => {
   it('covers every reading the API returns', () => {
@@ -100,6 +107,10 @@ describe('current conditions', () => {
     const warning = await screen.findByRole('alert');
     expect(warning).toHaveTextContent(/out of date/i);
     expect(warning).toHaveTextContent(/history, not advice/i);
+    // The duration comes from the backend, not from a literal typed into the page. It was
+    // "at least six hours" here while a docstring claimed the number was single-sourced,
+    // so a change of cadence would have left this sentence quietly untrue.
+    expect(warning).toHaveTextContent(`${currentConditions.stale_after_hours} hours`);
 
     // Above the readings, not after them: a warning below the numbers is read second.
     const swell = screen.getByRole('group', { name: 'Swell height' });
