@@ -18,8 +18,9 @@ from typing import Any
 
 import httpx
 
+from nazarenow.days import group_by_date
 from nazarenow.decision import decide
-from nazarenow.models import HeuristicBaseline
+from nazarenow.models import AmplificationModel, HeuristicBaseline
 from nazarenow.sources import open_meteo
 from nazarenow.sources.open_meteo import MARINE_READINGS, WEATHER_READINGS
 from nazarenow.store import Store
@@ -32,8 +33,10 @@ from nazarenow.store import Store
 MINIMUM_FORECAST_HOURS = 24
 
 # The active Amplification Model. ADR 0006 keeps the Heuristic Baseline permanently as
-# the benchmark; ticket #13 swaps a learned model in behind the same interface.
-AMPLIFICATION_MODEL = HeuristicBaseline()
+# the benchmark; ticket #13 swaps a learned model in behind the same interface. Annotated
+# with that interface rather than left implicit, so the type checker is what proves the
+# swap is possible — an interface nothing is ever declared against is decoration.
+AMPLIFICATION_MODEL: AmplificationModel = HeuristicBaseline()
 
 
 def collect(body: dict[str, Any], mapping: dict[str, str]) -> dict[str, dict[str, Any]]:
@@ -117,11 +120,15 @@ def derive_calls(hours: list[dict[str, Any]]) -> list[dict[str, Any]]:
     with a clean 3m offshore window at 09:00 and an onshore peak at 15:00 is worth
     surfacing, and judging the peak alone silently discarded it -- costing exactly the
     recall ADR 0003 asks the Watch tier to protect.
-    """
-    by_date: dict[str, list[dict[str, Any]]] = {}
-    for hour in hours:
-        by_date.setdefault(hour["at"][:10], []).append(hour)
 
+    That rule cuts against precision, though, and a Go Call is the tier optimised for it:
+    one clean hour in twenty-four is enough to earn "book a flight". Rather than invent a
+    minimum window -- ticket #12 calibrates thresholds against Gold Days and should own
+    that number -- every call states how many of the day's hours actually matched, so a
+    day resting on a single hour says so in the reasons a user reads. ADR 0003 records
+    the trade.
+    """
+    by_date = group_by_date(hours)
     issued_for = min(by_date)
     calls: list[dict[str, Any]] = []
 
@@ -139,16 +146,20 @@ def derive_calls(hours: list[dict[str, Any]]) -> list[dict[str, Any]]:
         )
         lead_time = (date.fromisoformat(day) - date.fromisoformat(issued_for)).days
         call = decide(best, lead_time)
+        matching = sum(1 for prediction in predictions if prediction.matches_rule)
         calls.append(
             {
                 "date": day,
                 "issued_for_date": issued_for,
                 "status": call.status.value,
                 "lead_time_days": call.lead_time_days,
-                "reasons": list(call.reasons),
-                "predicted_hs": call.predicted_significant_wave_height,
+                "reasons": [
+                    *call.reasons,
+                    f"{matching} of {len(predictions)} forecast hours match every condition",
+                ],
+                "predicted_significant_wave_height": call.predicted_significant_wave_height,
                 "unit": call.unit,
-                "model": AMPLIFICATION_MODEL.name,
+                "amplification_model": AMPLIFICATION_MODEL.name,
                 "calibrated": AMPLIFICATION_MODEL.calibrated,
             }
         )

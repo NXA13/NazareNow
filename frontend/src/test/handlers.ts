@@ -72,13 +72,18 @@ function hoursFor(date: string, peak: number, longestPeriod: number, direction: 
   });
 }
 
-/** A day whose summary is derived from its own hours, so the two cannot contradict. */
-function dayFrom(
+/** A day whose summary is derived from its own hours, so the two cannot contradict.
+ *
+ * `call` of null is a day the backend holds no call for, which the API returns as
+ * `call: null` — distinct from a call whose status is `none`. That one was judged and
+ * found not worth travelling for; this one was never judged.
+ */
+export function dayFrom(
   date: string,
   peak: number,
   longestPeriod: number,
   direction: number,
-  call: CallStatus = 'none',
+  call: CallStatus | null = 'none',
   leadTime = 0,
 ) {
   const hours = hoursFor(date, peak, longestPeriod, direction);
@@ -86,18 +91,25 @@ function dayFrom(
   const longestHour = hours.reduce((a, b) => (b.swell_period.value > a.swell_period.value ? b : a));
   return {
     date,
-    call: {
-      status: call,
-      lead_time_days: leadTime,
-      reasons: [`swell period ${peakHour.swell_period.value}s`, 'wind is offshore and light'],
-      // Its own object with its own value. Sharing peak_swell_height's object made
-      // rendering the wrong one undetectable, and they are different quantities:
-      // CONTEXT.md lists swell height under significant wave height's avoided synonyms.
-      predicted_significant_wave_height: {
-        value: Number((peakHour.swell_height.value + 0.4).toFixed(2)),
-        unit: 'm',
-      },
-    },
+    call:
+      call === null
+        ? null
+        : {
+            status: call,
+            lead_time_days: leadTime,
+            reasons: [
+              `swell period ${peakHour.swell_period.value}s`,
+              'wind is offshore and light',
+              '3 of 24 forecast hours match every condition',
+            ],
+            // Its own object with its own value. Sharing peak_swell_height's object made
+            // rendering the wrong one undetectable, and they are different quantities:
+            // CONTEXT.md lists swell height under significant wave height's avoided synonyms.
+            predicted_significant_wave_height: {
+              value: Number((peakHour.swell_height.value + 0.4).toFixed(2)),
+              unit: 'm',
+            },
+          },
     peak_swell_height: peakHour.swell_height,
     swell_period_at_peak: peakHour.swell_period,
     swell_direction_at_peak: peakHour.swell_direction,

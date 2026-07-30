@@ -49,8 +49,9 @@ export type CallStatus = 'confirmed' | 'go' | 'watch' | 'none';
 
 export interface DayCall {
   status: CallStatus;
-  /** Days from the day the forecast was fetched. A Go Call is only worth something if
-   * it arrives while flights are still bookable, so the number travels with the call. */
+  /** Days from the first day the forecast covers, fixed when the call was issued rather
+   * than recomputed against the clock. A Go Call is only worth something if it arrives
+   * while flights are still bookable, so the number travels with the call. */
   lead_time_days: number;
   reasons: string[];
   predicted_significant_wave_height: Reading;
@@ -58,7 +59,10 @@ export interface DayCall {
 
 export interface ForecastDay {
   date: string;
-  call: DayCall;
+  /** Null when no pipeline run has made a call about this day — which is not the same as
+   * a call of status `none`. That one has been judged and found not worth travelling for;
+   * this one has not been judged at all. */
+  call: DayCall | null;
   /** Height, period and direction are summarised separately and never collapsed into a
    * single size figure — a short-period 8m sea and an 8m groundswell are different days. */
   peak_swell_height: Reading;
@@ -73,7 +77,8 @@ export interface ForecastDay {
 
 export interface Forecast {
   fetched_at: string;
-  amplification_model: string;
+  /** Null when the backend holds no calls, so nothing has named a model. */
+  amplification_model: string | null;
   /** False while thresholds are a rule of thumb rather than values fitted to Gold Days.
    * The interface must not imply a precision the numbers do not have. */
   calibrated: boolean;

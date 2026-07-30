@@ -170,9 +170,11 @@ This is enforced rather than asserted, in both suites:
 
 ## Status
 
-Slice 1 complete. Current Offshore Conditions and a ten-day forecast are ingested from
+Slice 1 complete. Current Offshore Conditions and a nine-day forecast are ingested from
 Open-Meteo, stored, and displayed with hour-by-hour detail — and every day now carries a
 **Watch**, **Go**, **Confirmed** or **No call**, with the conditions that produced it.
+Every call is kept: the store appends rather than replaces, so the succession of calls
+made about a date as it approaches survives, which is the record #11 scores.
 
 The Amplification Model behind those calls is the Heuristic Baseline of ADR 0006: the
 surf community's rule of thumb, with no machine learning in it. It ships as the
@@ -187,6 +189,11 @@ condition, and nothing claims the forecast has converged, because nothing measur
 It predicts Significant Wave Height, not Face Height. The canyon's famous threefold
 amplification applies to the wave a surfer rides; multiplying the instrument's measure
 by a face-height factor would produce a confident, plausible, wrong number.
+
+The baseline applies no amplification at all: the height it "predicts" is the offshore
+forecast's own figure, carried through unchanged, and the interface says so on every
+call. That is not an oversight — it is the floor #13's learned model has to clear, and
+inventing a multiplier would have made the benchmark meaningless as well as wrong.
 
 The range is nine days rather than sixteen because that is where the provider stops
 modelling swell. It pads its time axis to whatever is requested and nulls the hours it

@@ -3,6 +3,10 @@
 Conditions are specified per date, and optionally per hour within a date, so tests can
 place a matching window somewhere other than the day's peak — which is the case the
 Pipeline Run's best-matching-hour rule exists to handle.
+
+`no_sleep` and `ingest` live here rather than in each suite. Both were declared twice,
+verbatim, in a file whose own docstring promised shared fixtures — so the two copies could
+drift and one suite would exercise a different pipeline entry point from the other.
 """
 
 from __future__ import annotations
@@ -139,3 +143,35 @@ def forecast_provider(
 def ingest(store, transport: httpx.MockTransport, sleep=no_sleep) -> None:
     with httpx.Client(transport=transport) as http:
         run_pipeline(store, http, sleep=sleep)
+
+
+def stub_hours(date: str, conditions: dict[str, float] | None = None) -> list[dict[str, Any]]:
+    """A day of forecast hours in the shape the store holds them.
+
+    Bypasses the provider and the Pipeline Run, which is the point: a run always stores
+    calls alongside its forecast, and the call record is append-only, so no sequence of
+    real runs can produce a stored forecast with no calls behind it. The API must still
+    answer honestly if it ever meets one.
+    """
+    readings = {**QUIET, **(conditions or {})}
+    return [
+        {
+            "at": f"{date}T{hour:02d}:00",
+            "readings": {
+                "swell_height": {"value": readings["significant_wave_height"] * 0.8, "unit": "m"},
+                "swell_period": {"value": readings["swell_period"], "unit": "s"},
+                "swell_direction": {"value": readings["swell_direction"], "unit": "°"},
+                "significant_wave_height": {
+                    "value": readings["significant_wave_height"],
+                    "unit": "m",
+                },
+                "wave_period": {"value": readings["swell_period"] - 2.0, "unit": "s"},
+                "wave_direction": {"value": readings["swell_direction"], "unit": "°"},
+                "water_temperature": {"value": 15.0, "unit": "°C"},
+                "air_temperature": {"value": 13.0, "unit": "°C"},
+                "wind_speed": {"value": readings["wind_speed"], "unit": "km/h"},
+                "wind_direction": {"value": readings["wind_direction"], "unit": "°"},
+            },
+        }
+        for hour in range(24)
+    ]

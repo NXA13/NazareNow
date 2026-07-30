@@ -22,7 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from nazarenow.models.base import Prediction
+from nazarenow.models.base import Condition, Prediction
 
 # Lead Time bands, in days from the day the call was issued.
 CONFIRMED_THROUGH = 1
@@ -32,7 +32,15 @@ GO_CALL_THROUGH = 7
 # almost no information, and gating a Watch on it made the tier exactly as strict as a Go
 # Call — one rule with two names, which is what ADR 0003 exists to prevent. What a Watch
 # needs is a swell worth watching: size, period and direction.
-WATCH_CONDITIONS = ("significant wave height", "swell period", "swell direction")
+#
+# Named by identity. These were once the strings the Heuristic Baseline happens to print,
+# matched as substrings against its failure messages: rewording a message moved days
+# between tiers, and a model wording its failures differently made every day a Watch.
+WATCH_CONDITIONS = (
+    Condition.SIGNIFICANT_WAVE_HEIGHT,
+    Condition.SWELL_PERIOD,
+    Condition.SWELL_DIRECTION,
+)
 
 
 class Status(StrEnum):
@@ -51,13 +59,6 @@ class Call:
     unit: str = "m"
 
 
-def _swell_conditions_hold(prediction: Prediction) -> bool:
-    """Whether the swell itself is worth watching, ignoring the wind."""
-    return not any(
-        condition in failure for failure in prediction.unmatched for condition in WATCH_CONDITIONS
-    )
-
-
 def decide(prediction: Prediction, lead_time_days: int) -> Call:
     """Turn a prediction into a call at the given Lead Time.
 
@@ -65,18 +66,27 @@ def decide(prediction: Prediction, lead_time_days: int) -> Call:
     included: a long-period swell arriving through onshore wind is not the day anyone
     flew for, and a Go Call costs money. A Watch requires only the swell conditions, so a
     building swell whose wind has not yet turned is still surfaced at range.
+
+    Raises on a negative Lead Time. A call is issued *for* a date in the forecast, from
+    the first day that forecast covers, so a date before its own issue date is a caller
+    fault rather than a case to fall through. An earlier version returned silence here
+    and described that as protecting users from a stale forecast presenting an elapsed Go
+    Call as fresh advice — a branch nothing could reach, guarding against a danger it did
+    not address.
     """
+    if lead_time_days < 0:
+        raise ValueError(
+            f"lead time {lead_time_days} is negative: a call cannot be issued for a date "
+            "before the forecast that produced it"
+        )
+
     reasons = prediction.matched + prediction.unmatched
 
-    if lead_time_days < 0:
-        # A call for a date already past. Storing calls with their issue date makes this
-        # reachable when a stale forecast is served, and silence is the honest answer.
-        status = Status.NONE
-    elif prediction.matches_rule and lead_time_days <= CONFIRMED_THROUGH:
+    if prediction.matches_rule and lead_time_days <= CONFIRMED_THROUGH:
         status = Status.CONFIRMED
     elif prediction.matches_rule and lead_time_days <= GO_CALL_THROUGH:
         status = Status.GO
-    elif _swell_conditions_hold(prediction) and lead_time_days > CONFIRMED_THROUGH:
+    elif prediction.holds(*WATCH_CONDITIONS) and lead_time_days > CONFIRMED_THROUGH:
         status = Status.WATCH
     else:
         status = Status.NONE

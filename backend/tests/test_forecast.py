@@ -444,7 +444,7 @@ def test_a_failure_partway_through_a_write_leaves_nothing_changed(store, client)
         {"at": "2026-03-01T00:00", "readings": hour},
     ]
     with pytest.raises(sqlite3.IntegrityError):
-        store.record_run("2026-03-01T00:00", 1.0, 2.0, {"nonsense": {}}, duplicated)
+        store.record_run("2026-03-01T00:00", 1.0, 2.0, {"nonsense": {}}, duplicated, [])
 
     assert client.get("/api/conditions/current").json() == conditions_before
     assert client.get("/api/conditions/forecast").json() == forecast_before
@@ -454,7 +454,7 @@ def test_a_failure_partway_through_a_write_leaves_nothing_changed(store, client)
     # implementation committing the conditions last also passed it.
     with pytest.raises(sqlite3.IntegrityError):
         store.record_run(
-            None, 1.0, 2.0, {"nonsense": {}}, [{"at": "2026-03-02T00:00", "readings": hour}]
+            None, 1.0, 2.0, {"nonsense": {}}, [{"at": "2026-03-02T00:00", "readings": hour}], []
         )  # type: ignore[arg-type]
 
     assert client.get("/api/conditions/current").json() == conditions_before

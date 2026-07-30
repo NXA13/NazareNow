@@ -5,6 +5,12 @@ Model directly, which was a seam breach with no justification: every property as
 below — status, reasons, predicted height — is observable through the API, so the
 exception `Store.raw_responses()` earns ("nothing else can observe it") does not apply.
 
+Two classes at the end are the narrow exceptions, each for the same documented reason:
+what they assert cannot be observed through HTTP at all. `TestTheInterfaceIsRealDecides`
+substitutes a different Amplification Model, which is the swap ADR 0001 and ADR 0006
+exist to permit and which no request can exercise; `TestCallsSurviveTheNextRun` asserts
+retention across runs, and only the latest call is served.
+
 Thresholds are pinned at their boundaries, both sides. Testing only "a giant setup
 matches and a flat one does not" left every threshold value and every comparison operator
 free: 3m could become 2m or 4m, and >= could become >, with the suite still green.
@@ -14,7 +20,9 @@ from __future__ import annotations
 
 import pytest
 
-from helpers import GIANT, QUIET, forecast_provider, ingest
+from helpers import GIANT, QUIET, forecast_provider, ingest, stub_hours
+from nazarenow.decision import decide
+from nazarenow.models.base import Condition, ConditionOutcome, Prediction
 
 # Literals, deliberately. Importing the constants and testing `CONSTANT - 0.1` looks
 # rigorous and pins nothing: change the constant and both sides of the assertion move
@@ -166,6 +174,27 @@ class TestCallContent:
         assert any("swell period" in reason for reason in reasons)
         assert any("wind" in reason for reason in reasons)
 
+    def test_a_call_says_how_much_of_the_day_matched(self, store, client) -> None:
+        """A Go Call is the tier optimised for precision, and judging a day on its best
+        matching hour lets a single clean hour earn one. Rather than invent a minimum
+        window — ticket #12 owns threshold values — the call states the count, so a day
+        resting on one hour cannot present itself as a day-long swell."""
+        ingest(
+            store,
+            forecast_provider(
+                {SOON: GIANT},
+                today=TODAY,
+                only_hours={SOON: (9, 10, 11)},
+            ),
+        )
+
+        assert "3 of 24 forecast hours match every condition" in calls(client)[SOON]["reasons"]
+
+    def test_a_quiet_day_says_no_hour_matched(self, store, client) -> None:
+        ingest(store, forecast_provider({SOON: QUIET}, today=TODAY))
+
+        assert "0 of 24 forecast hours match every condition" in calls(client)[SOON]["reasons"]
+
     def test_a_call_reports_the_significant_wave_height_it_judged(self, store, client) -> None:
         """The reported height must be the Significant Wave Height the rule was applied
         to, not the swell height — CONTEXT.md lists those as different variables, and the
@@ -219,5 +248,142 @@ class TestCallsArePersisted:
         assert calls(client)["2020-01-05"]["lead_time_days"] == 4
         assert store.calls()["2020-01-05"]["issued_for_date"] == "2020-01-01"
 
-    def test_no_calls_yet_is_reported_rather_than_faked(self, client) -> None:
+    def test_no_forecast_yet_is_reported_rather_than_faked(self, client) -> None:
         assert client.get("/api/conditions/forecast").status_code == 503
+
+    def test_a_day_with_no_call_is_shown_without_one(self, store, client) -> None:
+        """ADR 0005 asks that the site stay up and honest. A forecast whose calls are
+        missing still has real days, hours and heights behind it, and failing the whole
+        endpoint threw away everything ticket #5 delivered over something #6 added.
+
+        A day carrying no call is distinct from one whose call is `none`: the first has
+        not been judged, the second has been judged and found not worth travelling for.
+        """
+        store.record_run(
+            observed_at=f"{TODAY}T00:00",
+            latitude=39.5,
+            longitude=-9.2,
+            readings={},
+            hours=stub_hours(SOON, GIANT),
+            calls=[],
+        )
+
+        body = client.get("/api/conditions/forecast").json()
+
+        assert body["days"], "days disappeared with their calls"
+        assert all(day["call"] is None for day in body["days"])
+        assert body["amplification_model"] is None
+        # Nothing says these thresholds were fitted, so nothing may imply it.
+        assert body["calibrated"] is False
+
+    def test_every_forecast_day_is_listed_even_without_a_call(self, store, client) -> None:
+        """Days were filtered to those the store held a call for, so a day missing from
+        the call record vanished from the range — a hole a reader cannot tell from
+        missing data, in an endpoint whose own docstring promises quiet days are kept."""
+        store.record_run(
+            observed_at=f"{TODAY}T00:00",
+            latitude=39.5,
+            longitude=-9.2,
+            readings={},
+            hours=stub_hours(TODAY, GIANT) + stub_hours(SOON, GIANT),
+            calls=[
+                {
+                    "date": TODAY,
+                    "issued_for_date": TODAY,
+                    "status": "confirmed",
+                    "lead_time_days": 0,
+                    "reasons": ["every condition holds"],
+                    "predicted_significant_wave_height": 4.2,
+                    "unit": "m",
+                    "amplification_model": "heuristic-baseline",
+                    "calibrated": False,
+                }
+            ],
+        )
+
+        body = client.get("/api/conditions/forecast").json()
+        shown = {day["date"]: day["call"] for day in body["days"]}
+
+        assert list(shown) == [TODAY, SOON]
+        assert shown[TODAY]["status"] == "confirmed"
+        assert shown[SOON] is None
+
+
+class TestCallsSurviveTheNextRun:
+    """ADR 0005: "Every prediction the system has ever made is retained by construction."
+
+    That record is what ticket #11 scores Go Call precision from, and the succession of
+    calls about one date as it approaches is itself the measurement — a Watch at eleven
+    days that became a Go Call at four and then a flat sea is a different failure from a
+    day never called at all.
+
+    Asserted through `Store.call_history` rather than HTTP, for the reason `raw_responses`
+    documents: no endpoint exposes superseded calls, and retention cannot be observed
+    through one that serves only the latest.
+    """
+
+    def test_a_second_run_does_not_erase_the_first(self, store) -> None:
+        ingest(store, forecast_provider({FAR: GIANT}, today=TODAY))
+        ingest(store, forecast_provider({FAR: QUIET}, today=TODAY))
+
+        history = [call for call in store.call_history() if call["date"] == FAR]
+
+        assert [call["status"] for call in history] == ["watch", "none"]
+
+    def test_every_day_of_the_forecast_gets_a_call(self, store, client) -> None:
+        """The behaviour that made retention optional dangerous. `record_run` once took
+        `calls` as an optional argument, so a run that simply omitted them stored a
+        forecast, reported success, and left the record ADR 0005 promises empty."""
+        ingest(store, forecast_provider({SOON: GIANT}, today=TODAY))
+
+        body = client.get("/api/conditions/forecast").json()
+
+        assert body["days"]
+        assert all(day["call"] is not None for day in body["days"])
+
+    def test_the_api_serves_the_most_recent_call_for_a_date(self, store, client) -> None:
+        ingest(store, forecast_provider({FAR: GIANT}, today=TODAY))
+        ingest(store, forecast_provider({FAR: QUIET}, today=TODAY))
+
+        assert calls(client)[FAR]["status"] == "none"
+
+
+class TestTheInterfaceIsRealDecides:
+    """ADR 0001 and ADR 0006 promise the Heuristic Baseline can be swapped for a learned
+    model in ticket #13 "without anything downstream changing". Nothing observable through
+    HTTP can exercise that, because only one model is ever wired in — so these substitute
+    another implementation of the interface directly.
+
+    What they guard is real: the Decision Model once decided Watch-versus-Go by
+    substring-matching the Heuristic Baseline's own English failure messages. Any model
+    phrasing its failures differently matched nothing, and every day it judged became a
+    Watch — the tier ADR 0003 optimises for recall, handed out on wording.
+    """
+
+    def test_a_model_wording_its_failures_differently_is_read_correctly(self) -> None:
+        prediction = Prediction(
+            significant_wave_height=6.0,
+            conditions=(
+                ConditionOutcome(Condition.SIGNIFICANT_WAVE_HEIGHT, True, "big enough"),
+                ConditionOutcome(Condition.SWELL_PERIOD, True, "long enough"),
+                # Worded without the words the old rule looked for.
+                ConditionOutcome(Condition.SWELL_DIRECTION, False, "arriving from the south"),
+                ConditionOutcome(Condition.WIND, True, "clean"),
+            ),
+        )
+
+        # Direction is a swell condition, so it gates the Watch as surely as height does.
+        assert decide(prediction, 11).status == "none"
+
+    def test_a_model_that_judges_nothing_earns_no_call(self) -> None:
+        """`matches_rule` once read as "no failures", so a prediction carrying no
+        conditions at all satisfied every tier — advice to book a flight, from silence."""
+        assert decide(Prediction(significant_wave_height=9.0), 4).status == "none"
+
+    def test_a_call_cannot_be_issued_for_a_date_before_its_forecast(self) -> None:
+        """A negative Lead Time is a caller fault, not a case to fall through. The branch
+        that returned silence here was unreachable — the pipeline measures Lead Time from
+        the forecast's own first day — while its comment claimed it protected users from
+        a stale forecast presenting an elapsed Go Call as fresh advice."""
+        with pytest.raises(ValueError, match="negative"):
+            decide(Prediction(significant_wave_height=9.0), -1)

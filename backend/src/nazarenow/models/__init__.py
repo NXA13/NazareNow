@@ -5,7 +5,13 @@ learned model in ticket #13 without the Decision Model, the API or the interface
 changing. The baseline is not deleted when that happens — it stays as the benchmark.
 """
 
-from .base import AmplificationModel, Prediction
+from .base import AmplificationModel, Condition, ConditionOutcome, Prediction
 from .heuristic import HeuristicBaseline
 
-__all__ = ["AmplificationModel", "HeuristicBaseline", "Prediction"]
+__all__ = [
+    "AmplificationModel",
+    "Condition",
+    "ConditionOutcome",
+    "HeuristicBaseline",
+    "Prediction",
+]

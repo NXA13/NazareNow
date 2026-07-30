@@ -298,6 +298,14 @@ footer p {
   color: var(--muted);
 }
 
+/* A day nothing has judged. Deliberately paler and outlined rather than filled: it is an
+   absence of advice, and it must not read as a verdict of "not worth travelling for". */
+.call-unjudged {
+  background: transparent;
+  border: 1px dashed #c3ccd2;
+  color: var(--muted);
+}
+
 .call-watch {
   background: #fdf0d5;
   color: #7a5410;

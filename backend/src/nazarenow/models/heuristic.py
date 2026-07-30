@@ -9,7 +9,7 @@ It contains no machine learning and is deliberately weak. Its job is to be a flo
 
 from __future__ import annotations
 
-from .base import Prediction
+from .base import Condition, ConditionOutcome, Prediction
 
 # Thresholds from the surf community's rule of thumb for Praia do Norte: a large swell,
 # a long period, arriving from the west-north-west, with light offshore wind. Ticket #12
@@ -53,9 +53,6 @@ class HeuristicBaseline:
     calibrated = False
 
     def predict(self, readings: dict[str, float]) -> Prediction:
-        matched: list[str] = []
-        unmatched: list[str] = []
-
         # ADR 0006 defines the rule of thumb on Significant Wave Height, and CONTEXT.md
         # lists "swell height" under that term's avoided synonyms because they are
         # different variables. Reading swell height here and reporting it as Hs conflated
@@ -66,31 +63,40 @@ class HeuristicBaseline:
         wind_speed = readings["wind_speed"]
         wind_direction = readings["wind_direction"]
 
-        for holds, held, failed in (
-            (
-                significant_wave_height >= MINIMUM_WAVE_HEIGHT_M,
-                f"significant wave height {significant_wave_height:g}m is at or above "
-                f"{MINIMUM_WAVE_HEIGHT_M:g}m",
-                f"significant wave height {significant_wave_height:g}m is below "
-                f"{MINIMUM_WAVE_HEIGHT_M:g}m",
-            ),
-            (
-                period >= MINIMUM_SWELL_PERIOD_S,
-                f"swell period {period:g}s is at or above {MINIMUM_SWELL_PERIOD_S:g}s",
-                f"swell period {period:g}s is below {MINIMUM_SWELL_PERIOD_S:g}s",
-            ),
-            (
-                _within(direction, SWELL_ARC),
-                f"swell direction {direction:g}° is within the canyon's arc",
-                f"swell direction {direction:g}° is outside the canyon's arc",
-            ),
-            (
-                _within(wind_direction, OFFSHORE_WIND_ARC) and wind_speed <= MAXIMUM_WIND_SPEED_KMH,
-                f"wind is offshore and light at {wind_speed:g} km/h",
-                _wind_fault(wind_speed, wind_direction),
-            ),
-        ):
-            (matched if holds else unmatched).append(held if holds else failed)
+        # Each condition carries its identity alongside its sentence. The Decision Model
+        # branches on the identity; only the interface reads the sentence.
+        conditions = tuple(
+            ConditionOutcome(condition, holds, held if holds else failed)
+            for condition, holds, held, failed in (
+                (
+                    Condition.SIGNIFICANT_WAVE_HEIGHT,
+                    significant_wave_height >= MINIMUM_WAVE_HEIGHT_M,
+                    f"significant wave height {significant_wave_height:g}m is at or above "
+                    f"{MINIMUM_WAVE_HEIGHT_M:g}m",
+                    f"significant wave height {significant_wave_height:g}m is below "
+                    f"{MINIMUM_WAVE_HEIGHT_M:g}m",
+                ),
+                (
+                    Condition.SWELL_PERIOD,
+                    period >= MINIMUM_SWELL_PERIOD_S,
+                    f"swell period {period:g}s is at or above {MINIMUM_SWELL_PERIOD_S:g}s",
+                    f"swell period {period:g}s is below {MINIMUM_SWELL_PERIOD_S:g}s",
+                ),
+                (
+                    Condition.SWELL_DIRECTION,
+                    _within(direction, SWELL_ARC),
+                    f"swell direction {direction:g}° is within the canyon's arc",
+                    f"swell direction {direction:g}° is outside the canyon's arc",
+                ),
+                (
+                    Condition.WIND,
+                    _within(wind_direction, OFFSHORE_WIND_ARC)
+                    and wind_speed <= MAXIMUM_WIND_SPEED_KMH,
+                    f"wind is offshore and light at {wind_speed:g} km/h",
+                    _wind_fault(wind_speed, wind_direction),
+                ),
+            )
+        )
 
         return Prediction(
             # Deliberately the forecast's own swell height, not a multiple of it. The
@@ -100,8 +106,7 @@ class HeuristicBaseline:
             # model in ticket #13 is what earns the right to predict a different value —
             # and this baseline is the floor it must clear.
             significant_wave_height=significant_wave_height,
-            matched=tuple(matched),
-            unmatched=tuple(unmatched),
+            conditions=conditions,
         )
 
 
