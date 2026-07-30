@@ -235,7 +235,10 @@ def forecast(store: Annotated[Store, Depends(get_store)]) -> Forecast:
     # up and honest, and the days, their hours and their heights are all real; failing the
     # whole endpoint because the call record is empty threw away everything ticket #5
     # delivered over something ticket #6 added.
-    newest = max(stored.values(), key=lambda call: call["issued_at"], default=None)
+    #
+    # The store answers which call is newest. Doing it here meant sorting by `issued_at`,
+    # which the store's own docstring rules out because two runs inside one second tie.
+    newest = store.latest_call()
 
     return Forecast(
         fetched_at=hours[0]["fetched_at"],

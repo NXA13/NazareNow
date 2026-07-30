@@ -19,7 +19,7 @@ from typing import Any
 import httpx
 
 from nazarenow.days import group_by_date
-from nazarenow.decision import decide
+from nazarenow.decision import Status, conditions_behind, decide
 from nazarenow.models import AmplificationModel, HeuristicBaseline
 from nazarenow.sources import open_meteo
 from nazarenow.sources.open_meteo import MARINE_READINGS, WEATHER_READINGS
@@ -146,17 +146,23 @@ def derive_calls(hours: list[dict[str, Any]]) -> list[dict[str, Any]]:
         )
         lead_time = (date.fromisoformat(day) - date.fromisoformat(issued_for)).days
         call = decide(best, lead_time)
-        matching = sum(1 for prediction in predictions if prediction.matches_rule)
+        # Counted against the conditions this call rests on, not always against all four.
+        # A Watch ignores wind by design, so counting every condition made a genuine Watch
+        # day report "0 of 24 forecast hours match every condition" beside its own badge.
+        required = conditions_behind(call.status)
+        matching = sum(1 for prediction in predictions if prediction.holds(*required))
+        hours_matched = (
+            f"{matching} of {len(predictions)} forecast hours carry the swell behind this Watch"
+            if call.status is Status.WATCH
+            else f"{matching} of {len(predictions)} forecast hours match every condition"
+        )
         calls.append(
             {
                 "date": day,
                 "issued_for_date": issued_for,
                 "status": call.status.value,
                 "lead_time_days": call.lead_time_days,
-                "reasons": [
-                    *call.reasons,
-                    f"{matching} of {len(predictions)} forecast hours match every condition",
-                ],
+                "reasons": [*call.reasons, hours_matched],
                 "predicted_significant_wave_height": call.predicted_significant_wave_height,
                 "unit": call.unit,
                 "amplification_model": AMPLIFICATION_MODEL.name,

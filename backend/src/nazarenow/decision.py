@@ -42,6 +42,16 @@ WATCH_CONDITIONS = (
     Condition.SWELL_DIRECTION,
 )
 
+# A Go Call and a Confirmed statement require all four, wind included.
+#
+# Named explicitly rather than read off `Prediction.matches_rule`, which asks only whether
+# every condition a model *chose to judge* held. A model that never judges wind satisfies
+# that on any clean swell and earns a Go Call through onshore wind — the tiers collapsing
+# into one rule with two names, which is what ADR 0003 exists to prevent. Fixing the Watch
+# tier to name its conditions and leaving these two reading `matches_rule` reproduced the
+# same defect one branch lower.
+GO_CONDITIONS = (*WATCH_CONDITIONS, Condition.WIND)
+
 
 class Status(StrEnum):
     CONFIRMED = "confirmed"
@@ -57,6 +67,17 @@ class Call:
     reasons: tuple[str, ...]
     predicted_significant_wave_height: float
     unit: str = "m"
+
+
+def conditions_behind(status: Status) -> tuple[Condition, ...]:
+    """The conditions a call of this status actually rests on.
+
+    A Watch rests on the swell alone, so counting how many of a day's hours cleared *every*
+    condition described something the Watch was never judged against: a real Watch day
+    displayed "0 of 24 forecast hours match every condition" beside its own badge, which is
+    arithmetically true and, as an explanation of that call, nonsense.
+    """
+    return WATCH_CONDITIONS if status is Status.WATCH else GO_CONDITIONS
 
 
 def decide(prediction: Prediction, lead_time_days: int) -> Call:
@@ -82,9 +103,9 @@ def decide(prediction: Prediction, lead_time_days: int) -> Call:
 
     reasons = prediction.matched + prediction.unmatched
 
-    if prediction.matches_rule and lead_time_days <= CONFIRMED_THROUGH:
+    if prediction.holds(*GO_CONDITIONS) and lead_time_days <= CONFIRMED_THROUGH:
         status = Status.CONFIRMED
-    elif prediction.matches_rule and lead_time_days <= GO_CALL_THROUGH:
+    elif prediction.holds(*GO_CONDITIONS) and lead_time_days <= GO_CALL_THROUGH:
         status = Status.GO
     elif prediction.holds(*WATCH_CONDITIONS) and lead_time_days > CONFIRMED_THROUGH:
         status = Status.WATCH

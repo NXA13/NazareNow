@@ -100,7 +100,11 @@ export function dayFrom(
             reasons: [
               `swell period ${peakHour.swell_period.value}s`,
               'wind is offshore and light',
-              '3 of 24 forecast hours match every condition',
+              // Tier-accurate, as the backend emits it: a Watch is judged on the swell
+              // alone, so counting every condition would print "0 of 24" beside a Watch.
+              call === 'watch'
+                ? '24 of 24 forecast hours carry the swell behind this Watch'
+                : '3 of 24 forecast hours match every condition',
             ],
             // Its own object with its own value. Sharing peak_swell_height's object made
             // rendering the wrong one undetectable, and they are different quantities:

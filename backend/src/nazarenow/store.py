@@ -90,6 +90,16 @@ CREATE INDEX IF NOT EXISTS day_call_date
 """
 
 
+# Written once. The same ten columns were spelled out in the schema probe and in every
+# read, so adding or renaming one meant finding all of them — and a rename that missed the
+# probe would pass construction and fail inside an endpoint, which is the bare-500 outcome
+# eager verification exists to prevent.
+CALL_COLUMNS = (
+    "date, issued_at, issued_for_date, status, lead_time_days, reasons, "
+    "predicted_significant_wave_height, unit, amplification_model, calibrated"
+)
+
+
 class StoreUnavailable(RuntimeError):
     """The store cannot be opened or read.
 
@@ -161,9 +171,7 @@ class Store:
             "FROM offshore_conditions LIMIT 0",
             "SELECT source, url, fetched_at, body FROM raw_response LIMIT 0",
             "SELECT valid_at, fetched_at, readings FROM forecast_hour LIMIT 0",
-            "SELECT id, date, issued_at, issued_for_date, status, lead_time_days, reasons, "
-            "predicted_significant_wave_height, unit, amplification_model, calibrated "
-            "FROM day_call LIMIT 0",
+            f"SELECT id, {CALL_COLUMNS} FROM day_call LIMIT 0",
         )
         try:
             for probe in probes:
@@ -305,18 +313,36 @@ class Store:
         prediction the system has made is retained, which is the record ticket #11 needs to
         score Go Call precision after the fact. Computing them per request produced none.
 
-        Latest per date by insertion order, not by `issued_at`: two runs inside the same
-        second carry the same timestamp, and the ordering then depends on however SQLite
-        happens to return rows. What a reader wants is the newest call, and that is the
-        one inserted last.
+        Latest per date by insertion order, not by `issued_at`. The timestamp usually
+        agrees — it carries microseconds, so runs rarely tie — but it is a wall clock, and
+        a wall clock can be adjusted backwards by NTP or a timezone change, which silently
+        inverts the ordering and serves a superseded call as current. Insertion order
+        cannot go backwards. What a reader wants is the newest call, and that is the one
+        inserted last.
         """
         rows = self._connect().execute(
-            "SELECT date, issued_at, issued_for_date, status, lead_time_days, reasons, "
-            "predicted_significant_wave_height, unit, amplification_model, calibrated "
-            "FROM day_call WHERE id IN (SELECT MAX(id) FROM day_call GROUP BY date) "
-            "ORDER BY date"
+            f"SELECT {CALL_COLUMNS} FROM day_call "
+            "WHERE id IN (SELECT MAX(id) FROM day_call GROUP BY date) ORDER BY date"
         )
         return {row["date"]: self._call(row) for row in rows}
+
+    def latest_call(self) -> dict[str, Any] | None:
+        """The most recently stored call, whichever date it applies to, or None if empty.
+
+        Which Amplification Model produced the current calls, and whether its thresholds
+        are calibrated, are properties of the run rather than of any one date — so the
+        answer comes from here rather than being reconstructed by the reader. The reader's
+        version sorted by `issued_at`, the comparison `calls()` above rules out: a wall
+        clock adjusted backwards inverts it, and identical timestamps leave the winner to
+        whichever row SQLite happened to return first. It also asked the reader to know
+        that the newest call is the newest run, which is the store's business.
+        """
+        row = (
+            self._connect()
+            .execute(f"SELECT {CALL_COLUMNS} FROM day_call ORDER BY id DESC LIMIT 1")
+            .fetchone()
+        )
+        return None if row is None else self._call(row)
 
     def call_history(self) -> list[dict[str, Any]]:
         """Every call ever made, oldest first, including superseded ones.
@@ -327,11 +353,7 @@ class Store:
         0005 and there is nothing else that can observe it. When the track record gets an
         endpoint, the test should move to it.
         """
-        rows = self._connect().execute(
-            "SELECT date, issued_at, issued_for_date, status, lead_time_days, reasons, "
-            "predicted_significant_wave_height, unit, amplification_model, calibrated "
-            "FROM day_call ORDER BY id"
-        )
+        rows = self._connect().execute(f"SELECT {CALL_COLUMNS} FROM day_call ORDER BY id")
         return [self._call(row) | {"date": row["date"]} for row in rows]
 
     @staticmethod

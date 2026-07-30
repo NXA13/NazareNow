@@ -21,7 +21,10 @@ const CALL_LABELS: Record<CallStatus | typeof UNJUDGED, string> = {
 
 const CALL_MEANINGS: Record<CallStatus | typeof UNJUDGED, string> = {
   confirmed: 'It is happening. For anyone already travelling.',
-  go: 'Worth booking. Every condition of the rule holds at this range.',
+  // "Every condition holds" without qualification overstated it: a day is judged on its
+  // best matching hour, so that can be one hour in twenty-four. The reasons below carry
+  // the count, and this sentence now points at it rather than talking past it.
+  go: "Worth booking. Every condition of the rule holds at this day's best hour.",
   watch: 'Something may be forming. Start watching flights, do not book yet.',
   none: 'Not a day to travel for.',
   [UNJUDGED]: 'No pipeline run has assessed this day. Its hours below are still real.',

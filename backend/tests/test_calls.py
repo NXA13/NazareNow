@@ -195,6 +195,19 @@ class TestCallContent:
 
         assert "0 of 24 forecast hours match every condition" in calls(client)[SOON]["reasons"]
 
+    def test_a_watch_counts_the_hours_it_was_actually_judged_on(self, store, client) -> None:
+        """A Watch ignores wind on purpose, so counting hours that cleared *every*
+        condition described something it was never judged against: a real Watch day read
+        "0 of 24 forecast hours match every condition" beside its own Watch badge."""
+        issued = status_for(
+            store, client, {**GIANT, "wind_direction": 270}, date=FAR
+        )  # onshore all day
+        reasons = calls(client)[FAR]["reasons"]
+
+        assert issued == "watch"
+        assert "24 of 24 forecast hours carry the swell behind this Watch" in reasons
+        assert not any("match every condition" in reason for reason in reasons)
+
     def test_a_call_reports_the_significant_wave_height_it_judged(self, store, client) -> None:
         """The reported height must be the Significant Wave Height the rule was applied
         to, not the swell height — CONTEXT.md lists those as different variables, and the
@@ -341,6 +354,55 @@ class TestCallsSurviveTheNextRun:
         assert body["days"]
         assert all(day["call"] is not None for day in body["days"])
 
+    def test_the_model_reported_is_the_one_from_the_most_recent_run(
+        self, store, client, monkeypatch
+    ) -> None:
+        """Which Amplification Model produced the current calls is a property of the run,
+        and the store answers it by insertion order. The API once reconstructed "newest"
+        by sorting on `issued_at`, a wall clock: adjusted backwards it inverts, and on a
+        tie the winner is whichever row SQLite returned first.
+
+        The clock is frozen here so both runs share a timestamp, and the *earlier* run
+        writes the *earlier* date — so a sort on `issued_at` ties, falls back to date
+        order, and lands on the older run's model.
+
+        Two runs over one date cannot show this: the newest-per-date rule already
+        collapses them to the right answer and the broken ordering looks correct by luck.
+        Nor can two runs on an unfrozen clock, since microseconds almost never tie. This
+        test survived both of those mistakes before it caught anything.
+        """
+        monkeypatch.setattr("nazarenow.store.now", lambda: f"{TODAY}T09:00:00+00:00")
+
+        for date, name, calibrated in (
+            (SOON, "heuristic-baseline", False),
+            (FAR, "learned-v1", True),
+        ):
+            store.record_run(
+                observed_at=f"{TODAY}T00:00",
+                latitude=39.5,
+                longitude=-9.2,
+                readings={},
+                hours=stub_hours(SOON, GIANT),
+                calls=[
+                    {
+                        "date": date,
+                        "issued_for_date": TODAY,
+                        "status": "go",
+                        "lead_time_days": 4,
+                        "reasons": ["every condition holds"],
+                        "predicted_significant_wave_height": 4.2,
+                        "unit": "m",
+                        "amplification_model": name,
+                        "calibrated": calibrated,
+                    }
+                ],
+            )
+
+        body = client.get("/api/conditions/forecast").json()
+
+        assert body["amplification_model"] == "learned-v1"
+        assert body["calibrated"] is True
+
     def test_the_api_serves_the_most_recent_call_for_a_date(self, store, client) -> None:
         ingest(store, forecast_provider({FAR: GIANT}, today=TODAY))
         ingest(store, forecast_provider({FAR: QUIET}, today=TODAY))
@@ -374,6 +436,29 @@ class TestTheInterfaceIsRealDecides:
 
         # Direction is a swell condition, so it gates the Watch as surely as height does.
         assert decide(prediction, 11).status == "none"
+
+    def test_a_model_that_never_judges_wind_cannot_earn_a_go_call(self) -> None:
+        """The same collapse as above, one branch lower and found a pass later.
+
+        Watch was fixed to name its conditions while Go and Confirmed still asked
+        `matches_rule` — "did everything you judged hold?" — so a model that simply never
+        judges wind satisfied it on any clean swell and issued a Go Call through an
+        onshore gale. ADR 0003 exists to stop the two tiers becoming one rule with two
+        names, and that is what this was.
+        """
+        prediction = Prediction(
+            significant_wave_height=6.0,
+            conditions=(
+                ConditionOutcome(Condition.SIGNIFICANT_WAVE_HEIGHT, True, "big enough"),
+                ConditionOutcome(Condition.SWELL_PERIOD, True, "long enough"),
+                ConditionOutcome(Condition.SWELL_DIRECTION, True, "through the canyon"),
+            ),
+        )
+
+        # The swell conditions all hold, so a Watch is right at range — but wind was never
+        # judged, and a Go Call may not be handed out on a condition nobody checked.
+        assert decide(prediction, 4).status == "watch"
+        assert decide(prediction, 0).status == "none"
 
     def test_a_model_that_judges_nothing_earns_no_call(self) -> None:
         """`matches_rule` once read as "no failures", so a prediction carrying no

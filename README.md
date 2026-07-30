@@ -143,6 +143,19 @@ reading and all nine forecast days render, the page never scrolls horizontally, 
 hourly table scrolls inside its own box rather than the page. The CSS uses only fluid
 units, but nothing stops a regression; a browser-driven test would close this.
 
+**No conditions at Praia do Norte are predicted yet — only offshore ones are shown.**
+Ticket #6 asks for "predicted conditions at Praia do Norte … not only Offshore
+Conditions", and that criterion is *not* met. The Heuristic Baseline passes the offshore
+Significant Wave Height through unchanged, so the number labelled as predicted is the
+offshore figure. The interface says so on every call, but disclosure is not the same as
+satisfying the requirement, and this is recorded as unmet rather than ticked.
+
+It is deliberately not fixed here. Predicting what the canyon does to a swell is what the
+learned model in #13 earns; the only way to produce a different number today would be to
+multiply by an invented amplification factor, which is precisely the confident, plausible,
+wrong number ADR 0006 and `CONTEXT.md` exist to prevent. Slice 1 therefore ships real
+advice built on a real rule of thumb, and no prediction of the break itself.
+
 **The site shows more than ticket #4 asked for.** The ticket enumerates seven readings;
 ten are displayed, adding significant wave height, wave period and wave direction under
 a *Combined sea* heading. Significant Wave Height is the Proxy Target the whole project
