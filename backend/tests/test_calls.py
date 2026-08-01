@@ -379,6 +379,7 @@ class TestCallsArePersisted:
             readings={},
             hours=stub_hours(SOON, GIANT),
             calls=[],
+            run_id=store.begin_run(),
         )
 
         body = client.get("/api/conditions/forecast").json()
@@ -412,6 +413,7 @@ class TestCallsArePersisted:
                     "calibrated": False,
                 }
             ],
+            run_id=store.begin_run(),
         )
 
         body = client.get("/api/conditions/forecast").json()
@@ -496,6 +498,7 @@ class TestCallsSurviveTheNextRun:
                         "calibrated": calibrated,
                     }
                 ],
+                run_id=store.begin_run(),
             )
 
         body = client.get("/api/conditions/forecast").json()
