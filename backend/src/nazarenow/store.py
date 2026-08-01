@@ -5,11 +5,18 @@ database would add operational weight this project has no use for yet. Swapping 
 means changing this module and nothing else, which is the point of keeping the store
 internal to the backend seam (ADR 0005).
 
-Three things are stored for every run: the provider's response as received, the values
-parsed out of it, and the calls derived from those values. Retaining the raw response
-means derived data can be rebuilt without refetching, and that a provider changing shape
-can be diagnosed after the fact. Retaining the calls is ADR 0005's promise that every
-prediction the system has made survives, which is what ticket #11 scores.
+Four things are stored for every run: the run itself, the provider's response as received,
+the values parsed out of it, and the calls derived from those values. Retaining the raw
+response means derived data can be rebuilt without refetching, and that a provider
+changing shape can be diagnosed after the fact. Retaining the calls is ADR 0005's promise
+that every prediction the system has made survives, which is what ticket #11 scores.
+
+The run record is what joins the other three (ticket #30). Without it a raw response and
+the calls derived from it were related only by having been written at about the same
+moment, so recovering the inputs behind a given Go Call was inference from timestamps
+rather than a lookup — and a prediction whose inputs cannot be recovered is not evidence.
+A run that failed appears here too, carrying why, and any response it did manage to fetch
+before it failed.
 """
 
 from __future__ import annotations
@@ -23,6 +30,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from nazarenow.runs import FailureKind, RunOutcome
+
 # Anchored to this file, not the working directory. A relative default meant the store
 # you got depended on where you happened to be standing: ingesting from one directory and
 # serving from another silently used two different databases, and the API answered "no
@@ -35,8 +44,33 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_DATABASE = REPO_ROOT / "data" / "nazarenow.db"
 
 SCHEMA = """
+-- The run itself, as a record rather than as a timestamp shared by whatever it wrote.
+-- Before this table a raw response and the calls derived from it were correlated only by
+-- being written at about the same moment, so "which fetch produced this Go Call" was
+-- inference. It is now a lookup, which is what ticket #11 needs to score a prediction
+-- against what it was actually made from.
+--
+-- A failed run writes no conditions, forecast or calls -- `record_run` is one transaction
+-- and it never reached it -- but the attempt is still part of the record. A gap in the
+-- calls with no explanation beside it is indistinguishable from a host nobody had
+-- switched on.
+--
+-- It may still hold raw responses. A run that fetched marine successfully and then lost
+-- the weather endpoint keeps what it got, tagged to the run that failed. That is
+-- deliberate: the payload is the evidence for `payload_unrecognised`, and discarding it
+-- would throw away the one thing needed to work out what the provider had changed.
+CREATE TABLE IF NOT EXISTS pipeline_run (
+    id             INTEGER PRIMARY KEY,
+    started_at     TEXT NOT NULL,
+    finished_at    TEXT,
+    outcome        TEXT NOT NULL,
+    failure_kind   TEXT,
+    failure_detail TEXT
+);
+
 CREATE TABLE IF NOT EXISTS raw_response (
     id          INTEGER PRIMARY KEY,
+    run_id      INTEGER REFERENCES pipeline_run (id),
     source      TEXT NOT NULL,
     url         TEXT NOT NULL,
     fetched_at  TEXT NOT NULL,
@@ -70,6 +104,7 @@ CREATE TABLE IF NOT EXISTS forecast_hour (
 -- called at all.
 CREATE TABLE IF NOT EXISTS day_call (
     id                  INTEGER PRIMARY KEY,
+    run_id              INTEGER REFERENCES pipeline_run (id),
     date                TEXT NOT NULL,
     issued_at           TEXT NOT NULL,
     issued_for_date     TEXT NOT NULL,
@@ -98,6 +133,8 @@ CALL_COLUMNS = (
     "date, issued_at, issued_for_date, status, lead_time_days, reasons, "
     "predicted_significant_wave_height, unit, amplification_model, calibrated"
 )
+
+RUN_COLUMNS = "id, started_at, finished_at, outcome, failure_kind, failure_detail"
 
 
 class StoreUnavailable(RuntimeError):
@@ -141,7 +178,9 @@ class Store:
 
         if create:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            self._connect().executescript(SCHEMA)
+            connection = self._connect()
+            connection.executescript(SCHEMA)
+            self._migrate(connection)
             return
 
         # Creating the file here would turn a misconfigured path into an empty database,
@@ -157,6 +196,29 @@ class Store:
         # explanation.
         self._verify()
 
+    @staticmethod
+    def _migrate(connection: sqlite3.Connection) -> None:
+        """Add the run reference to tables created before ticket #30.
+
+        `CREATE TABLE IF NOT EXISTS` leaves an existing table exactly as it found it, so a
+        store that predates this ticket would otherwise keep its old shape and fail every
+        read that names `run_id` — turning a schema change into a "delete the database"
+        instruction. ADR 0005 makes that record the asset; it cannot be the thing a
+        migration asks you to throw away.
+
+        The column is nullable rather than backfilled. Rows written before runs were
+        recorded genuinely have no run to point at, and inventing one would fabricate
+        exactly the provenance this ticket exists to make trustworthy. A null here means
+        "written before this system tracked runs", which is true and checkable.
+        """
+        for table in ("raw_response", "day_call"):
+            columns = {row["name"] for row in connection.execute(f"PRAGMA table_info({table})")}
+            if "run_id" not in columns:
+                connection.execute(
+                    f"ALTER TABLE {table} ADD COLUMN run_id INTEGER REFERENCES pipeline_run (id)"
+                )
+        connection.commit()
+
     def _verify(self) -> None:
         """Run the reads this store performs, against no rows.
 
@@ -169,9 +231,10 @@ class Store:
         probes = (
             "SELECT observed_at, fetched_at, latitude, longitude, readings "
             "FROM offshore_conditions LIMIT 0",
-            "SELECT source, url, fetched_at, body FROM raw_response LIMIT 0",
+            "SELECT run_id, source, url, fetched_at, body FROM raw_response LIMIT 0",
             "SELECT valid_at, fetched_at, readings FROM forecast_hour LIMIT 0",
-            f"SELECT id, {CALL_COLUMNS} FROM day_call LIMIT 0",
+            f"SELECT id, run_id, {CALL_COLUMNS} FROM day_call LIMIT 0",
+            f"SELECT {RUN_COLUMNS} FROM pipeline_run LIMIT 0",
         )
         try:
             for probe in probes:
@@ -204,6 +267,12 @@ class Store:
             raise StoreUnavailable(f"Cannot open {self.path}: {error}") from error
 
         connection.row_factory = sqlite3.Row
+        # SQLite ignores REFERENCES clauses unless this is switched on, per connection.
+        # Without it the run references in `raw_response` and `day_call` are documentation
+        # that reads like a guarantee — a call could name a run that does not exist, and
+        # the lookup this ticket exists to provide would return nothing with no complaint.
+        # Set before any statement runs: it is a no-op inside a transaction.
+        connection.execute("PRAGMA foreign_keys = ON")
         self._local.connection = connection
         with self._lock:
             self._connections.append(connection)
@@ -217,12 +286,84 @@ class Store:
             self._connections.clear()
         self._local = threading.local()
 
-    def record_raw_response(self, source: str, url: str, body: dict[str, Any]) -> None:
-        """Persist a provider response as received."""
+    def begin_run(self) -> int:
+        """Open a Pipeline Run record and return its identifier.
+
+        Committed immediately, before the run fetches anything. Writing the record at the
+        end instead would mean the runs that most need explaining — the ones that died
+        partway, or took the process down with them — are exactly the ones that leave
+        nothing behind.
+        """
+        connection = self._connect()
+        cursor = connection.execute(
+            "INSERT INTO pipeline_run (started_at, outcome) VALUES (?, ?)",
+            (now(), RunOutcome.RUNNING.value),
+        )
+        connection.commit()
+        run_id = cursor.lastrowid
+        if run_id is None:  # pragma: no cover — SQLite always assigns a rowid here
+            raise StoreUnavailable("SQLite assigned no identifier to the Pipeline Run")
+        return run_id
+
+    def record_run_failed(self, run_id: int, kind: FailureKind, detail: str) -> None:
+        """Close a Pipeline Run record as failed, with what went wrong.
+
+        A failed run writes no conditions, forecast or calls — `record_run` is one
+        transaction precisely so a bad run leaves the previous ones untouched — but the
+        attempt itself is part of the record. Before this, the only trace was a line on
+        stdout and, six hours later, the interface going stale.
+
+        Raw responses are the exception, and not an oversight: they are committed as each
+        endpoint answers, so a run that failed partway keeps whatever it had already
+        fetched. `inputs_behind` will return it.
+        """
         connection = self._connect()
         connection.execute(
-            "INSERT INTO raw_response (source, url, fetched_at, body) VALUES (?, ?, ?, ?)",
-            (source, url, now(), json.dumps(body)),
+            "UPDATE pipeline_run SET outcome = ?, finished_at = ?, failure_kind = ?, "
+            "failure_detail = ? WHERE id = ?",
+            (RunOutcome.FAILED.value, now(), kind.value, detail, run_id),
+        )
+        connection.commit()
+
+    def runs(self) -> list[dict[str, Any]]:
+        """Every Pipeline Run recorded, oldest first."""
+        rows = self._connect().execute(f"SELECT {RUN_COLUMNS} FROM pipeline_run ORDER BY id")
+        return [dict(row) for row in rows]
+
+    def failed_runs(self) -> list[dict[str, Any]]:
+        """Every Pipeline Run that failed, oldest first.
+
+        Queryable rather than requiring the caller to filter, because "show me what went
+        wrong this season" is the question this table was added to answer.
+        """
+        rows = self._connect().execute(
+            f"SELECT {RUN_COLUMNS} FROM pipeline_run WHERE outcome = ? ORDER BY id",
+            (RunOutcome.FAILED.value,),
+        )
+        return [dict(row) for row in rows]
+
+    def inputs_behind(self, run_id: int) -> list[dict[str, Any]]:
+        """The raw provider responses a given run fetched, oldest first.
+
+        This is the lookup ticket #30 exists to make possible. Given a stored call, its
+        `run_id` leads straight here — rather than to a scan of `raw_response` for rows
+        whose `fetched_at` looks close enough to the call's `issued_at`, which is a guess
+        that gets less reliable the more runs the store accumulates.
+        """
+        rows = self._connect().execute(
+            "SELECT run_id, source, url, fetched_at, body FROM raw_response "
+            "WHERE run_id = ? ORDER BY id",
+            (run_id,),
+        )
+        return [dict(row) for row in rows]
+
+    def record_raw_response(self, run_id: int, source: str, url: str, body: dict[str, Any]) -> None:
+        """Persist a provider response as received, against the run that fetched it."""
+        connection = self._connect()
+        connection.execute(
+            "INSERT INTO raw_response (run_id, source, url, fetched_at, body) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (run_id, source, url, now(), json.dumps(body)),
         )
         connection.commit()
 
@@ -234,6 +375,8 @@ class Store:
         readings: dict[str, dict[str, Any]],
         hours: list[dict[str, Any]],
         calls: list[dict[str, Any]],
+        *,
+        run_id: int,
     ) -> None:
         """Store a Pipeline Run's conditions, forecast and calls together, or not at all.
 
@@ -246,6 +389,11 @@ class Store:
         construction", and a construction with an opt-out is a convention: as an optional
         argument, a caller that forgot it stored a forecast with no calls and reported
         success.
+
+        `run_id` is required for the same reason, and marking the run succeeded happens
+        inside this transaction rather than after it. A run reported as succeeded whose
+        output was rolled back would be worse than no record at all: it is the plausible
+        false answer this project keeps having to design against.
         """
         connection = self._connect()
         stamp = now()
@@ -264,12 +412,13 @@ class Store:
             # the system has already made, which is what ADR 0005 promises and what
             # ticket #11 scores.
             connection.executemany(
-                "INSERT INTO day_call (date, issued_at, issued_for_date, status, "
+                "INSERT INTO day_call (run_id, date, issued_at, issued_for_date, status, "
                 "lead_time_days, reasons, predicted_significant_wave_height, unit, "
                 "amplification_model, calibrated) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [
                     (
+                        run_id,
                         call["date"],
                         stamp,
                         call["issued_for_date"],
@@ -289,6 +438,10 @@ class Store:
                 "(observed_at, fetched_at, latitude, longitude, readings) "
                 "VALUES (?, ?, ?, ?, ?)",
                 (observed_at, stamp, latitude, longitude, json.dumps(readings)),
+            )
+            connection.execute(
+                "UPDATE pipeline_run SET outcome = ?, finished_at = ? WHERE id = ?",
+                (RunOutcome.SUCCEEDED.value, stamp, run_id),
             )
 
     def forecast(self) -> list[dict[str, Any]]:
@@ -353,8 +506,12 @@ class Store:
         0005 and there is nothing else that can observe it. When the track record gets an
         endpoint, the test should move to it.
         """
-        rows = self._connect().execute(f"SELECT {CALL_COLUMNS} FROM day_call ORDER BY id")
-        return [self._call(row) | {"date": row["date"]} for row in rows]
+        rows = self._connect().execute(f"SELECT run_id, {CALL_COLUMNS} FROM day_call ORDER BY id")
+        # `run_id` is carried on the history rather than on `calls()` and `latest_call()`:
+        # those two feed the API's responses, and which run produced a call is provenance
+        # for whoever audits the record, not something a traveller reading a forecast has
+        # any use for. When the track record gets an endpoint (#16), that can change.
+        return [self._call(row) | {"date": row["date"], "run_id": row["run_id"]} for row in rows]
 
     @staticmethod
     def _call(row: sqlite3.Row) -> dict[str, Any]:
@@ -404,7 +561,7 @@ class Store:
         """
         rows = (
             self._connect()
-            .execute("SELECT source, url, fetched_at, body FROM raw_response ORDER BY id")
+            .execute("SELECT run_id, source, url, fetched_at, body FROM raw_response ORDER BY id")
             .fetchall()
         )
         return [dict(row) for row in rows]

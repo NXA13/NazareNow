@@ -17,9 +17,16 @@ schedule at all: it stops silently, and the site goes on serving old data with n
 watching. So every exception is caught here — including ones nothing anticipated, because
 the whole point is to survive what nobody thought of.
 
-Nothing is written by a failed run. `Store.record_run` is a single transaction, so the
-previous conditions, forecast and calls stay exactly as they were, and the interface marks
-them stale rather than presenting them as fresh.
+A failed run changes no conditions, forecast or calls. `Store.record_run` is a single
+transaction, so the previous ones stay exactly as they were, and the interface marks them
+stale rather than presenting them as fresh — but the attempt itself is recorded (ticket
+#30), because a gap in the record with no explanation beside it cannot be told apart from
+a host nobody had switched on. A run that failed partway also keeps the responses it had
+already fetched, which is what makes a payload failure diagnosable afterwards.
+
+The failure is recorded by the Pipeline Run, not here, so the one-off `ingest` command
+leaves the same trace. What this module still owns is the schedule: whatever went wrong,
+the next cycle happens.
 """
 
 from __future__ import annotations

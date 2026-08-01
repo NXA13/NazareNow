@@ -12,6 +12,7 @@ picture.
 
 from __future__ import annotations
 
+import sqlite3
 import time
 from datetime import date
 from typing import Any
@@ -21,9 +22,10 @@ import httpx
 from nazarenow.days import group_by_date
 from nazarenow.decision import Status, conditions_behind, decide, strength
 from nazarenow.models import AmplificationModel, HeuristicBaseline
+from nazarenow.runs import FailureKind
 from nazarenow.sources import open_meteo
 from nazarenow.sources.open_meteo import MARINE_READINGS, WEATHER_READINGS
-from nazarenow.store import Store
+from nazarenow.store import Store, StoreUnavailable
 
 # A real Pipeline Run returns days of hourly data. Anything less is a degraded provider
 # response, not a short forecast — and replacing a good forecast with it destroys the
@@ -183,13 +185,71 @@ def derive_calls(hours: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return calls
 
 
+def failure_kind(error: BaseException) -> FailureKind:
+    """Which kind of failure an exception represents.
+
+    Lives here rather than in `runs` because it names `StoreUnavailable`, and `store`
+    imports the run vocabulary — putting this beside the enum would close an import cycle.
+
+    Order matters: `StoreUnavailable` is a `RuntimeError` and not an `httpx` or value
+    error, but it is checked first anyway so that the ordering states the intent rather
+    than relying on the current class hierarchy staying as it is.
+    """
+    # A store fault *during* a run, which is the only kind that can be recorded: a store
+    # too broken to open fails at `begin_run`, before there is a run record to write to.
+    # `sqlite3.Error` is the reachable half — a full disk or a locked database while the
+    # output is being written — and `record_run_failed` still succeeds after that, because
+    # the failed transaction has already rolled back. Without it this kind would name a
+    # situation the record could never actually contain.
+    if isinstance(error, StoreUnavailable | sqlite3.Error):
+        return FailureKind.STORE_UNAVAILABLE
+    # Every transport fault and every error status alike: unreachable, timed out, 5xx,
+    # rate-limited. From the record's point of view they are one situation — the provider
+    # did not give us usable data this cycle — and the detail string carries which.
+    if isinstance(error, httpx.HTTPError):
+        return FailureKind.PROVIDER_UNAVAILABLE
+    # Everything `validate` raises, plus the forecast-hours floor. A payload that arrived
+    # and did not mean what this system expects it to mean.
+    if isinstance(error, ValueError):
+        return FailureKind.PAYLOAD_UNRECOGNISED
+    return FailureKind.UNEXPECTED
+
+
+def failure_detail(error: BaseException) -> str:
+    """The failure in one line: the exception's type and its message.
+
+    The type is included because the message alone is often the more forgettable half —
+    an empty `ConnectError` says nothing, while its name says the provider was
+    unreachable.
+    """
+    return f"{type(error).__name__}: {error}"
+
+
 def run_pipeline(store: Store, client: httpx.Client, sleep=time.sleep) -> None:
-    """Execute one Pipeline Run against the given store."""
+    """Execute one Pipeline Run against the given store, recording the run either way.
+
+    The run record is opened here rather than in the scheduler, so the one-off `ingest`
+    command leaves the same trace as a scheduled run. A record that only existed under the
+    scheduler would make the store's provenance depend on which command happened to write
+    it, and ticket #11 scores whatever is in there.
+    """
+    run_id = store.begin_run()
+    try:
+        _fetch_and_store(store, client, sleep, run_id)
+    except Exception as error:
+        # The failure is recorded and then re-raised unchanged. The scheduler still
+        # decides what a failed run means for the schedule (`schedule.py`); this only
+        # ensures the attempt is not invisible to anyone reading the store afterwards.
+        store.record_run_failed(run_id, failure_kind(error), failure_detail(error))
+        raise
+
+
+def _fetch_and_store(store: Store, client: httpx.Client, sleep, run_id: int) -> None:
     marine_body, marine_url = open_meteo.fetch_marine(client, sleep)
-    store.record_raw_response("open-meteo-marine", marine_url, marine_body)
+    store.record_raw_response(run_id, "open-meteo-marine", marine_url, marine_body)
 
     weather_body, weather_url = open_meteo.fetch_weather(client, sleep)
-    store.record_raw_response("open-meteo-weather", weather_url, weather_body)
+    store.record_raw_response(run_id, "open-meteo-weather", weather_url, weather_body)
 
     # Everything is computed and checked before anything is written. Writing the current
     # conditions first meant a rejected forecast still advanced them — a half-updated
@@ -212,4 +272,5 @@ def run_pipeline(store: Store, client: httpx.Client, sleep=time.sleep) -> None:
         readings=readings,
         hours=hours,
         calls=derive_calls(hours),
+        run_id=run_id,
     )

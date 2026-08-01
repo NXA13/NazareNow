@@ -523,8 +523,10 @@ def test_the_serving_store_cannot_write(store) -> None:
     try:
         # record_run, not record_conditions: production writes through record_run, and
         # a read-only guard on a method nothing calls guards nothing.
+        # A literal run id rather than `reader.begin_run()`: opening a run is itself a
+        # write, so calling it here would prove the guard on the wrong method.
         with pytest.raises(sqlite3.OperationalError, match="readonly"):
-            reader.record_run("2026-02-13T09:00", 0.0, 0.0, {}, [], [])
+            reader.record_run("2026-02-13T09:00", 0.0, 0.0, {}, [], [], run_id=1)
     finally:
         reader.close()
 
@@ -600,7 +602,7 @@ def test_a_path_containing_uri_syntax_still_opens_read_only(tmp_path) -> None:
     target = awkward / "nazarenow.db"
 
     writer = Store(target)
-    writer.record_run("2026-02-13T09:00", 39.5, -9.2, {}, [], [])
+    writer.record_run("2026-02-13T09:00", 39.5, -9.2, {}, [], [], run_id=writer.begin_run())
     writer.close()
 
     reader = Store(target, create=False)

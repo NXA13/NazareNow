@@ -211,6 +211,14 @@ Open-Meteo, stored, and displayed with hour-by-hour detail — and every day now
 Every call is kept: the store appends rather than replaces, so the succession of calls
 made about a date as it approaches survives, which is the record #11 scores.
 
+Each Pipeline Run is recorded in its own right, and the raw responses it fetched and the
+calls it derived both point back at it — so the inputs behind any stored call are a
+lookup rather than a guess about which fetch happened nearest in time. Runs that **fail**
+are recorded too, with what kind of thing went wrong: a provider being unreachable and a
+payload this system no longer understands are the same word in a log and need opposite
+responses. A run that begins and never finishes stays marked `running`, which is how a
+host that died mid-run shows up afterwards.
+
 The Amplification Model behind those calls is the Heuristic Baseline of ADR 0006: the
 surf community's rule of thumb, with no machine learning in it. It ships as the
 permanent benchmark a learned model must beat in #13, and the interface says plainly
