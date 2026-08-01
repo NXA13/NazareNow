@@ -85,21 +85,56 @@ def test_a_failed_run_leaves_a_durable_queryable_record(store) -> None:
     )
 
 
-def test_a_failed_run_stores_nothing_it_fetched(store) -> None:
+def test_a_failed_run_changes_no_conditions_forecast_or_calls(store) -> None:
     """The failure record is an addition to `schedule.py`'s guarantee, not a hole in it.
 
     A run that could not be trusted to produce conditions must not be trusted to produce
-    half of them either — the run record is the one thing it writes.
+    half of them either.
     """
     ingest(store, forecast_provider({"2026-02-13": GIANT}, today=TODAY))
     good = store.latest_conditions()
+    calls_before = store.call_history()
+    forecast_before = store.forecast()
 
     with httpx.Client(transport=nonsense_provider()) as client:
         run_scheduled(store, client, runs=1, sleep=no_sleep)
 
     assert store.latest_conditions() == good, "a failed run overwrote the last good one"
+    assert store.call_history() == calls_before, "a failed run added calls"
+    assert store.forecast() == forecast_before, "a failed run altered the forecast"
     assert len(store.runs()) == 2, "the failed attempt is missing from the record"
     assert store.failed_runs()[0]["id"] != store.runs()[0]["id"]
+
+
+def test_a_run_that_fails_partway_keeps_what_it_had_already_fetched(store) -> None:
+    """Deliberate, and the reason the claim above is scoped to conditions and calls.
+
+    Raw responses are committed as each endpoint answers. A run that got marine and then
+    lost weather keeps the marine payload, tagged to the run that failed — which is the
+    evidence a `payload_unrecognised` failure has to be diagnosed from. Discarding it
+    would throw away the one thing that says what the provider changed.
+
+    Both other failing providers in this module fail on the *first* request, so nothing
+    else here exercises a partial run at all.
+    """
+    good = forecast_provider({}, today=TODAY)
+
+    def marine_only(request: httpx.Request) -> httpx.Response:
+        if "marine" in request.url.host:
+            return good.handler(request)
+        raise httpx.ConnectError("weather unreachable")
+
+    with httpx.Client(transport=httpx.MockTransport(marine_only)) as client:
+        run_scheduled(store, client, runs=1, sleep=no_sleep)
+
+    failed = store.failed_runs()[0]
+    kept = store.inputs_behind(failed["id"])
+
+    assert [response["source"] for response in kept] == ["open-meteo-marine"], (
+        "the payload behind a partial failure was discarded"
+    )
+    assert store.latest_conditions() is None, "a partial run produced conditions anyway"
+    assert store.call_history() == [], "a partial run produced calls anyway"
 
 
 @pytest.mark.parametrize(
@@ -123,6 +158,65 @@ def test_the_record_tells_an_outage_apart_from_a_payload_we_no_longer_understand
         run_scheduled(store, client, runs=1, sleep=no_sleep)
 
     assert store.failed_runs()[0]["failure_kind"] == expected.value
+
+
+def test_a_call_cannot_name_a_run_that_does_not_exist(store) -> None:
+    """The run reference is enforced, not merely declared.
+
+    SQLite ignores a REFERENCES clause unless foreign keys are switched on per connection.
+    Left off, a call could carry a run id nothing answers to, and `inputs_behind` would
+    return an empty list indistinguishable from a run that genuinely fetched nothing —
+    a lookup that always answers, sometimes wrongly, which is worse than no lookup.
+    """
+    with pytest.raises(sqlite3.IntegrityError):
+        store.record_run(
+            f"{TODAY}T00:00",
+            39.5,
+            -9.2,
+            {},
+            stub_hours(TODAY),
+            [
+                {
+                    "date": TODAY,
+                    "issued_for_date": TODAY,
+                    "status": "go",
+                    "lead_time_days": 0,
+                    "reasons": [],
+                    "predicted_significant_wave_height": 4.2,
+                    "unit": "m",
+                    "amplification_model": "heuristic-baseline",
+                    "calibrated": False,
+                }
+            ],
+            run_id=9999,
+        )
+
+
+def test_a_store_fault_while_writing_is_recorded_as_one(store, monkeypatch) -> None:
+    """The fourth kind, and proof it is not decoration.
+
+    A store too broken to open fails at `begin_run`, before there is a record to write to
+    — so the only store fault that can ever reach the record is one that happens *during*
+    a run, while the output is being written: a full disk, a locked database. The failed
+    transaction has already rolled back by then, so the failure can still be recorded.
+
+    Substituting `record_run` is the only route: nothing a stubbed provider can send makes
+    SQLite run out of disk. What is asserted is the classification, which is real.
+    """
+
+    def full_disk(*args, **kwargs):
+        raise sqlite3.OperationalError("database or disk is full")
+
+    monkeypatch.setattr(store, "record_run", full_disk)
+
+    with httpx.Client(transport=forecast_provider({}, today=TODAY)) as client:
+        completed = run_scheduled(store, client, runs=1, sleep=no_sleep)
+
+    assert completed == [False]
+    failed = store.failed_runs()
+    assert len(failed) == 1, "a store fault mid-run left no record"
+    assert failed[0]["failure_kind"] == FailureKind.STORE_UNAVAILABLE.value
+    assert "disk is full" in failed[0]["failure_detail"]
 
 
 def test_a_run_whose_output_rolled_back_is_not_marked_succeeded(store) -> None:

@@ -15,7 +15,8 @@ The run record is what joins the other three (ticket #30). Without it a raw resp
 the calls derived from it were related only by having been written at about the same
 moment, so recovering the inputs behind a given Go Call was inference from timestamps
 rather than a lookup — and a prediction whose inputs cannot be recovered is not evidence.
-A run that failed appears here too, since it stores nothing else.
+A run that failed appears here too, carrying why, and any response it did manage to fetch
+before it failed.
 """
 
 from __future__ import annotations
@@ -49,10 +50,15 @@ SCHEMA = """
 -- inference. It is now a lookup, which is what ticket #11 needs to score a prediction
 -- against what it was actually made from.
 --
--- A failed run has a row here and nowhere else: nothing it fetched is trustworthy enough
--- to store, but the fact that it was attempted and lost is itself part of the record. A
--- gap in the calls with no explanation beside it is indistinguishable from a host nobody
--- had switched on.
+-- A failed run writes no conditions, forecast or calls -- `record_run` is one transaction
+-- and it never reached it -- but the attempt is still part of the record. A gap in the
+-- calls with no explanation beside it is indistinguishable from a host nobody had
+-- switched on.
+--
+-- It may still hold raw responses. A run that fetched marine successfully and then lost
+-- the weather endpoint keeps what it got, tagged to the run that failed. That is
+-- deliberate: the payload is the evidence for `payload_unrecognised`, and discarding it
+-- would throw away the one thing needed to work out what the provider had changed.
 CREATE TABLE IF NOT EXISTS pipeline_run (
     id             INTEGER PRIMARY KEY,
     started_at     TEXT NOT NULL,
@@ -261,6 +267,12 @@ class Store:
             raise StoreUnavailable(f"Cannot open {self.path}: {error}") from error
 
         connection.row_factory = sqlite3.Row
+        # SQLite ignores REFERENCES clauses unless this is switched on, per connection.
+        # Without it the run references in `raw_response` and `day_call` are documentation
+        # that reads like a guarantee — a call could name a run that does not exist, and
+        # the lookup this ticket exists to provide would return nothing with no complaint.
+        # Set before any statement runs: it is a no-op inside a transaction.
+        connection.execute("PRAGMA foreign_keys = ON")
         self._local.connection = connection
         with self._lock:
             self._connections.append(connection)
@@ -296,11 +308,14 @@ class Store:
     def record_run_failed(self, run_id: int, kind: FailureKind, detail: str) -> None:
         """Close a Pipeline Run record as failed, with what went wrong.
 
-        A failed run writes here and nowhere else. Nothing it fetched is trustworthy
-        enough to store — `record_run` is one transaction precisely so a bad run leaves
-        the previous conditions untouched — but the attempt itself is part of the record.
-        Before this, the only trace was a line on stdout and, six hours later, the
-        interface going stale.
+        A failed run writes no conditions, forecast or calls — `record_run` is one
+        transaction precisely so a bad run leaves the previous ones untouched — but the
+        attempt itself is part of the record. Before this, the only trace was a line on
+        stdout and, six hours later, the interface going stale.
+
+        Raw responses are the exception, and not an oversight: they are committed as each
+        endpoint answers, so a run that failed partway keeps whatever it had already
+        fetched. `inputs_behind` will return it.
         """
         connection = self._connect()
         connection.execute(

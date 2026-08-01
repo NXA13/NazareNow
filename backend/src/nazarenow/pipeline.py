@@ -12,6 +12,7 @@ picture.
 
 from __future__ import annotations
 
+import sqlite3
 import time
 from datetime import date
 from typing import Any
@@ -184,7 +185,7 @@ def derive_calls(hours: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return calls
 
 
-def classify(error: BaseException) -> FailureKind:
+def failure_kind(error: BaseException) -> FailureKind:
     """Which kind of failure an exception represents.
 
     Lives here rather than in `runs` because it names `StoreUnavailable`, and `store`
@@ -194,7 +195,13 @@ def classify(error: BaseException) -> FailureKind:
     error, but it is checked first anyway so that the ordering states the intent rather
     than relying on the current class hierarchy staying as it is.
     """
-    if isinstance(error, StoreUnavailable):
+    # A store fault *during* a run, which is the only kind that can be recorded: a store
+    # too broken to open fails at `begin_run`, before there is a run record to write to.
+    # `sqlite3.Error` is the reachable half — a full disk or a locked database while the
+    # output is being written — and `record_run_failed` still succeeds after that, because
+    # the failed transaction has already rolled back. Without it this kind would name a
+    # situation the record could never actually contain.
+    if isinstance(error, StoreUnavailable | sqlite3.Error):
         return FailureKind.STORE_UNAVAILABLE
     # Every transport fault and every error status alike: unreachable, timed out, 5xx,
     # rate-limited. From the record's point of view they are one situation — the provider
@@ -208,7 +215,7 @@ def classify(error: BaseException) -> FailureKind:
     return FailureKind.UNEXPECTED
 
 
-def detail(error: BaseException) -> str:
+def failure_detail(error: BaseException) -> str:
     """The failure in one line: the exception's type and its message.
 
     The type is included because the message alone is often the more forgettable half —
@@ -233,7 +240,7 @@ def run_pipeline(store: Store, client: httpx.Client, sleep=time.sleep) -> None:
         # The failure is recorded and then re-raised unchanged. The scheduler still
         # decides what a failed run means for the schedule (`schedule.py`); this only
         # ensures the attempt is not invisible to anyone reading the store afterwards.
-        store.record_run_failed(run_id, classify(error), detail(error))
+        store.record_run_failed(run_id, failure_kind(error), failure_detail(error))
         raise
 
 
