@@ -24,7 +24,7 @@ from helpers import GIANT, forecast_provider, ingest, no_sleep, stub_hours
 from nazarenow.pipeline import run_pipeline
 from nazarenow.runs import FailureKind, RunOutcome
 from nazarenow.schedule import run_scheduled
-from nazarenow.store import Store
+from nazarenow.store import Store, StoreUnavailable
 
 TODAY = "2026-02-09"
 
@@ -232,10 +232,22 @@ class TestAStoreWrittenBeforeThisTicket:
     """
 
     def old_database(self, tmp_path):
-        """A store in the shape ticket #6 left it: no runs, and no run reference."""
+        """A store in the shape ticket #7 left it: no runs, and no run reference.
+
+        Every table, not only the two that gain a column. A partial one passes for the
+        wrong reason — it fails the schema probe on a missing table before ever reaching
+        the migrated columns, which is not the thing under test.
+        """
         path = tmp_path / "pre-30.db"
         connection = sqlite3.connect(path)
         connection.executescript("""
+            CREATE TABLE offshore_conditions (
+                id INTEGER PRIMARY KEY, observed_at TEXT NOT NULL, fetched_at TEXT NOT NULL,
+                latitude REAL NOT NULL, longitude REAL NOT NULL, readings TEXT NOT NULL
+            );
+            CREATE TABLE forecast_hour (
+                valid_at TEXT PRIMARY KEY, fetched_at TEXT NOT NULL, readings TEXT NOT NULL
+            );
             CREATE TABLE raw_response (
                 id INTEGER PRIMARY KEY, source TEXT NOT NULL, url TEXT NOT NULL,
                 fetched_at TEXT NOT NULL, body TEXT NOT NULL
@@ -247,6 +259,8 @@ class TestAStoreWrittenBeforeThisTicket:
                 predicted_significant_wave_height REAL NOT NULL, unit TEXT NOT NULL,
                 amplification_model TEXT NOT NULL, calibrated INTEGER NOT NULL
             );
+            INSERT INTO offshore_conditions (observed_at, fetched_at, latitude, longitude, readings)
+                VALUES ('2026-01-01T00:00', '2026-01-01T00:00', 39.56, -9.21, '{}');
             INSERT INTO raw_response (source, url, fetched_at, body)
                 VALUES ('open-meteo-marine', 'https://example.test', '2026-01-01T00:00', '{}');
             INSERT INTO day_call VALUES
@@ -289,6 +303,30 @@ class TestAStoreWrittenBeforeThisTicket:
             assert store.inputs_behind(new[0]["run_id"]), "tracing broke after migration"
         finally:
             store.close()
+
+    def test_the_serving_store_refuses_one_nothing_has_migrated_yet(self, tmp_path) -> None:
+        """ADR 0005 makes the API strictly a reader, so it cannot migrate anything — and
+        an unmigrated store is one it cannot answer from honestly.
+
+        This is an ordering constraint #28 has to respect when an API and a scheduler are
+        started against the same file: until the scheduler has opened it once, the reader
+        refuses. It refuses at construction, where `StoreUnavailable` is handled, rather
+        than inside an endpoint — which is the bare-500-without-CORS outcome eager
+        verification exists to prevent.
+        """
+        with pytest.raises(StoreUnavailable, match="run_id"):
+            Store(self.old_database(tmp_path), create=False)
+
+    def test_once_migrated_the_serving_store_reads_it(self, tmp_path) -> None:
+        path = self.old_database(tmp_path)
+        writer = Store(path)
+        writer.close()
+
+        reader = Store(path, create=False)
+        try:
+            assert len(reader.calls()) == 1, "the migrated record stopped being servable"
+        finally:
+            reader.close()
 
     def test_reopening_a_migrated_store_does_not_migrate_it_twice(self, tmp_path) -> None:
         """`ALTER TABLE ADD COLUMN` fails on a column that already exists, which would
