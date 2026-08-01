@@ -1,13 +1,12 @@
 /**
  * The presentation helpers, tested directly.
  *
- * These are pure functions with no React in them, and the two faults below are invisible
- * at the component seam: both need a specific input to show, and a component test would
- * have to smuggle that value through a fixture to reach them. Everything a reader
- * actually *sees* is still asserted through the rendered interface, in App.test.tsx and
- * Forecast.test.tsx.
+ * These are pure functions with no React in them, and the rounding fault below is invisible
+ * at the component seam: it needs a specific input to show, and a component test would have
+ * to smuggle that value through a fixture to reach it. Everything a reader actually *sees*
+ * is still asserted through the rendered interface, in App.test.tsx and Forecast.test.tsx.
  *
- * Both cases come from the Slice 1 audit (#25).
+ * The rounding case comes from the Slice 1 audit (#25).
  */
 
 import { describe, expect, it } from 'vitest';

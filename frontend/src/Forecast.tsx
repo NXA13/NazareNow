@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { fetchForecast, type CallStatus, type Forecast, type ForecastDay } from './api';
-import { compassPoint, formatTimestamp, formatValue } from './format';
+import { compassPoint, formatReading, formatTimestamp, formatValue } from './format';
 
 type LoadState =
   { status: 'loading' } | { status: 'loaded'; forecast: Forecast } | { status: 'failed' };
@@ -67,10 +67,23 @@ function dayLabel(date: string): string {
   if (!year || !month || !day) {
     return date;
   }
+
   const parsed = new Date(year, month - 1, day);
-  if (Number.isNaN(parsed.getTime())) {
+  // Checking for an Invalid Date is not enough, and checking only that would be worse
+  // than the bug it replaced: the numeric constructor never returns Invalid, it *rolls
+  // over*. `new Date(2026, 12, 45)` is 14 February 2027, and `new Date(26, 0, 1)` is
+  // 1926. So a malformed date would render as a confident, plausible, wrong day rather
+  // than falling back to the raw string — this project's characteristic failure.
+  //
+  // Reading the parts back off the result is what actually proves nothing rolled over.
+  if (
+    parsed.getFullYear() !== year ||
+    parsed.getMonth() !== month - 1 ||
+    parsed.getDate() !== day
+  ) {
     return date;
   }
+
   return parsed.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
@@ -95,15 +108,16 @@ function DaySummary({
       // period and direction entirely — the two values that separate a groundswell
       // worth travelling for from a big messy sea.
       //
-      // Every figure goes through `formatValue`, exactly as the visible card does. Reading
-      // the raw values here meant a source carrying more than two decimals was announced
-      // as "4.23456m" while the card showed "4.23" — and because aria-label overrides the
-      // content, that reader had no way to reach the shorter one (#25).
+      // Every figure goes through `formatReading`, the same function the visible card uses.
+      // Reading the raw values here meant a source carrying more than two decimals was
+      // announced as "4.23456m" while the card showed "4.23" — and because aria-label
+      // overrides the content, that reader had no way to reach the shorter one (#25).
+      // Sharing the function is what stops the two drifting again.
       aria-label={
-        `${day.date} — peak swell ${formatValue(day.peak_swell_height.value)}${day.peak_swell_height.unit}, ` +
-        `period ${formatValue(day.swell_period_at_peak.value)}${day.swell_period_at_peak.unit}, ` +
+        `${day.date} — peak swell ${formatReading(day.peak_swell_height)}, ` +
+        `period ${formatReading(day.swell_period_at_peak)}, ` +
         `from ${compassPoint(day.swell_direction_at_peak.value)}, ` +
-        `longest period ${formatValue(day.longest_swell_period.value)}${day.longest_swell_period.unit}`
+        `longest period ${formatReading(day.longest_swell_period)}`
       }
       onClick={onSelect}
     >

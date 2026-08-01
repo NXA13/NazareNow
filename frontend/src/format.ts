@@ -43,6 +43,12 @@ export function compassPoint(degrees: number): string {
  *
  * The shift is done through the decimal string rather than by multiplying by 100, because
  * `2.675 * 100` is 267.49999999999997 and reintroduces the same fault one step later.
+ *
+ * Two inputs are handled outside that rule, neither reachable from a reading this app
+ * displays, both stated here rather than left for a reader to discover: a non-finite value
+ * renders as its own text (`"NaN"`, `"Infinity"`), and a value already in exponential form
+ * — magnitudes at or above 1e21, or below 1e-6 — falls back to `toFixed`, keeping the
+ * half-down behaviour at a scale where the last two decimals mean nothing anyway.
  */
 export function formatValue(value: number): string {
   if (!Number.isFinite(value)) {
@@ -58,6 +64,20 @@ export function formatValue(value: number): string {
 
   const rounded = Math.round(Number(`${decimal}e2`)) / 100;
   return String(value < 0 ? -rounded : rounded);
+}
+
+/**
+ * A reading as a reader sees it: the value formatted, its unit appended.
+ *
+ * One function so a figure cannot be rendered two ways in two places. The `aria-label` on
+ * a day card used to interpolate raw values while the card body ran the same readings
+ * through `formatValue`, so a screen reader was told "4.23456m" beside a card showing
+ * "4.23" — and because `aria-label` overrides content, that reader could not reach the
+ * shorter one (#25). A test now catches that, but a shared function means there is nothing
+ * left to catch.
+ */
+export function formatReading(reading: { value: number; unit: string }): string {
+  return `${formatValue(reading.value)}${reading.unit}`;
 }
 
 /**
