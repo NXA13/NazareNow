@@ -52,9 +52,22 @@ function prominence(value: number, largest: number): Prominence {
   return 'ordinary';
 }
 
-/** The day, as a weekday and date a reader can place without doing arithmetic. */
+/** The day, as a weekday and date a reader can place without doing arithmetic.
+ *
+ * Built from the date's own parts as a *local* calendar day, not from an instant. Anchoring
+ * at `T12:00:00Z` and converting was correct for most of the world and wrong past UTC+12: a
+ * reader in Auckland saw noon UTC land at 01:00 the following day, so the card, its
+ * `aria-label` and the hourly table caption named three-quarters of a different date than
+ * the one the backend had grouped (#25).
+ *
+ * The forecast's days are the provider's UTC days — see `days.py` — so the label must
+ * render the date it was given, in every zone, rather than an instant inside it. */
 function dayLabel(date: string): string {
-  const parsed = new Date(`${date}T12:00:00Z`);
+  const [year, month, day] = date.split('-').map(Number);
+  if (!year || !month || !day) {
+    return date;
+  }
+  const parsed = new Date(year, month - 1, day);
   if (Number.isNaN(parsed.getTime())) {
     return date;
   }
@@ -81,11 +94,16 @@ function DaySummary({
       // height, which overrode the card's content for screen readers and lost the
       // period and direction entirely — the two values that separate a groundswell
       // worth travelling for from a big messy sea.
+      //
+      // Every figure goes through `formatValue`, exactly as the visible card does. Reading
+      // the raw values here meant a source carrying more than two decimals was announced
+      // as "4.23456m" while the card showed "4.23" — and because aria-label overrides the
+      // content, that reader had no way to reach the shorter one (#25).
       aria-label={
-        `${day.date} — peak swell ${day.peak_swell_height.value}${day.peak_swell_height.unit}, ` +
-        `period ${day.swell_period_at_peak.value}${day.swell_period_at_peak.unit}, ` +
+        `${day.date} — peak swell ${formatValue(day.peak_swell_height.value)}${day.peak_swell_height.unit}, ` +
+        `period ${formatValue(day.swell_period_at_peak.value)}${day.swell_period_at_peak.unit}, ` +
         `from ${compassPoint(day.swell_direction_at_peak.value)}, ` +
-        `longest period ${day.longest_swell_period.value}${day.longest_swell_period.unit}`
+        `longest period ${formatValue(day.longest_swell_period.value)}${day.longest_swell_period.unit}`
       }
       onClick={onSelect}
     >
@@ -98,7 +116,7 @@ function DaySummary({
       >
         {CALL_LABELS[day.call?.status ?? UNJUDGED]}
       </span>
-      <span className="day-swell">
+      <span className="day-swell" data-testid={`day-peak-${day.date}`}>
         <span className="value">{formatValue(day.peak_swell_height.value)}</span>
         <span className="unit">{day.peak_swell_height.unit}</span>
       </span>

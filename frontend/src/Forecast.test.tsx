@@ -223,6 +223,57 @@ describe('the forecast range', () => {
     expect(label).toContain(String(BIG.longest_swell_period.value));
   });
 
+  it('names the same calendar day the backend grouped, east of UTC+12', async () => {
+    // The label was built from `${date}T12:00:00Z`, so a reader at UTC+13 saw noon UTC
+    // land at 01:00 the *following* day and the card named a date the forecast never
+    // contained (#25). Auckland in February is UTC+13.
+    const day = dayFrom('2026-02-16', 4.2, 15, 298, 'go', 4);
+    serveDays([day]);
+    process.env.TZ = 'Pacific/Auckland';
+
+    render(<ForecastRange />);
+
+    // 2026-02-16 is a Monday. Pinned as a literal rather than derived from a Date, which
+    // would reproduce whatever the code does and agree with it by construction.
+    const label = await screen.findByTestId(`day-label-${day.date}`);
+    expect(label.textContent).toContain('16');
+    expect(label.textContent).toContain('Mon');
+  });
+
+  it('reads a screen reader the same digits the card displays', async () => {
+    // The label interpolated the raw reading while the visible card ran it through
+    // formatValue, so whenever a source carried more than two decimals the two disagreed
+    // — and since aria-label *overrides* the card's content, a screen reader user got the
+    // long number and no way to see the short one (#25).
+    // The summary readings are overridden directly rather than passed through `dayFrom`,
+    // which rounds every value it generates to 2dp — so a fixture built through it cannot
+    // carry the extra decimals this test is about, and the first version of this test
+    // passed with the bug still in the code. The backend applies no rounding of its own:
+    // `Reading.value` is a float and the store keeps whatever the provider sent.
+    const precise = {
+      ...dayFrom('2026-02-16', 4.2, 15, 298, 'go', 4),
+      peak_swell_height: { value: 4.23456, unit: 'm' },
+      swell_period_at_peak: { value: 15.6789, unit: 's' },
+      longest_swell_period: { value: 16.98765, unit: 's' },
+    };
+    serveDays([precise]);
+
+    render(<ForecastRange />);
+
+    const day = await screen.findByRole('button', { name: new RegExp(precise.date) });
+    const label = day.getAttribute('aria-label') ?? '';
+
+    expect(label).toContain('4.23');
+    expect(label).not.toContain('4.23456');
+    expect(label).toContain('15.68');
+    expect(label).not.toContain('15.6789');
+    expect(label).not.toContain('16.98765');
+    // And the label agrees with what is on screen, which is the actual requirement.
+    expect(label).toContain(
+      within(day).getByTestId(`day-peak-${precise.date}`).textContent!.trim(),
+    );
+  });
+
   it('shows the day label and hours in order, marked as UTC', async () => {
     // Surviving mutants before this: dayLabel returning a constant, the hour rows
     // reversed, and the Time column frozen on the first hour.
