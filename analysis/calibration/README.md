@@ -24,8 +24,12 @@ numbers, and writes them where the running system reads them.
 >
 > **`thresholds.json` was not rewritten.** The shipped numbers are still #12's, in Open-Meteo
 > units, fitted on 9 Gold Days. #39 deliberately did not overwrite them, because fixing this
-> means either changing the shipped `HeuristicBaseline` — which ADR 0006 fixes as the permanent
-> benchmark — or fitting the wind arc, and neither belongs in a data-ingestion ticket.
+> means changing the shipped `HeuristicBaseline` — which ADR 0006 fixes as the permanent
+> benchmark, making it an ADR-level change rather than a threshold tweak.
+>
+> **Filed as [#40](https://github.com/NXA13/NazareNow/issues/40)**, which exempts light winds
+> from the direction arc rather than widening the arc: the six days are evidence that 4 km/h is
+> fine, not that 225–346° is. #39 is marked blocked by it.
 >
 > What #39 *did* establish is in `analysis/overlap/README.md` (what Open-Meteo's Swell is, in
 > Copernicus terms) and `analysis/backtest/README.md` (one panel over the whole record). The

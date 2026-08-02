@@ -802,9 +802,10 @@ def main() -> int:
             "condition as surely as a gale. On the 6 recent Gold Days #12 fitted, that never "
             "showed.\n\n"
             "Fixing it means changing the shipped Heuristic Baseline, which ADR 0006 keeps "
-            "fixed as the permanent benchmark, or fitting the arc — neither of which belongs "
-            "in a data-ingestion ticket. Raising here is deliberate: it stops #39 shipping "
-            "thresholds fitted under an assumption its own data disproves."
+            "fixed as the permanent benchmark — filed as **#40**, which exempts light winds "
+            "from the direction arc and which #39 is blocked by. Raising here is deliberate: "
+            "it stops #39 shipping thresholds fitted under an assumption its own data "
+            "disproves."
         )
 
     results = []

@@ -42,8 +42,11 @@ Ticket #11. The benchmark every later Amplification Model must beat, per ADR 000
 >
 > **#39's recalibration did not complete**, so these numbers still score #12's thresholds. The
 > wind condition blocks six Gold Days once the fit sees 25 instead of 6 — by the offshore arc,
-> on days with 4–16 km/h winds — which disproves the assumption #12 rests on. See
-> `analysis/calibration/README.md`.
+> on days with 4–16 km/h winds — which disproves the assumption #12 rests on. Filed as
+> [#40](https://github.com/NXA13/NazareNow/issues/40), which #39 is blocked by; see
+> `analysis/calibration/README.md`. **This headline will move when #40 lands**, because #40
+> changes the benchmark's own definition rather than its thresholds — 16 of 38 is the last
+> figure measured against the current wind condition, not against the one that will ship.
 
 Reproduce with, from the repository root:
 
