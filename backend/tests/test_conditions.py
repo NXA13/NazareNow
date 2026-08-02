@@ -30,15 +30,21 @@ from nazarenow.api import CurrentConditions, Reading
 from nazarenow.sources.open_meteo import (
     MARINE_READINGS,
     MAX_BACKOFF_SECONDS,
+    TIMEZONE,
     WEATHER_READINGS,
 )
 from nazarenow.store import DEFAULT_DATABASE, Store, StoreUnavailable
 
-DAY_HOURS = [f"2026-02-13T{hour:02d}:00" for hour in range(24)]
+# Six days, not one. These bodies exist to exercise *current* conditions, but a Pipeline
+# Run stores the forecast in the same transaction and now refuses a run carrying fewer than
+# `MINIMUM_FORECAST_HOURS` (#25) — so a one-day fixture would test the rejection path in
+# every one of these tests instead of the thing each is about.
+DAY_HOURS = [f"2026-02-{day:02d}T{hour:02d}:00" for day in range(13, 19) for hour in range(24)]
 
 MARINE_BODY = {
     "latitude": 39.541664,
     "longitude": -9.208328,
+    "timezone": TIMEZONE,
     "current_units": {
         "time": "iso8601",
         "wave_height": "m",
@@ -75,19 +81,20 @@ MARINE_BODY = {
     },
     "hourly": {
         "time": DAY_HOURS,
-        "wave_height": [8.4] * 24,
-        "wave_direction": [295] * 24,
-        "wave_period": [16.2] * 24,
-        "swell_wave_height": [8.1] * 24,
-        "swell_wave_direction": [298] * 24,
-        "swell_wave_period": [17.0] * 24,
-        "sea_surface_temperature": [15.2] * 24,
+        "wave_height": [8.4] * len(DAY_HOURS),
+        "wave_direction": [295] * len(DAY_HOURS),
+        "wave_period": [16.2] * len(DAY_HOURS),
+        "swell_wave_height": [8.1] * len(DAY_HOURS),
+        "swell_wave_direction": [298] * len(DAY_HOURS),
+        "swell_wave_period": [17.0] * len(DAY_HOURS),
+        "sea_surface_temperature": [15.2] * len(DAY_HOURS),
     },
 }
 
 WEATHER_BODY = {
     "latitude": 39.5,
     "longitude": -9.1875,
+    "timezone": TIMEZONE,
     "current_units": {
         "time": "iso8601",
         "temperature_2m": "°C",
@@ -108,9 +115,9 @@ WEATHER_BODY = {
     },
     "hourly": {
         "time": DAY_HOURS,
-        "temperature_2m": [13.4] * 24,
-        "wind_speed_10m": [11.0] * 24,
-        "wind_direction_10m": [115] * 24,
+        "temperature_2m": [13.4] * len(DAY_HOURS),
+        "wind_speed_10m": [11.0] * len(DAY_HOURS),
+        "wind_direction_10m": [115] * len(DAY_HOURS),
     },
 }
 

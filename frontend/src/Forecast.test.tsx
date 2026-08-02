@@ -315,7 +315,7 @@ describe('the forecast range', () => {
     );
   });
 
-  it('shows the day label and hours in order, marked as UTC', async () => {
+  it('shows the day label and hours in order, marked as Nazaré time', async () => {
     // Surviving mutants before this: dayLabel returning a constant, the hour rows
     // reversed, and the Time column frozen on the first hour.
     render(<ForecastRange />);
@@ -323,8 +323,11 @@ describe('the forecast range', () => {
     await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
     const table = await screen.findByRole('table');
 
-    // Both the caption and the Time column say UTC; either alone would do.
-    expect(within(table).getAllByText(/UTC/).length).toBeGreaterThan(0);
+    // Both the caption and the Time column name the zone; either alone would do. Naming
+    // it matters more than which one it is: an unlabelled 06:00 is read as the viewer's
+    // own morning, and this is the hour someone drives to the beach for (ADR 0008).
+    expect(within(table).getAllByText(/Nazaré/).length).toBeGreaterThan(0);
+    expect(within(table).queryAllByText(/UTC/)).toHaveLength(0);
     // The caption carries the same readable date as the tile; the raw ISO form survived.
     expect(table.querySelector('caption')?.textContent).toMatch(/[A-Za-z]{3}/);
     expect(table.querySelector('caption')?.textContent).not.toContain(BIG.date);

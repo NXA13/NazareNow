@@ -190,13 +190,14 @@ function HourTable({ day }: { day: ForecastDay }) {
   return (
     <div className="hours-scroll">
       <table>
-        {/* Times are the provider's, in UTC, and labelled as such. Rendering them in
-            the viewer's zone beside a locally-formatted date would shift hours across
-            the day boundary and quietly disagree with the date above. */}
-        <caption>Hour by hour on {dayLabel(day.date)}, times in UTC</caption>
+        {/* Times are Nazaré's own, and labelled as such. Rendering them in the viewer's
+            zone would shift hours across the day boundary and quietly disagree with the
+            date above — and the viewer's zone is not the one they would be standing in.
+            A day here is a day at Praia do Norte (ADR 0008). */}
+        <caption>Hour by hour on {dayLabel(day.date)}, times in Nazaré</caption>
         <thead>
           <tr>
-            <th scope="col">Time (UTC)</th>
+            <th scope="col">Time (Nazaré)</th>
             <th scope="col">Swell</th>
             <th scope="col">Period</th>
             <th scope="col">Dir</th>

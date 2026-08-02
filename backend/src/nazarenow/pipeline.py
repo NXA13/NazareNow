@@ -31,8 +31,24 @@ from nazarenow.store import Store, StoreUnavailable
 # response, not a short forecast — and replacing a good forecast with it destroys the
 # range while looking like a success. Zero alone was not enough of a floor: a response
 # nulling all but one hour passed the check and replaced seventy-two stored hours with
-# one, silently.
-MINIMUM_FORECAST_HOURS = 24
+# one, silently. Nor was 24: a healthy run yields about 216 hours, so a floor of 24 was
+# 11% of one and let the same failure through at a larger size (#25).
+MINIMUM_FORECAST_HOURS = 120
+
+# ...and separately, no run may replace a stored forecast with less than half of it.
+#
+# The two guards catch different things and neither is enough alone. The floor catches a
+# response that is short in isolation; this catches one that is short *relative to what it
+# is about to destroy* — 150 hours is a perfectly respectable forecast unless 300 are
+# already stored, and no provider is going to hand those back once they are gone.
+#
+# Deliberately a coarse fraction rather than a tuned one. Nobody yet knows what a
+# legitimate short forecast from this provider looks like, and inventing a precise
+# threshold would be false precision. A refused run is now a durable record carrying the
+# payload that caused it (#30), so a provider genuinely shortening its horizon shows up as
+# a run of identical failures with the evidence attached — which is what this number should
+# eventually be set from, rather than from a guess made today.
+MINIMUM_SHARE_OF_STORED_FORECAST = 0.5
 
 # The active Amplification Model. ADR 0006 keeps the Heuristic Baseline permanently as
 # the benchmark; ticket #13 swaps a learned model in behind the same interface. Annotated
@@ -263,6 +279,14 @@ def _fetch_and_store(store: Store, client: httpx.Client, sleep, run_id: int) -> 
         raise ValueError(
             f"Providers returned only {len(hours)} usable forecast hours, fewer than the "
             f"{MINIMUM_FORECAST_HOURS} a real run produces; keeping the previous forecast"
+        )
+
+    stored = len(store.forecast())
+    if len(hours) < stored * MINIMUM_SHARE_OF_STORED_FORECAST:
+        raise ValueError(
+            f"Providers returned {len(hours)} usable forecast hours, less than half of the "
+            f"{stored} already stored; keeping the previous forecast rather than replacing "
+            "a longer one with a fragment"
         )
 
     store.record_run(
