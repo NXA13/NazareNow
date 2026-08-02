@@ -282,11 +282,12 @@ measurement, and it needs the data.
 
 ---
 
-## Draft follow-up ticket — not filed
+## Follow-up ticket — filed as #39
 
-#36 says the verification ends by filing the ingestion ticket if the answer is yes. It is yes. The
-text below is the draft; **filing it is left to a human**, per the ticket's own separation of
-verification from ingestion.
+#36 says the verification ends by filing the ingestion ticket if the answer is yes. It is yes, and
+the ticket is **[#39](https://github.com/NXA13/NazareNow/issues/39)**. The text below is the draft it
+was filed from, kept here so the reasoning and the ticket stay next to each other; #39 itself is the
+live copy.
 
 > **Title:** Ingest the Copernicus wave reanalysis and recalibrate on all 38 Gold Days
 >
