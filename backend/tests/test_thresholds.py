@@ -32,8 +32,8 @@ VALID = {
     "offshore_wind_arc": [20.0, 180.0],
     "maximum_wind_speed_kmh": 35.0,
     "calibration": {
-        "fitted_on": "2022-2023",
-        "validated_on": "2024-2025",
+        "fitted_on": "2021/22-2022/23",
+        "validated_on": "2023/24-2025/26",
         "gold_days_fitted": 6,
         "gold_days_validated": 3,
         "method": "fitted per tier against Gold Days",
@@ -77,6 +77,31 @@ class TestParsing:
 
         assert calibration is not None
         assert calibration.gold_days_total == 9
+
+
+class TestVarying:
+    """`as_dict` and `replacing`, which the calibration sweep and the backtest both use."""
+
+    def test_a_set_round_trips_through_its_own_dict(self) -> None:
+        """`as_dict` is what writes the shipped file, so a key it drops is a threshold the
+        next load would reject or silently miss."""
+        original = parse(VALID)
+
+        assert parse(original.as_dict()) == original
+
+    def test_replacing_varies_one_field_and_keeps_the_rest(self) -> None:
+        varied = parse(VALID).replacing(go_call_minimum_swell_period_s=14.0)
+
+        assert varied.go_call_minimum_swell_period_s == 14.0
+        assert varied.watch_minimum_swell_period_s == 12.5
+        assert varied.swell_arc == (255.0, 330.0)
+
+    def test_replacing_still_refuses_an_inverted_pair(self) -> None:
+        """The reason `replacing` exists rather than `dataclasses.replace`, which would skip
+        validation entirely — letting a sweep score a set the running system would refuse to
+        load, and then recommend it."""
+        with pytest.raises(ThresholdsUnusable, match="not above the Watch bar"):
+            parse(VALID).replacing(go_call_minimum_swell_period_s=11.0)
 
 
 class TestRefusals:

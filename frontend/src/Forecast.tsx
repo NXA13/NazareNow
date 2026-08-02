@@ -297,9 +297,8 @@ export function ForecastRange() {
           These thresholds were fitted to {state.forecast.calibration.gold_days_total} days Nazaré
           is known to have gone giant — {state.forecast.calibration.gold_days_fitted} to choose them
           and {state.forecast.calibration.gold_days_validated} held back to check them. That is a
-          very small number of days, and only those since{' '}
-          {state.forecast.calibration.fitted_on.slice(0, 4)} could be used, because the swell
-          measurements these calls read do not exist before then. Expect the calls to be roughly
+          very small number of days: far more giant days are on record, but the swell measurements
+          these calls are written in do not reach back that far. Expect the calls to be roughly
           right and individually uncertain.
         </p>
       )}

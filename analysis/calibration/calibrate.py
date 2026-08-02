@@ -53,10 +53,32 @@ LEAD_TIME_DAYS = backtest.LEAD_TIME_DAYS
 GO_TIERS = backtest.GO_TIERS
 WATCH_OR_BETTER = backtest.WATCH_OR_BETTER
 
-FIT_YEARS = ("2022", "2023")
-TEST_YEARS = ("2024", "2025")
-FIT_SPAN = "2022-2023"
-TEST_SPAN = "2024-2025"
+FIT_SEASONS = ("2021/22", "2022/23")
+TEST_SEASONS = ("2023/24", "2024/25", "2025/26")
+FIT_SPAN = "2021/22-2022/23"
+TEST_SPAN = "2023/24-2025/26"
+
+"""Split on Big-Wave Season boundaries, not calendar years.
+
+CONTEXT.md: a Big-Wave Season runs October through March, "a season is never a calendar
+year, and splitting one across two years destroys the unit that matters." An earlier version
+of this file split on the calendar — 2022-2023 to fit, 2024-2025 to test — which cut the
+**2023/24 season in half**: its October-to-December went to the fitting split and its
+January-to-March to the held-out one. Two things followed, and neither was visible in the
+report.
+
+The held-out split stopped being held out. A season is one weather pattern, and the fit had
+seen three months of the season a held-out Gold Day sits in.
+
+And `Split.seasons` counted 2023/24 in *both* halves, so the two splits reported three
+seasons each out of five that exist. That denominator is what turns a Go Call count into
+`per_season`, which is the constraint `choose_go_bar` fits against — so the season the split
+double-counted made the rule look more restrained than it was.
+
+The allocation of Gold Days is unchanged by the fix: all six fitting Gold Days fall in
+2021/22, and the three held-out ones in 2023/24, 2024/25 and 2025/26. Only the boundary
+moved.
+"""
 
 PERIOD_SWEEP = tuple(round(10.0 + 0.5 * step, 1) for step in range(13))
 """10.0s to 16.0s in half-second steps.
@@ -158,23 +180,65 @@ def score(split: Split, thresholds: Thresholds, tiers: tuple[Status, ...]) -> Sc
     )
 
 
+UNFITTED = parse(
+    {
+        # The conditions this calibration does not fit, at the surf community's values.
+        # Stated here rather than read from the shipped file, which this script *writes* —
+        # loading it would make each run start from the last run's output, so a fit could
+        # walk away from these values one run at a time with nothing recording that it had.
+        "swell_arc": [255.0, 330.0],
+        "offshore_wind_arc": [20.0, 180.0],
+        "maximum_wind_speed_kmh": 35.0,
+        # Placeholders. Every candidate replaces all three; `parse` will not accept a set
+        # without them, and a set that could omit one would silently inherit whatever these
+        # said.
+        "minimum_significant_wave_height_m": 3.0,
+        "watch_minimum_swell_period_s": 12.0,
+        "go_call_minimum_swell_period_s": 13.0,
+        "calibration": None,
+    }
+)
+"""The starting point every candidate varies from. See `verify_shared_conditions`."""
+
+
+BUOY_MEASURED = "buoy_measured"
+"""The strongest evidence class in `gold_days.jsonl`: a day with an instrument behind it.
+
+`gold_days/` records how each Gold Day is known — 7 buoy-measured, 7 hindcast-only, 24
+unknown across the whole list. #12's brief asks for this subset to be reported separately,
+because a day whose size was measured is a different quality of label from one attested by a
+photograph, and a recall figure that mixes them cannot be checked against either.
+"""
+
+
+def buoy_measured_recall(
+    split: Split, thresholds: Thresholds, tiers: tuple[Status, ...]
+) -> tuple[int, int]:
+    """Gold Days called, counting only those with a buoy measurement behind them.
+
+    Recall only. A precision figure restricted to this subset would be meaningless — it
+    would count every flagged day without an instrument as a miss, including the other Gold
+    Days.
+    """
+    calls = call_days(split.hours, HeuristicBaseline(thresholds))
+    measured = [
+        date
+        for date, gold in split.gold.items()
+        if date in calls and gold.evidence_class == BUOY_MEASURED
+    ]
+    return sum(1 for date in measured if calls[date] in tiers), len(measured)
+
+
 def candidate(watch_period: float, go_period: float, height: float) -> Thresholds:
     """A threshold set to try, built through the same parser the running system uses.
 
     Going through `parse` rather than constructing `Thresholds` directly means a candidate
     the deployed system would refuse to load can never be scored here and recommended.
     """
-    return parse(
-        {
-            "minimum_significant_wave_height_m": height,
-            "watch_minimum_swell_period_s": watch_period,
-            "go_call_minimum_swell_period_s": go_period,
-            # Not fitted. See the module docstring and `verify_shared_conditions`.
-            "swell_arc": [255.0, 330.0],
-            "offshore_wind_arc": [20.0, 180.0],
-            "maximum_wind_speed_kmh": 35.0,
-            "calibration": None,
-        }
+    return UNFITTED.replacing(
+        minimum_significant_wave_height_m=height,
+        watch_minimum_swell_period_s=watch_period,
+        go_call_minimum_swell_period_s=go_period,
     )
 
 
@@ -358,12 +422,12 @@ def describe_binding_constraint(rows: list[SweepRow], watch_bar: float, go_bar: 
     # Go bar up is having to clear the Watch bar.
     if lowest_affordable is not None and lowest_affordable <= watch_bar < go_bar:
         return (
-            f"the Watch bar, not the budget. Bars from {lowest_affordable:g}s up are within "
-            f"{GO_CALLS_PER_SEASON_BUDGET:g} calls/season, so the budget is slack here and the "
-            f"Go bar is the first step above the Watch bar. The record does not distinguish "
-            f"{go_bar:g}s from the higher bars that also qualify"
+            f"the Watch bar rather than the budget — bars from {lowest_affordable:g}s up are "
+            f"already within {GO_CALLS_PER_SEASON_BUDGET:g} calls per season, so {go_bar:g}s is "
+            "simply the first step above the Watch bar and the record does not distinguish it "
+            "from the higher bars that also qualify"
         )
-    return f"the Go Call budget of {GO_CALLS_PER_SEASON_BUDGET:g} calls per season"
+    return f"the budget of {GO_CALLS_PER_SEASON_BUDGET:g} Go Calls per Big-Wave Season"
 
 
 def write_thresholds(
@@ -375,24 +439,24 @@ def write_thresholds(
     deploys is a report; the point of #12 is that these numbers reach the Decision Model.
     `output/` gets the tables that justify them.
     """
-    body = {
-        "minimum_significant_wave_height_m": thresholds.minimum_significant_wave_height_m,
-        "watch_minimum_swell_period_s": thresholds.watch_minimum_swell_period_s,
-        "go_call_minimum_swell_period_s": thresholds.go_call_minimum_swell_period_s,
-        "swell_arc": list(thresholds.swell_arc),
-        "offshore_wind_arc": list(thresholds.offshore_wind_arc),
-        "maximum_wind_speed_kmh": thresholds.maximum_wind_speed_kmh,
+    body = thresholds.as_dict() | {
         "calibration": {
             "fitted_on": fit.span,
             "validated_on": test.span,
             "gold_days_fitted": len([d for d in fit.gold if d in group_by_date(fit.hours)]),
             "gold_days_validated": len([d for d in test.gold if d in group_by_date(test.hours)]),
+            # Leads with what actually chose each bar, not with the criterion that was
+            # merely checked. This string reaches the API and can reach a reader, and an
+            # earlier version opened on the Go Call budget — true, but not the constraint
+            # that selected the number, which the same sentence then had to walk back.
             "method": (
-                "Swell period fitted per tier against Gold Days on the real Swell partition: "
-                "the Watch bar is the highest period catching every Gold Day in the fitting "
-                f"split, the Go Call bar the lowest staying within {GO_CALLS_PER_SEASON_BUDGET:g} "
-                "Go Calls per Big-Wave Season. Height, swell arc and wind were verified to "
-                f"block no Gold Day rather than fitted. What set the Go Call bar was {binding}."
+                "Swell period fitted per tier against Gold Days on the real Swell "
+                "partition, split on Big-Wave Season boundaries. The Watch bar is the "
+                "highest period catching every Gold Day in the fitting split. The Go Call "
+                "bar is the lowest period sitting above the Watch bar and within "
+                f"{GO_CALLS_PER_SEASON_BUDGET:g} Go Calls per Big-Wave Season; in this fit "
+                f"what actually set it was {binding}. Height, swell arc and wind were "
+                "verified to block no Gold Day rather than fitted."
             ),
             "source": "analysis/calibration/calibrate.py",
             "fitted_at": date_type.today().isoformat(),
@@ -435,7 +499,7 @@ def write_sweep_csv(rows: list[SweepRow]) -> Path:
     return path
 
 
-def write_report_csv(results: list[tuple[str, str, Score]]) -> Path:
+def write_report_csv(results: list[tuple[str, str, Score, tuple[int, int]]]) -> Path:
     path = OUTPUT / "calibrated_scores.csv"
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
@@ -450,9 +514,14 @@ def write_report_csv(results: list[tuple[str, str, Score]]) -> Path:
                 "flags_per_season",
                 "flagged_that_are_gold",
                 "precision_lower_bound",
+                # The subset with an instrument behind it, reported beside the whole so a
+                # reader can see whether the rule does better on the days that are best
+                # attested — and so this figure is in the record rather than only on stdout.
+                "buoy_measured_called",
+                "buoy_measured_in_split",
             ]
         )
-        for split_name, tier, result in results:
+        for split_name, tier, result, (measured_called, measured_total) in results:
             writer.writerow(
                 [
                     split_name,
@@ -464,15 +533,22 @@ def write_report_csv(results: list[tuple[str, str, Score]]) -> Path:
                     f"{result.per_season:.1f}",
                     result.flagged_that_are_gold,
                     f"{result.precision_lower_bound:.4f}",
+                    measured_called,
+                    measured_total,
                 ]
             )
     return path
 
 
 def split_hours(
-    hours: list[dict[str, float | str]], years: tuple[str, ...]
+    hours: list[dict[str, float | str]], seasons: tuple[str, ...]
 ) -> list[dict[str, float | str]]:
-    return [hour for hour in hours if str(hour["at"])[:4] in years]
+    """The hours belonging to these Big-Wave Seasons, whole seasons only.
+
+    `season_of` is imported from the backtest rather than reimplemented: it is the same
+    October-opening rule CONTEXT.md defines, and two copies of a calendar convention drift.
+    """
+    return [hour for hour in hours if season_of(str(hour["at"])[:10]) in seasons]
 
 
 def check() -> int:
@@ -559,8 +635,15 @@ def main() -> int:
     gold = load_gold_days()
     hours = operational_hours()
 
-    fit = Split("fitting", FIT_SPAN, split_hours(hours, FIT_YEARS), gold)
-    test = Split("held-out", TEST_SPAN, split_hours(hours, TEST_YEARS), gold)
+    fit = Split("fitting", FIT_SPAN, split_hours(hours, FIT_SEASONS), gold)
+    test = Split("held-out", TEST_SPAN, split_hours(hours, TEST_SEASONS), gold)
+    overlap = set(FIT_SEASONS) & set(TEST_SEASONS)
+    if overlap:
+        raise RuntimeError(
+            f"these Big-Wave Seasons appear in both splits: {sorted(overlap)}. The held-out "
+            "split would not be held out, and every season counted twice would understate "
+            "the Go Call rate the budget is fitted against"
+        )
     for split in (fit, test):
         present = [d for d in gold if d in group_by_date(split.hours)]
         print(
@@ -622,19 +705,33 @@ def main() -> int:
     results = []
     for split in (fit, test):
         for label, tiers in (("watch_or_better", WATCH_OR_BETTER), ("go_call", GO_TIERS)):
-            results.append((split.name, label, score(split, chosen, tiers)))
+            results.append(
+                (
+                    split.name,
+                    label,
+                    score(split, chosen, tiers),
+                    buoy_measured_recall(split, chosen, tiers),
+                )
+            )
 
     print(
         f"\n{'split':10s} {'tier':16s} {'recall':>10s} {'flagged':>8s} "
         f"{'per season':>11s} {'precision >=':>13s}"
     )
-    for split_name, tier, result in results:
+    for split_name, tier, result, _measured in results:
         print(
             f"{split_name:10s} {tier:16s} "
             f"{f'{result.gold_called}/{result.gold_total}':>10s} "
             f"{result.flagged:>8d} {result.per_season:>11.1f} "
             f"{result.precision_lower_bound:>13.0%}"
         )
+
+    print("\nRecall on the buoy-measured subset, where an instrument recorded the size:")
+    for split in (fit, test):
+        for label, tiers in (("watch_or_better", WATCH_OR_BETTER), ("go_call", GO_TIERS)):
+            called, total = buoy_measured_recall(split, chosen, tiers)
+            reading = f"{called}/{total}" if total else "none in this split"
+            print(f"  {split.name:10s} {label:16s} {reading}")
 
     sweep_path = write_sweep_csv(rows)
     report_path = write_report_csv(results)

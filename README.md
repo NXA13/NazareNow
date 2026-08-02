@@ -192,7 +192,7 @@ cd analysis/backtest && ../../.venv/Scripts/python.exe backtest.py
 [`analysis/backtest/`](./analysis/backtest/) is the benchmark of ADR 0006: what the
 Heuristic Baseline would have called across 2011-2025, and what it would have missed.
 [`analysis/calibration/`](./analysis/calibration/) is where its thresholds come from — fitted
-on 2022-2023, validated on 2024-2025, and written to
+on the 2021/22 and 2022/23 Big-Wave Seasons, validated on 2023/24 onward, and written to
 `backend/src/nazarenow/thresholds.json`, which the Decision Model loads at each Pipeline Run.
 Set `NAZARENOW_THRESHOLDS` to recalibrate without redeploying.
 

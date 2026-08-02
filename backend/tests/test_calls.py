@@ -370,8 +370,12 @@ class TestCallContent:
         calibration = client.get("/api/conditions/forecast").json()["calibration"]
 
         assert calibration["gold_days_total"] == 9
-        assert calibration["fitted_on"] == "2022-2023"
-        assert calibration["validated_on"] == "2024-2025"
+        # Named as Big-Wave Seasons, not calendar years, and the two must not share one.
+        # CONTEXT.md: a season is never a calendar year. Splitting on the calendar put
+        # October-to-December 2023 in the fit and January-to-March 2024 in the held-out
+        # half — one season in both, so the held-out split was not held out.
+        assert calibration["fitted_on"] == "2021/22-2022/23"
+        assert calibration["validated_on"] == "2023/24-2025/26"
         assert "analysis/calibration" in calibration["source"]
 
 

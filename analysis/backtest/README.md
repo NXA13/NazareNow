@@ -48,7 +48,9 @@ Of the 6 Gold Days in the operational panel that earned no call at all, **swell 
 wind while clearing period.
 
 The sweep below is scored against the current calibration, varying only the Go Call bar, so
-its counts differ from the pre-#12 run — the height bar moved to 3.75 m at the same time:
+its counts differ from the pre-#12 run — the height bar moved to 3.75 m at the same time. It
+is scored over the whole operational panel, not over the calibration's fitting split, so its
+call counts also differ from the sweep in `analysis/calibration/output/period_sweep.csv`:
 
 | Go Call bar | Gold Days called | Go Calls issued in four years |
 |---|---|---|
@@ -64,7 +66,7 @@ either side roughly halves or doubles what the tier says.
 
 This table is **diagnostic, not the calibration** — it has seen every Gold Day, so it cannot
 also validate against them. `analysis/calibration/` chooses the values on the fitting split
-alone, with 2024-2025 kept back.
+alone — the 2021/22 and 2022/23 seasons — with 2023/24 onward kept back.
 
 The clearest illustration of the original problem is that the misses were *bigger* than the
 hits. 2022-02-25 (Hs 5.68 m) and 2025-12-13 (Hs 5.62 m) were missed while 2022-02-09 (Hs
@@ -198,10 +200,10 @@ names do.
 
 This section inverted at #12, and the change is the most important caveat on the page.
 
-- **The operational panel is now partly in-sample.** The thresholds were fitted on 2022-2023,
-  which is half of it. Its 9/9 and 7/9 are therefore optimistic. `analysis/calibration/`
-  reports the held-out 2024-2025 split — 3/3 at Watch and 2/3 at Go Call — and that is the
-  number any accuracy claim should quote.
+- **The operational panel is now partly in-sample.** The thresholds were fitted on the
+  2021/22 and 2022/23 seasons, which is part of it. Its 9/9 and 7/9 are therefore optimistic.
+  `analysis/calibration/` reports the held-out split, 2023/24 onward — 3/3 at Watch and 2/3 at
+  Go Call — and that is the number any accuracy claim should quote.
 - The reconstruction is fitted on 2022-2023 and applied to 2011-2021 — disjoint years.
 - Its validation is on 2024-2025, which the fit never saw.
 - The reconstructed panel is out-of-sample for the thresholds, being entirely pre-2022. Its

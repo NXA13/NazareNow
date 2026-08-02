@@ -43,7 +43,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend" / "src"))
 from nazarenow.days import group_by_date  # noqa: E402
 from nazarenow.decision import Status, decide, strength  # noqa: E402
 from nazarenow.models.heuristic import HeuristicBaseline  # noqa: E402
-from nazarenow.thresholds import Thresholds, parse  # noqa: E402
+from nazarenow.thresholds import Thresholds  # noqa: E402
 from nazarenow.thresholds import load as load_thresholds
 
 HERE = Path(__file__).resolve().parent
@@ -399,17 +399,17 @@ def period_sensitivity(
 
 
 def _at_go_bar(shipped: Thresholds, go_bar: float) -> Thresholds:
-    """The shipped calibration with its Go Call period bar moved, everything else held."""
-    return parse(
-        {
-            "minimum_significant_wave_height_m": shipped.minimum_significant_wave_height_m,
-            "watch_minimum_swell_period_s": go_bar - 0.5,
-            "go_call_minimum_swell_period_s": go_bar,
-            "swell_arc": list(shipped.swell_arc),
-            "offshore_wind_arc": list(shipped.offshore_wind_arc),
-            "maximum_wind_speed_kmh": shipped.maximum_wind_speed_kmh,
-            "calibration": None,
-        }
+    """The shipped calibration with its Go Call period bar moved, everything else held.
+
+    The Watch bar moves with it, half a second below, so each row measures the Go bar it
+    names rather than the interaction of the pair. The calibration is dropped because a
+    swept set is not the fit — carrying the provenance forward would let a diagnostic row
+    describe itself as the calibrated rule.
+    """
+    return shipped.replacing(
+        watch_minimum_swell_period_s=go_bar - 0.5,
+        go_call_minimum_swell_period_s=go_bar,
+        calibration=None,
     )
 
 

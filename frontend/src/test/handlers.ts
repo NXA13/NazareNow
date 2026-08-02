@@ -148,8 +148,8 @@ export const forecast: Forecast = {
  * behind the thresholds should fail if that number silently changes, and inventing a
  * rounder figure here would hide exactly the thing the caveat exists to disclose. */
 export const calibration: Calibration = {
-  fitted_on: '2022-2023',
-  validated_on: '2024-2025',
+  fitted_on: '2021/22-2022/23',
+  validated_on: '2023/24-2025/26',
   gold_days_fitted: 6,
   gold_days_validated: 3,
   gold_days_total: 9,

@@ -1,5 +1,5 @@
-split,tier,gold_days_called,gold_days_in_split,recall,days_flagged,flags_per_season,flagged_that_are_gold,precision_lower_bound
-fitting,watch_or_better,6,6,1.000,25,8.3,6,0.2400
-fitting,go_call,5,6,0.833,10,3.3,5,0.5000
-held-out,watch_or_better,3,3,1.000,19,6.3,3,0.1579
-held-out,go_call,2,3,0.667,6,2.0,2,0.3333
+split,tier,gold_days_called,gold_days_in_split,recall,days_flagged,flags_per_season,flagged_that_are_gold,precision_lower_bound,buoy_measured_called,buoy_measured_in_split
+fitting,watch_or_better,6,6,1.000,21,10.5,6,0.2857,0,0
+fitting,go_call,5,6,0.833,10,5.0,5,0.5000,0,0
+held-out,watch_or_better,3,3,1.000,23,7.7,3,0.1304,3,3
+held-out,go_call,2,3,0.667,6,2.0,2,0.3333,2,3

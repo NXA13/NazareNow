@@ -16,18 +16,46 @@ Model loads — and its tables to `output/`.
 
 ## The headline
 
-**Fitted on 2022-2023 and scored on 2024-2025, which the fit never saw, the calibrated rule
-catches every Gold Day at Watch and two of three at Go Call, issuing two Go Calls a season.**
+**Fitted on the 2021/22 and 2022/23 seasons and scored on 2023/24 through 2025/26, which the
+fit never saw, the calibrated rule catches every Gold Day at Watch and two of three at Go
+Call, issuing two Go Calls a season.**
 
-| Split | Span | Gold Days | Tier | Recall | Days flagged | Per season | Precision (lower bound) |
+| Split | Seasons | Gold Days | Tier | Recall | Days flagged | Per season | Precision (lower bound) |
 |---|---|---|---|---|---|---|---|
-| Fitting | 2022-2023 | 6 | Watch or better | **6/6** | 25 | 8.3 | ≥24% |
-| Fitting | 2022-2023 | 6 | Go Call | 5/6 | 10 | 3.3 | ≥50% |
-| **Held-out** | **2024-2025** | **3** | **Watch or better** | **3/3** | 19 | 6.3 | ≥16% |
-| **Held-out** | **2024-2025** | **3** | **Go Call** | **2/3** | 6 | 2.0 | ≥33% |
+| Fitting | 2021/22-2022/23 | 6 | Watch or better | **6/6** | 21 | 10.5 | ≥29% |
+| Fitting | 2021/22-2022/23 | 6 | Go Call | 5/6 | 10 | 5.0 | ≥50% |
+| **Held-out** | **2023/24-2025/26** | **3** | **Watch or better** | **3/3** | 23 | 7.7 | ≥13% |
+| **Held-out** | **2023/24-2025/26** | **3** | **Go Call** | **2/3** | 6 | 2.0 | ≥33% |
 
 The held-out rows are the ones that mean anything. They are also **three Gold Days wide**, and
 no amount of care in the method fixes that — see "What this rests on" below.
+
+**The split falls on Big-Wave Season boundaries, not calendar years.** CONTEXT.md defines a
+season as October through March and warns that splitting one across two calendar years
+destroys the unit. An earlier version of this fit split on 2022-2023 against 2024-2025, which
+cut the 2023/24 season in half: its autumn went to the fitting split and its winter to the
+held-out one. The held-out split was then not held out, and `Split.seasons` counted 2023/24
+twice, inflating the denominator of the very rate the Go Call budget is checked against.
+Fixing it did not move either threshold — all six fitting Gold Days fall in 2021/22 — but it
+moved the reported per-season rates, which is why they differ from the numbers in the first
+commit. `calibrate.py` now raises if the two season lists intersect.
+
+### The held-out split is the better-evidenced half
+
+`gold_days.jsonl` records how each Gold Day is known. It turns out all three held-out Gold
+Days are **buoy-measured** — an instrument recorded the size — while all six fitting Gold Days
+are `unknown`, attested by report rather than measurement.
+
+| Split | Tier | Buoy-measured Gold Days called |
+|---|---|---|
+| Fitting | either | none in this split |
+| Held-out | Watch or better | 3/3 |
+| Held-out | Go Call | 2/3 |
+
+That is a good accident rather than a design: the thresholds were chosen against days
+somebody documented and checked against days something measured. It is also why the held-out
+recall figures are worth more than their sample size alone suggests, and it is the separate
+reporting of the buoy-measured subset that #12's brief asked for.
 
 ## What the thresholds are
 
@@ -90,7 +118,7 @@ left in the calibration.
 
 ### The budget did not actually bind, and that matters
 
-Every bar from 11.5 s up is inside eight calls a season. So the budget is slack, and what
+Every bar from 12.5 s up is inside eight calls a season. So the budget is slack, and what
 actually held the Go bar up was **having to sit above the Watch bar**. The record does not
 distinguish 13 s from 13.5 s or 14 s on the precision side; 13 s was taken because it is the
 lowest of those, and lower means more Gold Days caught.
@@ -151,9 +179,11 @@ falling the other way moves held-out Go Call recall from 2/3 to 1/3. The interfa
 number to the user for this reason, and any accuracy claim made from these thresholds has to
 carry it too — ADR 0006 requires exactly that.
 
-**The split is chronological**, fitted on 2022-2023 and validated on 2024-2025 — the same
-split #11's swell reconstruction used, and the same direction the system runs in: fit on the
-past, apply to the future. Nothing here was tuned on the years it reports.
+**The split is chronological**, fitted on the 2021/22 and 2022/23 seasons and validated on
+2023/24 onward — the same direction the system runs in: fit on the past, apply to the future.
+Nothing here was tuned on the seasons it reports. #11's swell reconstruction splits the same
+record on calendar years rather than seasons; that is a fit over hourly pairs, where a season
+is not the meaningful unit, so it was left as it is.
 
 **These are Hindcast numbers.** A Hindcast is what the ocean did, not what a forecast said it
 would do, so this scores the rule given perfect knowledge of Offshore Conditions — its

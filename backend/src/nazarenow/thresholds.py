@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -67,7 +67,14 @@ class Calibration:
     """The span the thresholds were fitted on, as a reader would name it."""
 
     validated_on: str
-    """The held-out span. Disjoint from `fitted_on`, checked on load."""
+    """The held-out span.
+
+    Checked on load only for being *different* from `fitted_on`, which catches the
+    copy-paste that reports an in-sample score as a held-out one. It cannot check genuine
+    disjointness: these are free text a reader names spans with, and `"2021/22-2022/23"`
+    against `"2022/23-2025/26"` differs while overlapping. Keeping the two spans actually
+    disjoint is the fitting script's job, and `analysis/calibration/` splits on Big-Wave
+    Season boundaries so that no season falls in both."""
 
     gold_days_fitted: int
     gold_days_validated: int
@@ -109,6 +116,33 @@ class Thresholds:
     @property
     def calibrated(self) -> bool:
         return self.calibration is not None
+
+    def as_dict(self) -> dict[str, Any]:
+        """The file shape this set came from, ready to write back or vary.
+
+        Exists so the seven keys are spelled out in exactly one place. They were hand-built
+        at three call sites — two in the calibration, one in the backtest — and a set
+        assembled by hand is a set that can quietly omit a key and fall back to a default
+        nobody chose.
+        """
+        return {
+            "minimum_significant_wave_height_m": self.minimum_significant_wave_height_m,
+            "watch_minimum_swell_period_s": self.watch_minimum_swell_period_s,
+            "go_call_minimum_swell_period_s": self.go_call_minimum_swell_period_s,
+            "swell_arc": list(self.swell_arc),
+            "offshore_wind_arc": list(self.offshore_wind_arc),
+            "maximum_wind_speed_kmh": self.maximum_wind_speed_kmh,
+            "calibration": None if self.calibration is None else asdict(self.calibration),
+        }
+
+    def replacing(self, **changes: Any) -> Thresholds:
+        """This set with some fields changed, re-validated on the way through.
+
+        `dataclasses.replace` would skip `parse`, which is where the tier ordering is
+        enforced — so a sweep could construct and score a set with its Go bar under its
+        Watch bar, and recommend a file the running system would refuse to load.
+        """
+        return parse(self.as_dict() | changes)
 
 
 def _arc(raw: Any, field: str) -> tuple[float, float]:
