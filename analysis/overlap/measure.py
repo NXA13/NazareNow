@@ -282,6 +282,107 @@ def fits(hours: list[Paired]) -> list[Fit]:
     ]
 
 
+@dataclass(frozen=True)
+class Translation:
+    """A fitted straight line from a reanalysis reading to the operational equivalent.
+
+    #39 calibrates on the reanalysis in its native units — the fit stays internally
+    consistent that way, and the backtest reports numbers that belong to the series it
+    scored. But `thresholds.json` is read by the **live Pipeline Run**, which consumes
+    Open-Meteo and never sees a reanalysis. A bar fitted at 13.5 s of reanalysis period is
+    roughly 13.0 s of operational period, and shipping the untranslated number would quietly
+    make the deployed system half a second stricter than the fit intended.
+
+    So the three fitted scalars are translated on the way out, and nothing else is. Applying
+    the transform to the 134,160-row series instead would push its error through the fit
+    itself; applying it to three numbers keeps it where it can be read.
+
+    Fitted on the **big-swell** subset, because that is the regime the bars operate in and
+    the relationship is not the same at 1 m (`README.md`, finding 1).
+    """
+
+    variable: str
+    slope: float
+    intercept: float
+    n: int
+    residual_rmse: float
+
+    def apply(self, value: float) -> float:
+        return self.slope * value + self.intercept
+
+    def invert(self, value: float) -> float:
+        """An operational reading restated in reanalysis units.
+
+        The direction `backtest.py` needs. The shipped bars are in Open-Meteo units, and
+        scoring them against a reanalysis panel without converting would apply a bar to a
+        series that reads about half a second longer — which is the +128% over-firing
+        `README.md` measures, arriving as a result rather than as a bug.
+        """
+        return (value - self.intercept) / self.slope
+
+    def describe(self) -> str:
+        return (
+            f"{self.variable}: operational = {self.slope:.4f} x reanalysis "
+            f"{self.intercept:+.4f} (fitted on {self.n} hours >= "
+            f"{BIG_SWELL_HEIGHT_M:g} m, residual RMSE {self.residual_rmse:.3f})"
+        )
+
+
+def _least_squares(xs: list[float], ys: list[float]) -> tuple[float, float, float]:
+    """Slope, intercept and residual RMSE of `ys` on `xs`."""
+    n = len(xs)
+    if n < 2:
+        raise ValueError("a translation needs at least two hours to fit")
+    mean_x, mean_y = sum(xs) / n, sum(ys) / n
+    sxx = sum((x - mean_x) ** 2 for x in xs)
+    if sxx == 0:
+        raise ValueError("every hour carries the same reading; the slope is undefined")
+    sxy = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys, strict=True))
+    slope = sxy / sxx
+    intercept = mean_y - slope * mean_x
+    residuals = [y - (slope * x + intercept) for x, y in zip(xs, ys, strict=True)]
+    return slope, intercept, math.sqrt(sum(r * r for r in residuals) / n)
+
+
+def fit_translations(product: reanalysis.Product = reanalysis.IBI) -> dict[str, Translation]:
+    """The reanalysis-to-operational transform for each quantity a threshold is named in.
+
+    Only height and swell period get one. The swell arc and the wind conditions are
+    *verified* rather than fitted by `calibrate.py`, and the measured direction offset is
+    1-3° against an arc 75° wide — far below the resolution at which that condition decides
+    anything. Translating it would be arithmetic dressed up as precision.
+    """
+    hours = [h for h in pair_hours(product) if h.operational_height >= BIG_SWELL_HEIGHT_M]
+    if not hours:
+        raise RuntimeError(
+            f"{product.name}: no overlapping hours at or above {BIG_SWELL_HEIGHT_M:g} m, so "
+            "the transform cannot be fitted in the regime the thresholds operate in"
+        )
+
+    fitted: dict[str, Translation] = {}
+    for variable, candidate, actual in (
+        (
+            "significant_wave_height_m",
+            [h.reanalysis_combined_sea for h in hours],
+            [h.operational_combined_sea for h in hours],
+        ),
+        (
+            "swell_period_s",
+            [h.combined_period for h in hours],
+            [h.operational_period for h in hours],
+        ),
+    ):
+        slope, intercept, rmse = _least_squares(candidate, actual)
+        fitted[variable] = Translation(
+            variable=variable,
+            slope=slope,
+            intercept=intercept,
+            n=len(hours),
+            residual_rmse=rmse,
+        )
+    return fitted
+
+
 SUBSETS = (
     ("all overlapping hours", lambda h: True),
     ("discriminating (SW2 >= 0.5*SW1)", lambda h: h.discriminating),
@@ -359,6 +460,28 @@ def check() -> int:
     # filter turns out to select nothing.
     expect("an empty subset scores zero hours", score("none", []).n, 0)
 
+    # The translation recovers a line it is given exactly. Written with the regression the
+    # wrong way round it would still look plausible — the slope would simply be 1/2 instead
+    # of 2 — and the shipped bar would be wrong in a direction nobody would notice.
+    slope, intercept, rmse = _least_squares([1.0, 2.0, 3.0], [3.0, 5.0, 7.0])
+    expect("slope of a known line", round(slope, 9), 2.0)
+    expect("intercept of a known line", round(intercept, 9), 1.0)
+    expect("an exact line has no residual", round(rmse, 9), 0.0)
+
+    # ...and the direction it is applied in. The reanalysis reads HIGH, so translating a
+    # reanalysis bar into operational units must bring it DOWN.
+    high = Translation(variable="swell_period_s", slope=0.9, intercept=0.0, n=10, residual_rmse=0.0)
+    expect("a high-reading series translates downward", high.apply(15.0), 13.5)
+    expect("inverting undoes applying", round(high.invert(high.apply(15.0)), 9), 15.0)
+    expect("...and the other way round", round(high.apply(high.invert(13.5)), 9), 13.5)
+
+    try:
+        _least_squares([2.0, 2.0], [1.0, 3.0])
+    except ValueError:
+        pass
+    else:
+        failures.append("_least_squares: expected a ValueError when the slope is undefined")
+
     for failure in failures:
         print(f"FAIL {failure}")
     print("measure.py --check: " + ("FAILED" if failures else "all checks passed"))
@@ -396,8 +519,18 @@ def main() -> int:
                 )
             print()
 
+    print(f"\n{'=' * 78}\nTranslation applied to the fitted bars before they are shipped\n")
+    for translation in fit_translations(reanalysis.IBI).values():
+        print(f"  {translation.describe()}")
+    print(
+        "\n  Fitted on IBI, which is the primary series. Only the quantities "
+        "`calibrate.py`\n  actually fits are translated — the swell arc and the wind "
+        "conditions are verified\n  rather than fitted, and the measured direction offset "
+        "is far inside the arc's width."
+    )
+
     path = write_csv(rows)
-    print(f"Wrote {path.relative_to(ROOT)}")
+    print(f"\nWrote {path.relative_to(ROOT)}")
     return 0
 
 
