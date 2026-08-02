@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import sqlite3
 import time
+from dataclasses import asdict
 from datetime import date
 from typing import Any
 
@@ -50,11 +51,45 @@ MINIMUM_FORECAST_HOURS = 120
 # eventually be set from, rather than from a guess made today.
 MINIMUM_SHARE_OF_STORED_FORECAST = 0.5
 
-# The active Amplification Model. ADR 0006 keeps the Heuristic Baseline permanently as
-# the benchmark; ticket #13 swaps a learned model in behind the same interface. Annotated
-# with that interface rather than left implicit, so the type checker is what proves the
-# swap is possible — an interface nothing is ever declared against is decoration.
-AMPLIFICATION_MODEL: AmplificationModel = HeuristicBaseline()
+
+def amplification_model() -> AmplificationModel:
+    """The active Amplification Model, built fresh for each Pipeline Run.
+
+    ADR 0006 keeps the Heuristic Baseline permanently as the benchmark; ticket #13 swaps a
+    learned model in behind the same interface. The return type is that interface rather
+    than the concrete class, so the type checker is what proves the swap is possible — an
+    interface nothing is ever declared against is decoration.
+
+    Built per run, not once at import, for two reasons. It reads the calibrated thresholds
+    from disk (#12), so a recalibration takes effect on the next scheduled run rather than
+    at the next restart — which is what "configurable without redeployment" has to mean for
+    a system whose only writer is a scheduled batch job. And a misconfigured threshold file
+    then fails the run, which `run_pipeline` records with its cause attached, instead of
+    failing at import where it would take down the API for a fault in a file the API never
+    reads. `store` resolves its own path in a dependency for the same reason.
+    """
+    return HeuristicBaseline()
+
+
+def calibration_of(model: AmplificationModel) -> dict[str, Any] | None:
+    """The provenance of the thresholds a model decided against, ready to store.
+
+    Asks the model for its threshold set rather than loading the file a second time, so
+    what is recorded is what actually judged the hours. Loading independently would let a
+    recalibration landing mid-run record provenance for a fit that decided none of these
+    calls — a discrepancy nothing downstream could detect, since both halves would look
+    entirely ordinary.
+
+    `None` for a model carrying no calibration, which includes any future model that does
+    not express its thresholds this way. The `getattr` is what keeps the seam ADR 0001
+    draws: the `AmplificationModel` interface promises a name, a `calibrated` flag and
+    `predict`, and #13's learned model is not obliged to hold a `Thresholds` at all.
+    """
+    thresholds = getattr(model, "thresholds", None)
+    calibration = getattr(thresholds, "calibration", None)
+    if calibration is None:
+        return None
+    return asdict(calibration) | {"gold_days_total": calibration.gold_days_total}
 
 
 def collect(body: dict[str, Any], mapping: dict[str, str]) -> dict[str, dict[str, Any]]:
@@ -156,12 +191,18 @@ def derive_calls(hours: list[dict[str, Any]]) -> list[dict[str, Any]]:
     by_date = group_by_date(hours)
     issued_for = min(by_date)
     calls: list[dict[str, Any]] = []
+    # One model for the whole run, so every day in a forecast is decided against the same
+    # thresholds. Rebuilding it per day would let a recalibration landing mid-run split one
+    # forecast across two rules.
+    model = amplification_model()
+    # Recorded on every call this run writes, so a call can always be read back against the
+    # calibration that produced it rather than against whichever one is current when someone
+    # asks (#12, and #30's premise that a prediction is traceable to its inputs).
+    provenance = calibration_of(model)
 
     for day in sorted(by_date):
         predictions = [
-            AMPLIFICATION_MODEL.predict(
-                {name: value["value"] for name, value in hour["readings"].items()}
-            )
+            model.predict({name: value["value"] for name, value in hour["readings"].items()})
             for hour in by_date[day]
         ]
         lead_time = (date.fromisoformat(day) - date.fromisoformat(issued_for)).days
@@ -194,8 +235,9 @@ def derive_calls(hours: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "reasons": [*call.reasons, hours_matched],
                 "predicted_significant_wave_height": call.predicted_significant_wave_height,
                 "unit": call.unit,
-                "amplification_model": AMPLIFICATION_MODEL.name,
-                "calibrated": AMPLIFICATION_MODEL.calibrated,
+                "amplification_model": model.name,
+                "calibrated": model.calibrated,
+                "calibration": provenance,
             }
         )
     return calls

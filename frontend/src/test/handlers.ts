@@ -12,7 +12,7 @@
 
 import { http, HttpResponse } from 'msw';
 
-import type { CallStatus, CurrentConditions, Forecast } from '../api';
+import type { Calibration, CallStatus, CurrentConditions, Forecast } from '../api';
 
 export const currentConditions: CurrentConditions = {
   observed_at: '2026-02-13T09:00',
@@ -132,6 +132,7 @@ export const forecast: Forecast = {
   stale_after_hours: 6,
   amplification_model: 'heuristic-baseline',
   calibrated: false,
+  calibration: null,
   days: [
     dayFrom('2026-02-12', 1.4, 8, 250, 'confirmed', 1),
     // Base chosen so the peak hour (15:00, +75 degrees) lands on 298 = WNW, which the
@@ -139,6 +140,22 @@ export const forecast: Forecast = {
     dayFrom('2026-02-13', 8.1, 17, 223, 'go', 4),
     dayFrom('2026-02-14', 5.7, 12, 280, 'watch', 9),
   ],
+};
+
+/** The provenance a calibrated forecast carries (#12).
+ *
+ * The counts are the real ones. A test asserting the interface states how few Gold Days are
+ * behind the thresholds should fail if that number silently changes, and inventing a
+ * rounder figure here would hide exactly the thing the caveat exists to disclose. */
+export const calibration: Calibration = {
+  fitted_on: '2022-2023',
+  validated_on: '2024-2025',
+  gold_days_fitted: 6,
+  gold_days_validated: 3,
+  gold_days_total: 9,
+  method: 'Swell period fitted per tier against Gold Days on the real Swell partition.',
+  source: 'analysis/calibration/calibrate.py',
+  fitted_at: '2026-08-02',
 };
 
 export const handlers = [

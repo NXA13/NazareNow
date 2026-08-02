@@ -76,7 +76,15 @@ window under an onshore afternoon peak is not discarded. That protects the recal
 is optimised for, but it cuts against the precision a Go Call is optimised for: a single
 clean hour in twenty-four can currently earn one. No minimum window is imposed here
 because ticket #12 calibrates thresholds against the Gold Days and should own that number.
-Until it does, every call states how many of the day's hours matched, so a call resting on
+
+**#12 owned it and declined to set one.** Fitting a minimum-window parameter needs Gold Days
+to fit it against, and only nine carry real Swell measurements — six of them in the fitting
+split. That is not enough to distinguish "three clean hours" from "six" from "one", and a
+number chosen anyway would be a guess wearing a calibration's clothes, which is the failure
+this project keeps having to undo. It stays open, and #36 is the ticket that could widen the
+record enough to answer it.
+
+Meanwhile every call states how many of the day's hours matched, so a call resting on
 one hour says so in the reasons the user reads. That count is taken against the conditions
 the call itself rests on — a Watch ignores wind by design, so counting every condition made
 a genuine Watch day report "0 of 24 forecast hours match every condition" beside its own

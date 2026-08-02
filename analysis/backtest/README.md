@@ -2,6 +2,12 @@
 
 Ticket #11. The benchmark every later Amplification Model must beat, per ADR 0006.
 
+> **Re-run after #12.** This report scores whatever thresholds the system currently ships, and
+> #12 replaced them with values fitted to the Gold Days. The numbers below are therefore the
+> *calibrated* rule's, not the rule of thumb's. Where the pre-#12 figure is worth keeping — the
+> headline, and the two findings that drove #12 — it is shown beside the current one.
+> `analysis/calibration/` is where the thresholds come from and why.
+
 Reproduce with, from the repository root:
 
 ```bash
@@ -14,58 +20,71 @@ No credentials. The first command downloads about 10 MB from Open-Meteo into
 
 ## The headline
 
-**Scored against the four seasons where the Swell partition genuinely exists, the Heuristic
-Baseline catches 3 of 9 Gold Days and issues 5 Go Calls in four years.**
+**Scored against the four seasons where the Swell partition genuinely exists, the calibrated
+Heuristic Baseline catches every one of the 9 Gold Days at Watch, 7 of 9 at Go Call, and
+issues 16 Go Calls in four years.**
 
 | Panel | Span | Days | Gold Days | Watch or better | Go Call | Go Calls issued | Of those, known Gold Days |
 |---|---|---|---|---|---|---|---|
-| **Operational** | 2022-2025 | 1,461 | 9 | 3/9 (33%) | 3/9 (33%) | 5 | 3 (≥60%) |
-| Reconstructed | 2011-2021 | 4,018 | 29 | 6/29 (21%) | 4/29 (14%) | 21 | 4 (≥19%) |
+| **Operational** | 2022-2025 | 1,461 | 9 | 9/9 (100%) | 7/9 (78%) | 16 | 7 (≥44%) |
+| Reconstructed | 2011-2021 | 4,018 | 29 | 13/29 (45%) | 7/29 (24%) | 37 | 7 (≥19%) |
+
+Before #12 the same panel scored 3/9 at both tiers on 5 Go Calls. Recall was the problem the
+backtest identified and recall is what moved; the price is that the Go Call tier now speaks
+about four times a season instead of one, and a smaller share of what it says lands on a day
+somebody documented.
 
 The operational panel is the benchmark. The reconstructed panel is an indication, and the
-next section says why it is weaker.
+next section says why it is weaker. Note that the operational panel is **partly in-sample**
+since #12 — two of its four seasons are the ones the thresholds were fitted on.
+`analysis/calibration/` reports the held-out split, which is the number to trust.
 
-**Recall is the problem, not precision.** The rule almost never speaks — five Go Calls in
-four years, about one and a quarter per season — and when it does it is right more often
-than not. It misses two thirds of the days someone actually rode.
+## One threshold caused the entire miss
 
-## One threshold causes the entire miss
+This is the finding that drove #12, recorded as it stood against the rule of thumb.
 
 Of the 6 Gold Days in the operational panel that earned no call at all, **swell period below
 14 s was the blocking condition on all 6**. Not one of them failed on height, direction or
 wind while clearing period.
 
-| Threshold | Gold Days called | Go Calls issued in four years |
+The sweep below is scored against the current calibration, varying only the Go Call bar, so
+its counts differ from the pre-#12 run — the height bar moved to 3.75 m at the same time:
+
+| Go Call bar | Gold Days called | Go Calls issued in four years |
 |---|---|---|
-| 10 s | 9/9 | 138 |
-| 11 s | 9/9 | 96 |
-| 12 s | 9/9 | 57 |
-| 13 s | 7/9 | 20 |
-| **14 s — shipped** | **3/9** | **5** |
-| 15 s | 0/9 | 2 |
+| 10 s | 9/9 | 60 |
+| 11 s | 9/9 | 47 |
+| 12 s | 9/9 | 33 |
+| **13 s — shipped** | **7/9** | **16** |
+| 14 s | 3/9 | 5 |
+| 15 s | 0/9 | 1 |
 
-`MINIMUM_SWELL_PERIOD_S = 14.0` sits on a cliff. One second lower more than doubles recall;
-two seconds lower catches every Gold Day in the span at fourteen Go Calls a year.
+The bar sits on a cliff, which is why it was worth fitting rather than guessing: one second
+either side roughly halves or doubles what the tier says.
 
-This table is **diagnostic, not a calibration** — it exists because the backtest raised the
-question, and picking a value is #12's job, against a held-out split and a stated precision
-target. Nothing here changes what the system ships.
+This table is **diagnostic, not the calibration** — it has seen every Gold Day, so it cannot
+also validate against them. `analysis/calibration/` chooses the values on the fitting split
+alone, with 2024-2025 kept back.
 
-The clearest illustration is that the misses are *bigger* than the hits. 2022-02-25 (Hs
-5.68 m) and 2025-12-13 (Hs 5.62 m) were missed; 2022-02-09 (Hs 3.84 m) earned a Go Call.
-Height was never the constraint.
+The clearest illustration of the original problem is that the misses were *bigger* than the
+hits. 2022-02-25 (Hs 5.68 m) and 2025-12-13 (Hs 5.62 m) were missed while 2022-02-09 (Hs
+3.84 m) earned a Go Call. Height was never the constraint. Both now earn a Go Call.
 
-## The Watch tier currently adds nothing
+## The Watch tier adds recall again
 
 ADR 0003 makes a Watch recall-optimised and a Go Call precision-optimised, and the two are
-meant not to be one rule with two names. On this record they nearly are:
+meant not to be one rule with two names. Against the rule of thumb they nearly were:
 
-- Watch or better flags **11** days; Go Call flags **5**.
-- Both catch **the same 3 Gold Days**. The extra 6 days a Watch buys contain no Gold Day at all.
+- Watch or better flagged **11** days; Go Call flagged **5**.
+- Both caught **the same 3 Gold Days**. The extra 6 days a Watch bought contained no Gold Day.
 
-A Watch drops only the wind condition (`WATCH_CONDITIONS` in `decision.py`), and wind is not
-what blocks these days — period is. Until the period threshold moves, the recall tier
-delivers no recall. Worth carrying into #12, which owns both thresholds.
+A Watch dropped only the wind condition, and wind is not what blocks these days — period is.
+So until the period threshold moved, the recall tier delivered no recall.
+
+#12 gave the tiers **different period bars**, 12.5 s against 13 s, which is the fix. On this
+panel a Watch now catches 9/9 where a Go Call catches 7/9: 2022-02-26 (Hs 5.02 m) and
+2024-01-22 (Hs 4.58 m) are surfaced by the recall tier and withheld by the precision tier,
+which is the trade ADR 0003 asks for.
 
 ## Precision here is a lower bound, and must be read as one
 
@@ -73,14 +92,19 @@ A Gold Day is a day somebody **documented** — a contest ran, a record was rati
 photographer was present. `gold_days/` is not a labelled record of every day Praia do Norte
 went giant, and it does not claim to be.
 
-So a flagged day that is not a Gold Day is not thereby a false Go Call. Two of the five Go
+So a flagged day that is not a Gold Day is not thereby a false Go Call. Among the sixteen Go
 Calls in the operational panel are 2025-12-08 and 2025-12-18 — December days with Hs of
 4.56 m and 5.14 m, sitting either side of the 2025-12-13 Gold Day, in the most recent season
 the research covers. Whether they were XXL Days is unknown, not settled in the negative.
 
-The honest figure is therefore **"at least 3 of 5"**, and the tables say `precision_lower_bound`
-rather than `precision` for that reason. Reporting it as precision would understate the rule
-and would let a later model score well by fitting who happened to be holding a camera.
+The honest figure is therefore **"at least 7 of 16"**, and the tables say
+`precision_lower_bound` rather than `precision` for that reason. Reporting it as precision
+would understate the rule and would let a later model score well by fitting who happened to be
+holding a camera.
+
+This is also why #12 calibrated the Go Call tier against a stated *call budget* rather than
+against a precision figure. Optimising the number above would have optimised against who was
+carrying a camera in 2022.
 
 ## Why there are two panels
 
@@ -111,23 +135,33 @@ measured rather than assumed.
 Fitted on the 2022-2023 overlap (17,520 hours), validated on 2024-2025 (7,753 hours) — years
 the fit never saw.
 
+Scored at the shipped Go Call bar, which #12 moved from 14 s to 13 s — so these differ from
+the figures the pre-#12 report carried:
+
 | Reconstructed variable | Method | Held-out result |
 |---|---|---|
-| Swell period | quantile map from ERA5 **peak** period | RMSE 1.04 s; at the 14 s threshold, recall 16%, precision 33% |
-| Swell period *(rejected)* | quantile map from ERA5 mean period | RMSE 1.16 s; at 14 s, recall 0% — predicts no crossing at all |
+| Swell period | quantile map from ERA5 **peak** period | RMSE 1.04 s; at the 13 s bar, recall 41%, precision 50% |
+| Swell period *(rejected)* | quantile map from ERA5 mean period | RMSE 1.16 s; at 13 s, recall 41%, precision 39% |
 | Swell direction | constant bearing offset, −2.0° | 80% of hours within 15° |
 | Significant Wave Height | **not reconstructed** | ERA5's `wave_height` is already the variable the pipeline reads |
 
+Peak period remains the better predictor, but by a narrower margin than at 14 s, where mean
+period recovered no threshold crossing at all. At 13 s the two match on recall and peak period
+wins on precision. It also wins on RMSE at every bar, which is the reason to prefer it that
+does not depend on where the bar happens to sit.
+
 Quantile mapping rather than regression because least squares fits a conditional mean, and a
 conditional mean shrinks the tail that is the only part anyone cares about: fitted as a
-regression, `swell period ~ mean period` predicts 22 hours at or above 14 s where the truth
-has 95.
+regression, `swell period ~ mean period` predicted 22 hours at or above 14 s where the truth
+had 95. (Measured at the pre-#12 bar and not re-run; the argument is about conditional means,
+not about 14 s.)
 
-**The period reconstruction is not good enough to carry a verdict.** Recovering 16% of
-threshold crossings means the pre-2022 panel's period condition is dominated by
-reconstruction error rather than by the rule, and that is why its numbers are reported
-separately and called an indication. Its inflated Go Call rate — 21 calls over 4,018 days
-against 5 over 1,461 — is largely the reconstruction, not the ocean.
+**The period reconstruction is still not good enough to carry a verdict.** Recovering 41% of
+threshold crossings means the pre-2022 panel's period condition is dominated by reconstruction
+error rather than by the rule, and that is why its numbers are reported separately and called
+an indication. The clearest evidence is the recall gap between the panels: 7 of 29 Gold Days
+called at Go Call on reconstructed Swell against 7 of 9 on the real thing. The two panels are
+looking at the same rule and the same ocean, so that gap is the reconstruction.
 
 ## Two grid caveats
 
@@ -160,11 +194,18 @@ chosen only because it falls inside both the Watch and the Go Call band so one p
 both tiers. The Heuristic Baseline's conditions do not vary with Lead Time; only the tier
 names do.
 
-## Nothing here was tuned on the dates it scores
+## What was tuned on the dates it scores, and what was not
 
-- The baseline's thresholds are the surf community's rule of thumb, fitted to nothing. #12 is the ticket that changes that.
+This section inverted at #12, and the change is the most important caveat on the page.
+
+- **The operational panel is now partly in-sample.** The thresholds were fitted on 2022-2023,
+  which is half of it. Its 9/9 and 7/9 are therefore optimistic. `analysis/calibration/`
+  reports the held-out 2024-2025 split — 3/3 at Watch and 2/3 at Go Call — and that is the
+  number any accuracy claim should quote.
 - The reconstruction is fitted on 2022-2023 and applied to 2011-2021 — disjoint years.
 - Its validation is on 2024-2025, which the fit never saw.
+- The reconstructed panel is out-of-sample for the thresholds, being entirely pre-2022. Its
+  weakness is the reconstruction, not the fit.
 
 ## Files
 

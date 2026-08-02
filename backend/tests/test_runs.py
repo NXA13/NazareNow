@@ -385,6 +385,21 @@ class TestAStoreWrittenBeforeThisTicket:
         finally:
             store.close()
 
+    def test_calls_from_before_the_thresholds_were_fitted_admit_it(self, tmp_path) -> None:
+        """The same rule one ticket later (#12). A call decided against the rule of thumb
+        must not acquire today's calibration on being read back — that would describe six
+        Gold Days as having chosen a threshold they were never shown, and the API reports
+        this field to the user as what the call rests on.
+        """
+        store = Store(self.old_database(tmp_path))
+        try:
+            call = store.call_history()[0]
+
+            assert call["calibration"] is None
+            assert call["calibrated"] is False
+        finally:
+            store.close()
+
     def test_a_migrated_store_records_new_runs_normally(self, tmp_path) -> None:
         """The migration has to leave a working store, not merely a readable one."""
         store = Store(self.old_database(tmp_path))

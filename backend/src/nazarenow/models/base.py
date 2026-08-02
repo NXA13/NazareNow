@@ -34,6 +34,19 @@ class Condition(StrEnum):
     SWELL_DIRECTION = "swell direction"
     WIND = "wind"
 
+    SWELL_PERIOD_FOR_GO_CALL = "swell period for a go call"
+    """The same measurement as `SWELL_PERIOD`, judged against the stricter of the two bars.
+
+    Ticket #12 gives the tiers different minimum swell periods, because #11 measured that
+    period is the only condition that ever blocks a Gold Day — so it is the only place a
+    recall tier and a precision tier can genuinely differ. A model reports both verdicts
+    and the Decision Model requires whichever its tier calls for; the alternative, passing
+    a tier down into the model, would make the Amplification Model layer aware of a
+    distinction ADR 0001 keeps on the other side of the seam.
+
+    Two verdicts on one measurement is also what lets the interface say *why* a day is a
+    Watch rather than a Go Call, in the same sentence the user already reads."""
+
 
 @dataclass(frozen=True)
 class ConditionOutcome:
@@ -96,7 +109,9 @@ class AmplificationModel(Protocol):
 
     name: str
     calibrated: bool
-    """False until ticket #12 fits thresholds to Gold Days. Surfaced to the user rather
-    than left implicit, so nobody mistakes a rule of thumb for a fitted model."""
+    """Whether the thresholds behind this model were fitted to Gold Days (#12) or are a
+    rule of thumb. Surfaced to the user rather than left implicit, so nobody mistakes an
+    unfitted model for a fitted one — and read from the threshold set's own provenance, so
+    it cannot be asserted by a model whose numbers came from nowhere."""
 
     def predict(self, readings: dict[str, float]) -> Prediction: ...

@@ -92,10 +92,29 @@ export interface Forecast {
   stale_after_hours: number;
   /** Null when the backend holds no calls, so nothing has named a model. */
   amplification_model: string | null;
-  /** False while thresholds are a rule of thumb rather than values fitted to Gold Days.
-   * The interface must not imply a precision the numbers do not have. */
+  /** Whether the thresholds behind these calls were fitted to Gold Days, or are the surf
+   * community's rule of thumb. Read from the stored call, so a call issued before the fit
+   * keeps saying so. */
   calibrated: boolean;
+  /** What the fit rests on. Null for calls decided before there was one. */
+  calibration: Calibration | null;
   days: ForecastDay[];
+}
+
+/** The provenance of the thresholds a call was decided against.
+ *
+ * Rendered rather than merely carried: dropping the "uncalibrated" warning without saying
+ * what replaced it would turn a stated limitation into an unstated one, and the fit is nine
+ * Gold Days wide. */
+export interface Calibration {
+  fitted_on: string;
+  validated_on: string;
+  gold_days_fitted: number;
+  gold_days_validated: number;
+  gold_days_total: number;
+  method: string;
+  source: string;
+  fitted_at: string;
 }
 
 export async function fetchForecast(): Promise<Forecast> {

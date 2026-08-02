@@ -292,6 +292,18 @@ export function ForecastRange() {
         </p>
       )}
 
+      {state.forecast.calibrated && state.forecast.calibration && (
+        <p role="status" className="alert">
+          These thresholds were fitted to {state.forecast.calibration.gold_days_total} days Nazaré
+          is known to have gone giant — {state.forecast.calibration.gold_days_fitted} to choose them
+          and {state.forecast.calibration.gold_days_validated} held back to check them. That is a
+          very small number of days, and only those since{' '}
+          {state.forecast.calibration.fitted_on.slice(0, 4)} could be used, because the swell
+          measurements these calls read do not exist before then. Expect the calls to be roughly
+          right and individually uncertain.
+        </p>
+      )}
+
       <p className="provenance">
         Forecast fetched {formatTimestamp(state.forecast.fetched_at)}. The range ends where the
         provider stops modelling swell, which is sooner than its wind forecast.

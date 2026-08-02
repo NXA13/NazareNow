@@ -26,16 +26,24 @@ from nazarenow.models.base import Condition, ConditionOutcome, Prediction
 
 # Literals, deliberately. Importing the constants and testing `CONSTANT - 0.1` looks
 # rigorous and pins nothing: change the constant and both sides of the assertion move
-# with it. These are the values the rule of thumb actually specifies, so a silent
-# retuning of any threshold fails here — which is the point, since ticket #12 will
-# retune them deliberately and should have to say so.
-HEIGHT_M = 3.0
-PERIOD_S = 14.0
+# with it. These are the values ticket #12's calibration produced, so a silent retuning
+# of any threshold fails here — which is the point, and which is why #12 had to come
+# through this file and say so rather than sliding past a green suite.
+HEIGHT_M = 3.75
+WATCH_PERIOD_S = 12.5
+GO_PERIOD_S = 13.0
 SWELL_ARC_FROM, SWELL_ARC_TO = 255.0, 330.0
 WIND_ARC_FROM, WIND_ARC_TO = 20.0, 180.0
 MAX_WIND_KMH = 35.0
 CONFIRMED_LEAD = 1
 GO_LEAD = 7
+
+# Comfortably above the calibrated height bar, and well below the "big" hours these tests
+# contrast it against. Named because several cases need an hour that is modest *and*
+# clearing every condition, and the previous literal 3.5 stopped clearing the height bar
+# the moment #12 raised it — turning four unrelated tests red for a reason none of them
+# were about.
+MODEST_M = 4.0
 
 TODAY = "2026-02-09"
 SOON = "2026-02-13"  # lead 4: inside the Go band
@@ -64,9 +72,18 @@ class TestThresholdBoundaries:
 
     @pytest.mark.parametrize(
         ("value", "expected"),
-        [(PERIOD_S, "go"), (PERIOD_S - 0.1, "none")],
+        [
+            (GO_PERIOD_S, "go"),
+            # Between the two calibrated bars: worth watching, not worth booking on. This
+            # row is the whole of what #12 changed about the tiers, and #11 measured the
+            # cost of not having it — a Watch tier that caught nothing a Go Call missed.
+            (GO_PERIOD_S - 0.1, "watch"),
+            (WATCH_PERIOD_S, "watch"),
+            (WATCH_PERIOD_S - 0.1, "none"),
+        ],
     )
     def test_swell_period_boundary(self, store, client, value, expected) -> None:
+        """Both bars, one increment either side, at a Lead Time inside the Go band."""
         assert status_for(store, client, {**GIANT, "swell_period": value}) == expected
 
     @pytest.mark.parametrize(
@@ -156,7 +173,7 @@ class TestCallContent:
         ingest(
             store,
             forecast_provider(
-                {SOON: {**GIANT, "significant_wave_height": 3.4}},
+                {SOON: {**GIANT, "significant_wave_height": MODEST_M}},
                 today=TODAY,
                 only_hours={SOON: (9, 10, 11)},
                 peak_but_onshore={SOON: (15,)},
@@ -175,7 +192,7 @@ class TestCallContent:
         call — a bigger wave *removing* a Watch, destroying exactly the recall ADR 0003
         asks the Watch tier to protect, in code whose docstring claimed to have fixed it.
         """
-        clean = {**GIANT, "significant_wave_height": 3.5, "wind_direction": 270}
+        clean = {**GIANT, "significant_wave_height": MODEST_M, "wind_direction": 270}
         # Larger, offshore, but far too short-period to be worth travelling for.
         big_and_short = {**GIANT, "significant_wave_height": 8.0, "swell_period": 10.0}
 
@@ -232,7 +249,7 @@ class TestCallContent:
         ingest(
             store,
             forecast_provider(
-                {SOON: {**GIANT, "significant_wave_height": 3.5}},
+                {SOON: {**GIANT, "significant_wave_height": MODEST_M}},
                 today=TODAY,
                 only_hours={SOON: tuple(range(0, 12))},
                 also_hours={SOON: ({**GIANT, "significant_wave_height": 6.0}, (15,))},
@@ -247,7 +264,7 @@ class TestCallContent:
     def test_a_call_reports_the_hour_that_earned_it(self, store, client) -> None:
         """The reasons and the height are the winning hour's. Reporting some other hour's
         would explain the call with conditions that did not produce it."""
-        clean = {**GIANT, "significant_wave_height": 3.5, "wind_direction": 270}
+        clean = {**GIANT, "significant_wave_height": MODEST_M, "wind_direction": 270}
         big_and_short = {**GIANT, "significant_wave_height": 8.0, "swell_period": 10.0}
 
         ingest(
@@ -262,7 +279,7 @@ class TestCallContent:
 
         issued = calls(client)[FAR]
 
-        assert issued["predicted_significant_wave_height"]["value"] == 3.5
+        assert issued["predicted_significant_wave_height"]["value"] == MODEST_M
         assert any("swell period 16.5s" in reason for reason in issued["reasons"])
 
     def test_a_call_explains_itself(self, store, client) -> None:
@@ -331,13 +348,31 @@ class TestCallContent:
 
         assert calls(client)[SOON]["predicted_significant_wave_height"]["value"] == height
 
-    def test_calls_declare_that_their_thresholds_are_uncalibrated(self, store, client) -> None:
+    def test_calls_declare_that_their_thresholds_are_calibrated(self, store, client) -> None:
+        """Since #12 the thresholds are fitted, so the flag that drives the interface's
+        caveat flips — and the interface drops the warning that these are a rule of thumb."""
         ingest(store, forecast_provider({SOON: GIANT}, today=TODAY))
 
         body = client.get("/api/conditions/forecast").json()
 
-        assert body["calibrated"] is False
+        assert body["calibrated"] is True
         assert body["amplification_model"] == "heuristic-baseline"
+
+    def test_the_forecast_states_what_the_calibration_rests_on(self, store, client) -> None:
+        """#12 requires the interface to say how few Gold Days are behind these thresholds.
+
+        Asserted on the API rather than only in the frontend because this is the half that
+        has to survive a redesign: a UI that quietly stopped rendering the caveat would
+        leave the user reading fitted-looking calls with no idea the fit is nine days wide.
+        """
+        ingest(store, forecast_provider({SOON: GIANT}, today=TODAY))
+
+        calibration = client.get("/api/conditions/forecast").json()["calibration"]
+
+        assert calibration["gold_days_total"] == 9
+        assert calibration["fitted_on"] == "2022-2023"
+        assert calibration["validated_on"] == "2024-2025"
+        assert "analysis/calibration" in calibration["source"]
 
 
 class TestCallsArePersisted:

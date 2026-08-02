@@ -43,6 +43,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend" / "src"))
 from nazarenow.days import group_by_date  # noqa: E402
 from nazarenow.decision import Status, decide, strength  # noqa: E402
 from nazarenow.models.heuristic import HeuristicBaseline  # noqa: E402
+from nazarenow.thresholds import Thresholds, parse  # noqa: E402
+from nazarenow.thresholds import load as load_thresholds
 
 HERE = Path(__file__).resolve().parent
 OUTPUT = HERE / "output"
@@ -105,14 +107,19 @@ class DayCall:
     peak_significant_wave_height: float
 
 
-def call_days(hours: list[dict[str, float | str]]) -> dict[str, DayCall]:
+def call_days(
+    hours: list[dict[str, float | str]], thresholds: Thresholds | None = None
+) -> dict[str, DayCall]:
     """Score every hour, then take each day's strongest call.
 
     A day is called at the best call any of its hours supports, matching how the Pipeline
     Run reduces a day — `decision.strength` exists for exactly this and is imported rather
     than reimplemented.
+
+    Defaults to the shipped calibration, so the headline panels score what the system
+    actually issues. `period_sensitivity` passes its own set instead.
     """
-    model = HeuristicBaseline()
+    model = HeuristicBaseline(thresholds)
     calls: dict[str, DayCall] = {}
     for date, day_hours in group_by_date(hours).items():
         best = Status.NONE
@@ -187,7 +194,10 @@ def fit_reconstruction() -> Reconstruction:
     predictors and the windows at once and credit the difference to whichever was being
     argued for.
     """
-    from nazarenow.models.heuristic import MINIMUM_SWELL_PERIOD_S
+    # The shipped Go Call bar, read from the calibration rather than restated here. The
+    # reconstruction's report card is about whether it can carry a threshold decision, so
+    # the threshold it is scored at has to be the one the system actually uses (#12).
+    minimum_swell_period_s = load_thresholds().go_call_minimum_swell_period_s
 
     sea = hindcast.combined_sea()
     ops = hindcast.operational_swell()
@@ -209,7 +219,7 @@ def fit_reconstruction() -> Reconstruction:
     period_agreement = swell.agreement(
         [period.apply(sea.readings[at][hindcast.PEAK_PERIOD]) for at in test],
         actual,
-        threshold=MINIMUM_SWELL_PERIOD_S,
+        threshold=minimum_swell_period_s,
     )
 
     # The alternative, kept so the report shows the comparison rather than asserting it.
@@ -217,7 +227,7 @@ def fit_reconstruction() -> Reconstruction:
     mean_agreement = swell.agreement(
         [mean_map.apply(sea.readings[at]["wave_period"]) for at in test],
         actual,
-        threshold=MINIMUM_SWELL_PERIOD_S,
+        threshold=minimum_swell_period_s,
     )
 
     direction = BearingOffset.fit(
@@ -361,33 +371,46 @@ PERIOD_SWEEP = (10.0, 11.0, 12.0, 13.0, 14.0, 15.0)
 def period_sensitivity(
     hours: list[dict[str, float | str]], gold: dict[str, GoldDay]
 ) -> list[tuple[float, int, int, int]]:
-    """Gold Days called and Go Calls issued, as the swell period threshold varies.
+    """Gold Days called and Go Calls issued, as the Go Call swell period bar varies.
 
-    **Diagnostic, not a calibration.** Ticket #12 fits the thresholds, and does it against
-    the Gold Days with a held-out split and a precision target. This only answers the
-    question this backtest raised — the period condition blocks every missed Gold Day, so
-    how much of the miss is the threshold's doing? — and stops short of choosing a value.
-    Nothing here changes what the system ships.
+    **Diagnostic, not the calibration.** This is the question the backtest raised — period
+    blocks every missed Gold Day, so how much of the miss is the threshold's doing? — scored
+    across the whole operational panel. `analysis/calibration/` is what actually chooses the
+    values, and it does so on the fitting split alone with a held-out split kept back. The
+    two disagree by construction: a sweep that has seen every Gold Day cannot also validate
+    against them.
 
-    The threshold is swapped on the model's own module rather than reimplemented, for the
-    same reason the rest of this file imports the baseline instead of copying it: a sweep
-    over a private copy of the rule would stop describing the rule the moment #12 edits it.
+    Each row varies the Go bar and puts the Watch bar half a second below it, so the row
+    measures the bar it names rather than the interaction of the pair. The threshold set is
+    built through the running system's own parser and handed to the real model, for the same
+    reason the rest of this file imports the baseline instead of copying it — and, unlike the
+    module-constant reassignment this replaced, it leaves no global state for a concurrent
+    reader to observe mid-sweep.
     """
-    from nazarenow.models import heuristic
-
-    original = heuristic.MINIMUM_SWELL_PERIOD_S
+    shipped = load_thresholds()
     rows = []
-    try:
-        for threshold in PERIOD_SWEEP:
-            heuristic.MINIMUM_SWELL_PERIOD_S = threshold
-            calls = call_days(hours)
-            in_span = [d for d in gold if d in calls]
-            called = sum(1 for d in in_span if calls[d].status in GO_TIERS)
-            issued = sum(1 for c in calls.values() if c.status in GO_TIERS)
-            rows.append((threshold, called, len(in_span), issued))
-    finally:
-        heuristic.MINIMUM_SWELL_PERIOD_S = original
+    for threshold in PERIOD_SWEEP:
+        calls = call_days(hours, _at_go_bar(shipped, threshold))
+        in_span = [d for d in gold if d in calls]
+        called = sum(1 for d in in_span if calls[d].status in GO_TIERS)
+        issued = sum(1 for c in calls.values() if c.status in GO_TIERS)
+        rows.append((threshold, called, len(in_span), issued))
     return rows
+
+
+def _at_go_bar(shipped: Thresholds, go_bar: float) -> Thresholds:
+    """The shipped calibration with its Go Call period bar moved, everything else held."""
+    return parse(
+        {
+            "minimum_significant_wave_height_m": shipped.minimum_significant_wave_height_m,
+            "watch_minimum_swell_period_s": go_bar - 0.5,
+            "go_call_minimum_swell_period_s": go_bar,
+            "swell_arc": list(shipped.swell_arc),
+            "offshore_wind_arc": list(shipped.offshore_wind_arc),
+            "maximum_wind_speed_kmh": shipped.maximum_wind_speed_kmh,
+            "calibration": None,
+        }
+    )
 
 
 _CALM: dict[str, float] = {
