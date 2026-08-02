@@ -9,7 +9,7 @@
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { ForecastRange } from './Forecast';
 import { compassPoint } from './format';
@@ -221,6 +221,98 @@ describe('the forecast range', () => {
     // The fix that added longest_swell_period did not guard it: deleting its clause
     // from the label passed every test.
     expect(label).toContain(String(BIG.longest_swell_period.value));
+  });
+
+  describe('east of UTC+12', () => {
+    // `vite.config.ts` pins the whole suite to UTC — "so timestamp assertions are
+    // deterministic" — and this is the one place that needs a different zone. Restoring it
+    // is not tidiness: the assignment really does take effect, so leaving it set made every
+    // later test in this file run in Auckland, order-dependently, and silently unpinned the
+    // convention for all of them.
+    afterEach(() => {
+      process.env.TZ = 'UTC';
+    });
+
+    it('names the same calendar day the backend grouped', async () => {
+      // The label was built from `${date}T12:00:00Z`, so a reader at UTC+13 saw noon UTC
+      // land at 01:00 the *following* day and the card named a date the forecast never
+      // contained (#25). Auckland in February is UTC+13.
+      const day = dayFrom('2026-02-16', 4.2, 15, 298, 'go', 4);
+      serveDays([day]);
+      process.env.TZ = 'Pacific/Auckland';
+
+      render(<ForecastRange />);
+
+      // 2026-02-16 is a Monday. Pinned as a literal rather than derived from a Date, which
+      // would reproduce whatever the code does and agree with it by construction.
+      const label = await screen.findByTestId(`day-label-${day.date}`);
+      expect(label.textContent).toContain('16');
+      expect(label.textContent).toContain('Mon');
+    });
+
+    it('names it the same way on the hour table and the call note', async () => {
+      // The audit named three surfaces — "the card, `aria-label` and hour-table caption".
+      // All three route through `dayLabel`, but only the card was covered, so a change
+      // that reintroduced the fault on the other two would not have been caught.
+      const day = dayFrom('2026-02-16', 4.2, 15, 298, 'go', 4);
+      serveDays([day]);
+      process.env.TZ = 'Pacific/Auckland';
+
+      render(<ForecastRange />);
+      await userEvent.click(await screen.findByRole('button', { name: new RegExp(day.date) }));
+
+      expect((await screen.findByRole('table')).textContent).toContain('16');
+      expect(screen.getByRole('note').getAttribute('aria-label')).toContain('16');
+    });
+  });
+
+  it('shows the raw date rather than inventing one when it is malformed', async () => {
+    // The numeric Date constructor never returns Invalid — it rolls over. `new Date(2026,
+    // 12, 45)` is 14 February 2027. So a guard that only checks for Invalid Date would let
+    // a malformed date render as a confident, plausible, wrong day, which is worse than
+    // the timezone bug it replaced and is this project's characteristic failure.
+    const malformed = { ...dayFrom('2026-02-16', 4.2, 15, 298, 'go', 4), date: '2026-13-45' };
+    serveDays([malformed]);
+
+    render(<ForecastRange />);
+
+    const label = await screen.findByTestId('day-label-2026-13-45');
+    expect(label.textContent).toBe('2026-13-45');
+    expect(label.textContent).not.toContain('Feb');
+  });
+
+  it('reads a screen reader the same digits the card displays', async () => {
+    // The label interpolated the raw reading while the visible card ran it through
+    // formatValue, so whenever a source carried more than two decimals the two disagreed
+    // — and since aria-label *overrides* the card's content, a screen reader user got the
+    // long number and no way to see the short one (#25).
+    // The summary readings are overridden directly rather than passed through `dayFrom`,
+    // which rounds every value it generates to 2dp — so a fixture built through it cannot
+    // carry the extra decimals this test is about, and the first version of this test
+    // passed with the bug still in the code. The backend applies no rounding of its own:
+    // `Reading.value` is a float and the store keeps whatever the provider sent.
+    const precise = {
+      ...dayFrom('2026-02-16', 4.2, 15, 298, 'go', 4),
+      peak_swell_height: { value: 4.23456, unit: 'm' },
+      swell_period_at_peak: { value: 15.6789, unit: 's' },
+      longest_swell_period: { value: 16.98765, unit: 's' },
+    };
+    serveDays([precise]);
+
+    render(<ForecastRange />);
+
+    const day = await screen.findByRole('button', { name: new RegExp(precise.date) });
+    const label = day.getAttribute('aria-label') ?? '';
+
+    expect(label).toContain('4.23');
+    expect(label).not.toContain('4.23456');
+    expect(label).toContain('15.68');
+    expect(label).not.toContain('15.6789');
+    expect(label).not.toContain('16.98765');
+    // And the label agrees with what is on screen, which is the actual requirement.
+    expect(label).toContain(
+      within(day).getByTestId(`day-peak-${precise.date}`).textContent!.trim(),
+    );
   });
 
   it('shows the day label and hours in order, marked as UTC', async () => {
