@@ -8,6 +8,46 @@ Ticket #11. The benchmark every later Amplification Model must beat, per ADR 000
 > headline, and the two findings that drove #12 — it is shown beside the current one.
 > `analysis/calibration/` is where the thresholds come from and why.
 
+> ## Re-run after #39: the two panels have collapsed into one, and the headline got worse
+>
+> "[Why there are two panels](#why-there-are-two-panels)" below describes a split that no
+> longer exists. It was there because no single source carried the **Swell** partition across
+> the whole record: real Swell from 2022, and before that a reconstruction that `swell.py`
+> showed recovers 41% of threshold crossings. #39 ingested the Copernicus IBI reanalysis, which
+> carries a real Swell partition from 1980, and the split is gone.
+>
+> **Scored over the whole record instead of its last four years, the shipped rule catches 16 of
+> 38 Gold Days at Watch or better, not the 9 of 9 the old headline reports.**
+>
+> | Panel | Span | Gold Days | Watch or better | Go Call | Go Calls issued |
+> |---|---|---|---|---|---|
+> | **reanalysis** (headline) | 2011–2025 | **38** | **16/38** | 9/38 | 34, of which 9 Gold |
+> | operational (diagnostic) | 2022–2025 | 9 | 9/9 | 7/9 | 16, of which 7 Gold |
+> | reconstructed (superseded) | 2011–2021 | 29 | 13/29 | 7/29 | 37, of which 7 Gold |
+>
+> The two lower rows are kept as diagnostics, not results. The operational panel is the tie to
+> production — the exact variables the live Pipeline Run reads — and reading it as the rule's
+> accuracy is what the top row corrects: those 9 Gold Days are the same 9 the thresholds were
+> fitted on in #12, so 9 of 9 is a fit reporting on itself.
+>
+> Why the reanalysis panel misses 22 Gold Days: swell period for a Go Call never held on 15,
+> significant wave height on 12, the Watch period bar on 11, wind on 3.
+>
+> **The bars are converted, not carried across.** The shipped file is written in Open-Meteo
+> units and the reanalysis reads about half a second longer for the same sea, so 3.75 m / 12.5 s
+> / 13.0 s is restated as 3.62 m / 13.12 s / 13.65 s before scoring. Applying them unconverted
+> would have fired on 1311 hours where the live feed fires on 576, and the extra Go Calls would
+> have read as a finding instead of a unit mismatch. `analysis/overlap/README.md` measures the
+> relationship.
+>
+> **#39's recalibration did not complete**, so these numbers still score #12's thresholds. The
+> wind condition blocks six Gold Days once the fit sees 25 instead of 6 — by the offshore arc,
+> on days with 4–16 km/h winds — which disproves the assumption #12 rests on. Filed as
+> [#40](https://github.com/NXA13/NazareNow/issues/40), which #39 is blocked by; see
+> `analysis/calibration/README.md`. **This headline will move when #40 lands**, because #40
+> changes the benchmark's own definition rather than its thresholds — 16 of 38 is the last
+> figure measured against the current wind condition, not against the one that will ship.
+
 Reproduce with, from the repository root:
 
 ```bash

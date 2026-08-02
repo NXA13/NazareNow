@@ -15,11 +15,18 @@ precision tier can genuinely differ. Fitting arcs to six Gold Days would narrow 
 noise while changing no call. `verify_shared_conditions` checks they admit every Gold Day
 and reports the margin instead, which is the honest version of the same claim.
 
-**Chronological split, matching #11.** Fitted on 2022-2023, validated on 2024-2025 — the
-same split the swell reconstruction used, and the same direction the system runs in: fit on
-the past, apply to the future. The held-out set holds three Gold Days. That is far too few
-to be reassuring, it is stated wherever these numbers are reported, and the interface says
-it too.
+**Chronological split.** Fitted on the earlier Big-Wave Seasons, validated on the later ones
+— the direction the system runs in: fit on the past, apply to the future.
+
+**Fitted on the reanalysis, shipped in operational units.** #39 replaced the source with the
+Copernicus reanalysis, which is what takes this from 9 Gold Days to 38. The fit runs in the
+reanalysis's own units, because a fit is only meaningful if it is internally consistent. But
+`thresholds.json` is read by the live Pipeline Run, which consumes Open-Meteo and never sees
+a reanalysis — and `analysis/overlap/README.md` measured that the same sea reads about half a
+second longer in the reanalysis. So the three fitted bars are translated back into
+operational units on the way out, and the translation is recorded in the file beside them.
+Shipping the untranslated numbers would have made the deployed system quietly stricter than
+the fit intended, which is the mirror image of the mistake #39 was written to prevent.
 
 Run:
     .venv/Scripts/python.exe analysis/calibration/calibrate.py
@@ -42,8 +49,11 @@ OUTPUT = HERE / "output"
 sys.path.insert(0, str(ROOT / "analysis" / "backtest"))
 sys.path.insert(0, str(ROOT / "backend" / "src"))
 
+sys.path.insert(0, str(ROOT / "analysis" / "overlap"))
+
 import backtest  # noqa: E402
-from backtest import GoldDay, load_gold_days, operational_hours, season_of  # noqa: E402
+import measure  # noqa: E402
+from backtest import GoldDay, load_gold_days, reanalysis_hours, season_of  # noqa: E402
 from nazarenow.days import group_by_date  # noqa: E402
 from nazarenow.decision import Status, decide, strength  # noqa: E402
 from nazarenow.models.heuristic import HeuristicBaseline  # noqa: E402
@@ -53,12 +63,39 @@ LEAD_TIME_DAYS = backtest.LEAD_TIME_DAYS
 GO_TIERS = backtest.GO_TIERS
 WATCH_OR_BETTER = backtest.WATCH_OR_BETTER
 
-FIT_SEASONS = ("2021/22", "2022/23")
-TEST_SEASONS = ("2023/24", "2024/25", "2025/26")
-FIT_SPAN = "2021/22-2022/23"
-TEST_SPAN = "2023/24-2025/26"
+FIT_SEASONS = (
+    "2011/12",
+    "2012/13",
+    "2013/14",
+    "2014/15",
+    "2015/16",
+    "2016/17",
+    "2017/18",
+    "2018/19",
+    "2019/20",
+)
+TEST_SEASONS = ("2020/21", "2021/22", "2022/23", "2023/24", "2024/25", "2025/26")
+FIT_SPAN = "2011/12-2019/20"
+TEST_SPAN = "2020/21-2025/26"
 
 """Split on Big-Wave Season boundaries, not calendar years.
+
+**Reallocated for #39.** The record used to start in 2022, because that is where the Swell
+partition started; the reanalysis carries it back to 2011, and the splits move with it. The
+fit now sees **25** Gold Days and the held-out split **13**, where before it was 6 and 3.
+The old held-out set was "far too few to be reassuring" and said so; 13 is still small and
+is still worth saying, but it is a different order of claim.
+
+The boundary sits after 2019/20 for two reasons. It is roughly two-thirds of the Gold Days,
+and it puts every one of the 7 pre-SAR Gold Days — the ones before Sentinel-1 spectra began
+constraining the swell partitions in March 2016 — inside the **fitting** split. The held-out
+evaluation is then run entirely on the homogeneous part of the record, which is the half of
+the split that has to carry a claim.
+
+Note that 2022/23 contributes no Gold Days at all: no Nazaré contest ran and the Big Wave
+Awards did not hold an edition. It is a real season in the denominator with nothing in the
+numerator, which is why `Split.seasons` counts seasons appearing in the record rather than
+Gold Days.
 
 CONTEXT.md: a Big-Wave Season runs October through March, "a season is never a calendar
 year, and splitting one across two years destroys the unit that matters." An earlier version
@@ -430,14 +467,61 @@ def describe_binding_constraint(rows: list[SweepRow], watch_bar: float, go_bar: 
     return f"the budget of {GO_CALLS_PER_SEASON_BUDGET:g} Go Calls per Big-Wave Season"
 
 
+def translate(thresholds: Thresholds, translations: dict[str, measure.Translation]) -> Thresholds:
+    """The fitted bars, restated in the units the live Pipeline Run reads.
+
+    The fit ran on the reanalysis. The deployed system reads Open-Meteo, where the same sea
+    reports a shorter swell period — so a bar fitted at 13.5 s here is about 12.9 s there,
+    and shipping 13.5 s would silently move the deployed bar half a second stricter than
+    anything the Gold Days justify.
+
+    Only the three fitted numbers are translated. The swell arc and the wind conditions are
+    verified rather than fitted (`verify_shared_conditions`), and the measured direction
+    offset is 1-3° against an arc 75° wide.
+
+    Rounded after translating, not before: a translated bar lands on some number like
+    12.8637, and the fitted values are supposed to be numbers a person would choose. Height
+    is floored to `HEIGHT_STEP_M`, which can only make the bar more permissive and so cannot
+    cost a Gold Day the fit admitted; periods go to one decimal, which is the resolution the
+    operational feed reports. Both transforms are increasing, so the Go bar cannot cross
+    below the Watch bar and `parse` cannot be handed a set it would refuse.
+    """
+    height = translations["significant_wave_height_m"]
+    period = translations["swell_period_s"]
+    return thresholds.replacing(
+        minimum_significant_wave_height_m=(
+            int(height.apply(thresholds.minimum_significant_wave_height_m) / HEIGHT_STEP_M)
+            * HEIGHT_STEP_M
+        ),
+        watch_minimum_swell_period_s=round(
+            period.apply(thresholds.watch_minimum_swell_period_s), 1
+        ),
+        go_call_minimum_swell_period_s=round(
+            period.apply(thresholds.go_call_minimum_swell_period_s), 1
+        ),
+    )
+
+
 def write_thresholds(
-    thresholds: Thresholds, fit: Split, test: Split, binding: str, path: Path
+    thresholds: Thresholds,
+    fitted: Thresholds,
+    fit: Split,
+    test: Split,
+    binding: str,
+    translations: dict[str, measure.Translation],
+    path: Path,
 ) -> None:
     """Write the calibrated set where the running system reads it.
 
     Deliberately the shipped default rather than a file in `output/`. A calibration nobody
     deploys is a report; the point of #12 is that these numbers reach the Decision Model.
     `output/` gets the tables that justify them.
+
+    `thresholds` arrives already translated, and `fitted` carries the reanalysis-unit values
+    it was translated from. Both go into `method` rather than into new top-level keys: a
+    reader comparing this file against the calibration report would otherwise find two
+    different sets of numbers and nothing saying which is which, and `_calibration` in
+    `thresholds.py` validates a fixed set of fields and would silently drop anything else.
     """
     body = thresholds.as_dict() | {
         "calibration": {
@@ -450,13 +534,21 @@ def write_thresholds(
             # earlier version opened on the Go Call budget — true, but not the constraint
             # that selected the number, which the same sentence then had to walk back.
             "method": (
-                "Swell period fitted per tier against Gold Days on the real Swell "
-                "partition, split on Big-Wave Season boundaries. The Watch bar is the "
+                "Swell period fitted per tier against Gold Days on the Copernicus IBI wave "
+                "reanalysis, split on Big-Wave Season boundaries. The Watch bar is the "
                 "highest period catching every Gold Day in the fitting split. The Go Call "
                 "bar is the lowest period sitting above the Watch bar and within "
                 f"{GO_CALLS_PER_SEASON_BUDGET:g} Go Calls per Big-Wave Season; in this fit "
                 f"what actually set it was {binding}. Height, swell arc and wind were "
-                "verified to block no Gold Day rather than fitted."
+                "verified to block no Gold Day rather than fitted. The bars above are in "
+                "Open-Meteo units, which is what the Pipeline Run reads; the fit ran in "
+                "reanalysis units, where the same sea reports a longer swell period, and "
+                "chose "
+                f"{fitted.minimum_significant_wave_height_m:g} m / "
+                f"{fitted.watch_minimum_swell_period_s:g} s / "
+                f"{fitted.go_call_minimum_swell_period_s:g} s. Translated by "
+                + "; ".join(t.describe() for t in translations.values())
+                + " (analysis/overlap/README.md)."
             ),
             "source": "analysis/calibration/calibrate.py",
             "fitted_at": date_type.today().isoformat(),
@@ -633,7 +725,7 @@ def main() -> int:
 
     OUTPUT.mkdir(parents=True, exist_ok=True)
     gold = load_gold_days()
-    hours = operational_hours()
+    hours = reanalysis_hours()
 
     fit = Split("fitting", FIT_SPAN, split_hours(hours, FIT_SEASONS), gold)
     test = Split("held-out", TEST_SPAN, split_hours(hours, TEST_SEASONS), gold)
@@ -699,7 +791,21 @@ def main() -> int:
         raise RuntimeError(
             f"these conditions block a Gold Day in the fitting split: {binding_conditions}. The "
             "calibration assumes only swell period binds, and that assumption is now false; "
-            "they must be fitted rather than verified before these thresholds are shipped"
+            "they must be fitted rather than verified before these thresholds are shipped.\n\n"
+            "This fired the first time #39 ran the fit on 25 Gold Days instead of 6, and it "
+            "is not a threshold problem. Six fitting Gold Days are blocked by **wind**, and "
+            "every one of them is blocked by the arc rather than the speed: 2013-10-28, "
+            "2015-10-27, 2017-02-28, 2018-02-11, 2019-11-13 and 2020-02-17 had calmest-hour "
+            "winds of 4-16 km/h, far under the 35 km/h cap, from bearings of 225-346 degrees "
+            "which fall outside the offshore arc. `HeuristicBaseline.predict` requires the "
+            "arc AND the speed, so a dead-calm 4 km/h breeze from the wrong quarter fails the "
+            "condition as surely as a gale. On the 6 recent Gold Days #12 fitted, that never "
+            "showed.\n\n"
+            "Fixing it means changing the shipped Heuristic Baseline, which ADR 0006 keeps "
+            "fixed as the permanent benchmark — filed as **#40**, which exempts light winds "
+            "from the direction arc and which #39 is blocked by. Raising here is deliberate: "
+            "it stops #39 shipping thresholds fitted under an assumption its own data "
+            "disproves."
         )
 
     results = []
@@ -733,9 +839,26 @@ def main() -> int:
             reading = f"{called}/{total}" if total else "none in this split"
             print(f"  {split.name:10s} {label:16s} {reading}")
 
+    # Translated only now, after everything above has been scored. Every number printed and
+    # every table written describes the reanalysis the fit ran on; only the shipped file is
+    # restated in the units the Pipeline Run reads.
+    translations = measure.fit_translations()
+    shipped = translate(chosen, translations)
+    print("\nTranslating the fitted bars into the units the Pipeline Run reads:")
+    for translation in translations.values():
+        print(f"  {translation.describe()}")
+    print(
+        f"  height    {chosen.minimum_significant_wave_height_m:g} m  -> "
+        f"{shipped.minimum_significant_wave_height_m:g} m\n"
+        f"  Watch bar {chosen.watch_minimum_swell_period_s:g} s  -> "
+        f"{shipped.watch_minimum_swell_period_s:g} s\n"
+        f"  Go bar    {chosen.go_call_minimum_swell_period_s:g} s  -> "
+        f"{shipped.go_call_minimum_swell_period_s:g} s"
+    )
+
     sweep_path = write_sweep_csv(rows)
     report_path = write_report_csv(results)
-    write_thresholds(chosen, fit, test, binding, DEFAULT_PATH)
+    write_thresholds(shipped, chosen, fit, test, binding, translations, DEFAULT_PATH)
     print(f"\nWrote {sweep_path.relative_to(ROOT)}")
     print(f"Wrote {report_path.relative_to(ROOT)}")
     print(f"Wrote {DEFAULT_PATH.relative_to(ROOT)}  <- the file the running system reads")

@@ -3,6 +3,40 @@
 Ticket #12. #11 established the benchmark and found what was wrong with it. This chooses the
 numbers, and writes them where the running system reads them.
 
+> ## ⚠️ #39 stopped this fit, and the numbers below are the superseded ones
+>
+> Everything from "The headline" down describes the fit on **9 Gold Days**, which was all the
+> Swell record reached at the time. #39 ingested the Copernicus reanalysis and re-ran this
+> against **38**. The re-run **does not complete**, and that is the finding rather than a bug.
+>
+> `verify_shared_conditions` raised. On 25 fitting Gold Days the **wind condition blocks six
+> of them**, so the assumption this whole calibration rests on — that swell period is the only
+> condition the evidence can distinguish — is false on the full record. See
+> "[Only swell period is fitted per tier](#only-swell-period-is-fitted-per-tier)" below for the
+> claim that has now been disproved.
+>
+> **It is the arc, not the speed.** 2013-10-28, 2015-10-27, 2017-02-28, 2018-02-11, 2019-11-13
+> and 2020-02-17 had calmest-hour winds of **4–16 km/h** — far under the 35 km/h cap — from
+> bearings of **225–346°**, outside the offshore arc of 20–180°. `HeuristicBaseline.predict`
+> requires the arc *and* the speed, so a dead-calm 4 km/h breeze from the wrong quarter fails
+> the condition as surely as a gale would. On the six recent Gold Days #12 fitted, that never
+> showed.
+>
+> **`thresholds.json` was not rewritten.** The shipped numbers are still #12's, in Open-Meteo
+> units, fitted on 9 Gold Days. #39 deliberately did not overwrite them, because fixing this
+> means changing the shipped `HeuristicBaseline` — which ADR 0006 fixes as the permanent
+> benchmark, making it an ADR-level change rather than a threshold tweak.
+>
+> **Filed as [#40](https://github.com/NXA13/NazareNow/issues/40)**, which exempts light winds
+> from the direction arc rather than widening the arc: the six days are evidence that 4 km/h is
+> fine, not that 225–346° is. #39 is marked blocked by it.
+>
+> What #39 *did* establish is in `analysis/overlap/README.md` (what Open-Meteo's Swell is, in
+> Copernicus terms) and `analysis/backtest/README.md` (one panel over the whole record). The
+> backtest's headline is the number that matters here: scored over 38 Gold Days rather than 9,
+> the shipped rule catches **16**, not the 9 of 9 the operational panel shows. The rule was
+> calibrated and evaluated on the same small recent subset, and it scores accordingly.
+
 Reproduce with, from the repository root:
 
 ```bash

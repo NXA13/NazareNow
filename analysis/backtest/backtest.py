@@ -14,12 +14,20 @@ Conditions — its ceiling. Real Go Calls are issued days ahead from a forecast 
 wrong by an amount ticket #14 measures, and will do worse. Reading these numbers as the
 system's accuracy would overstate it.
 
-**Two panels, because the record is not uniform.** The operational panel scores the exact
-variables the live Pipeline Run reads, with no substitution anywhere — but the Swell
-partition only exists from 2022. The reconstructed panel reaches back to 2011 by
-estimating Swell from Combined Sea, and `swell.py` shows that estimate is too weak at the
-period threshold to carry a verdict. The panels are kept apart rather than averaged
-because one is evidence and the other is an indication.
+**One headline panel, since #39.** This file used to report two and refuse to average them:
+an operational panel that read the real Swell partition but only reached back to 2022, and a
+reconstructed panel that reached 2011 by estimating Swell from Combined Sea badly enough that
+`swell.py` called it too weak to carry a verdict. There was no single number for the record
+because no single source spanned it.
+
+The Copernicus reanalysis spans it. The headline is now one panel over 2011-2026 reading a
+real Swell partition throughout, scoring all 38 Gold Days instead of 9.
+
+The other two panels are kept **as diagnostics, not as results**. The operational panel is
+the tie to production — the exact variables the live Pipeline Run reads, on the overlap where
+they exist — and the reconstructed panel is what the reanalysis replaced, kept so the size of
+the improvement is visible rather than asserted. Neither is the answer to "how good is the
+baseline"; the reanalysis panel is.
 
 Run:
     .venv/Scripts/python.exe analysis/backtest/backtest.py
@@ -35,11 +43,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import hindcast
+import reanalysis
 import swell
 from swell import BearingOffset, QuantileMap
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "analysis" / "overlap"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend" / "src"))
 
+import measure  # noqa: E402
 from nazarenow.days import group_by_date  # noqa: E402
 from nazarenow.decision import Status, decide, strength  # noqa: E402
 from nazarenow.models.heuristic import HeuristicBaseline  # noqa: E402
@@ -155,6 +166,65 @@ def operational_hours() -> list[dict[str, float | str]]:
                 "significant_wave_height": reading["wave_height"],
                 "swell_period": reading["swell_wave_period"],
                 "swell_direction": reading["swell_wave_direction"],
+                "wind_speed": weather["wind_speed_10m"],
+                "wind_direction": weather["wind_direction_10m"],
+            }
+        )
+    return hours
+
+
+def reanalysis_hours(
+    product: reanalysis.Product = reanalysis.IBI,
+) -> list[dict[str, float | str]]:
+    """2011-2026, with the real Swell partition. No reconstruction anywhere.
+
+    This is what #39 buys: the same row shape `operational_hours` produces, spanning the
+    whole record instead of its last four years, read from a model rather than rebuilt from
+    a Combined Sea by regression. It is what lets the calibration see 38 Gold Days instead
+    of 9, and what collapses this file's two-panel split.
+
+    **Swell is the combined field, not the primary train.** `analysis/overlap/README.md`
+    measured that Open-Meteo's `swell_wave_*` — the variables the shipped thresholds were
+    fitted on — track the two trains combined rather than `*_SW1` alone, and that taking
+    SW1 alone under-reads by up to a metre exactly on the big two-train seas that make Gold
+    Days. So the height is the root sum of squares and the period and direction are
+    energy-weighted, which is the mapping that measurement selected.
+
+    **These numbers are in reanalysis units and are not interchangeable with Open-Meteo's.**
+    The same sea reads about half a second longer here. That is fine inside a fit, which is
+    self-consistent, and fatal if a bar fitted here were shipped untranslated — see
+    `calibrate.py`, which does the translating.
+
+    The wind still comes from ERA5 via `hindcast.wind()`: neither reanalysis carries a wind
+    variable, and the Heuristic Baseline needs one. That is unchanged from the operational
+    panel and is not a substitution this ticket introduces.
+    """
+    sea = reanalysis.read(product)
+    air = hindcast.wind()
+    hours = []
+    for reading in sea.rows():
+        at = str(reading["at"])
+        weather = air.readings.get(at)
+        if weather is None:
+            continue
+        sw1_height = float(reading["VHM0_SW1"])
+        sw2_height = float(reading["VHM0_SW2"])
+        hours.append(
+            {
+                "at": at,
+                "significant_wave_height": float(reading["VHM0"]),
+                "swell_period": measure.energy_weighted(
+                    float(reading["VTM01_SW1"]),
+                    sw1_height,
+                    float(reading["VTM01_SW2"]),
+                    sw2_height,
+                ),
+                "swell_direction": measure.vector_mean_direction(
+                    float(reading["VMDR_SW1"]),
+                    sw1_height,
+                    float(reading["VMDR_SW2"]),
+                    sw2_height,
+                ),
                 "wind_speed": weather["wind_speed_10m"],
                 "wind_direction": weather["wind_direction_10m"],
             }
@@ -532,21 +602,58 @@ def main() -> int:
     print(f"  bearing offset applied: {reconstruction.direction.degrees:+.1f} degrees")
 
     print("\nScoring...")
+    rea_hours = reanalysis_hours()
     op_hours = operational_hours()
     rec_hours = reconstructed_hours(reconstruction, hindcast.OPERATIONAL_START, gold)
+
+    # The headline. One panel, the whole record, a real Swell partition throughout — which is
+    # what #39 bought and what the two-panel split existed for want of.
+    #
+    # Scored against the shipped bars restated in reanalysis units. The shipped file is
+    # written in Open-Meteo units, and the same sea reads about half a second longer in the
+    # reanalysis: applying those bars unconverted would fire on 1311 hours where the live
+    # feed fires on 576 (`analysis/overlap/README.md`), and the extra Go Calls would look
+    # like a finding instead of a unit mismatch.
+    translations = measure.fit_translations()
+    period = translations["swell_period_s"]
+    height = translations["significant_wave_height_m"]
+    shipped = load_thresholds()
+    in_reanalysis_units = shipped.replacing(
+        minimum_significant_wave_height_m=height.invert(shipped.minimum_significant_wave_height_m),
+        watch_minimum_swell_period_s=period.invert(shipped.watch_minimum_swell_period_s),
+        go_call_minimum_swell_period_s=period.invert(shipped.go_call_minimum_swell_period_s),
+    )
+    print(
+        f"  shipped bars {shipped.minimum_significant_wave_height_m:g} m / "
+        f"{shipped.watch_minimum_swell_period_s:g} s / "
+        f"{shipped.go_call_minimum_swell_period_s:g} s restated in reanalysis units as "
+        f"{in_reanalysis_units.minimum_significant_wave_height_m:.2f} m / "
+        f"{in_reanalysis_units.watch_minimum_swell_period_s:.2f} s / "
+        f"{in_reanalysis_units.go_call_minimum_swell_period_s:.2f} s"
+    )
+    reanalysis_panel = Panel(
+        name="reanalysis",
+        span=f"{rea_hours[0]['at'][:4]}-{rea_hours[-1]['at'][:4]}",
+        calls=call_days(rea_hours, in_reanalysis_units),
+        gold=gold,
+    )
+    # Diagnostics. `operational` is the tie to production, on the overlap where the live
+    # variables exist; `reconstructed` is what the reanalysis replaced, kept so the size of
+    # the improvement can be read rather than asserted. Neither answers "how good is the
+    # baseline" — the panel above does.
     operational = Panel(
-        name="operational",
+        name="operational (diagnostic)",
         span=f"{hindcast.OPERATIONAL_START[:4]}-{hindcast.END[:4]}",
         calls=call_days(op_hours),
         gold=gold,
     )
     reconstructed = Panel(
-        name="reconstructed",
+        name="reconstructed (superseded)",
         span=f"{hindcast.START[:4]}-2021",
         calls=call_days(rec_hours),
         gold=gold,
     )
-    panels = [operational, reconstructed]
+    panels = [reanalysis_panel, operational, reconstructed]
 
     for panel in panels:
         counts = Counter(c.status.value for c in panel.calls.values())
@@ -559,7 +666,11 @@ def main() -> int:
         print(f"    Go Call on Gold Days:         {go_hit}/{total}")
         print(f"    Go Calls issued: {flagged}, of which known Gold Days: {known}")
 
-    for panel, hours in ((operational, op_hours), (reconstructed, rec_hours)):
+    for panel, hours in (
+        (reanalysis_panel, rea_hours),
+        (operational, op_hours),
+        (reconstructed, rec_hours),
+    ):
         missed = [g.date for g in panel.gold_in_span if panel.calls[g.date].status is Status.NONE]
         if not missed:
             continue
