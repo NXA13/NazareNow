@@ -84,6 +84,19 @@ UNIT_PARAMS = {
     "length_unit": "metric",
 }
 
+# Timestamps arrive on Nazaré's own clock, not UTC.
+#
+# A day in this system is a day a traveller stands on the beach (CONTEXT.md, ADR 0008), and
+# Europe/Lisbon is UTC only in winter — under summer time the hour stamped 23:00 UTC is
+# already midnight in Nazaré. Grouping UTC stamps by date therefore puts an hour of every
+# such day on the wrong date, which decides what a call is issued *for*.
+#
+# Asking the provider for local time means the timestamps are already right and `days.py`
+# can slice them, rather than the correctness resting on a conversion each reader has to
+# remember to apply. About 28 days of every Big-Wave Season are affected, 25 of them in the
+# first three weeks of October — which is when the deployment starts collecting.
+TIMEZONE = "Europe/Lisbon"
+
 # The provider returns sixteen days of hourly data in the same response as the current
 # conditions, so the forecast range costs no additional requests against a free API.
 FORECAST_DAYS = 16
@@ -104,6 +117,7 @@ MAX_BACKOFF_SECONDS = 300.0
 class OpenMeteoResponse(BaseModel):
     latitude: float
     longitude: float
+    timezone: str
     current_units: dict[str, str]
     current: dict[str, Any]
     hourly_units: dict[str, str]
@@ -157,6 +171,18 @@ def validate(body: dict[str, Any], variables: list[str]) -> None:
         parsed = OpenMeteoResponse.model_validate(body)
     except ValidationError as error:
         raise ValueError(f"Unexpected Open-Meteo payload: {error}") from error
+
+    # The zone the timestamps are on, checked rather than assumed. `timezone` is sent on
+    # every request, but a request is a preference and only the response is evidence — the
+    # same reasoning `EXPECTED_UNITS` applies below. A provider-side default that ignored
+    # the parameter would shift every day boundary by an hour, and nothing downstream could
+    # tell: a whole day's calls would be attributed to the wrong date while every number on
+    # the page still looked entirely plausible.
+    if parsed.timezone != TIMEZONE:
+        raise ValueError(
+            f"Open-Meteo returned timestamps on {parsed.timezone!r}; this system groups "
+            f"hours into days on {TIMEZONE!r} and would put them on the wrong date"
+        )
 
     if "time" not in parsed.current:
         raise ValueError("Open-Meteo response has no observation time")
@@ -261,7 +287,7 @@ def fetch(
         "current": ",".join(variables),
         "hourly": ",".join(variables),
         "forecast_days": FORECAST_DAYS,
-        "timezone": "UTC",
+        "timezone": TIMEZONE,
         # Explicit, so a provider-side default cannot silently change the scale the
         # thresholds are written against. Verified against the response as well.
         **UNIT_PARAMS,

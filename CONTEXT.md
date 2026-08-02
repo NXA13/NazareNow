@@ -48,6 +48,14 @@ waves over a sampling period. Measured instrumentally. Much smaller than Face He
 same sea, and not convertible to it by any fixed ratio.
 _Avoid_: wave height (ambiguous), swell height (a different variable)
 
+**Day**:
+A calendar day at Nazaré — Europe/Lisbon, which is UTC in winter and UTC+1 under summer
+time. Every day this system names means this: the day a Traveller stands on the beach, the
+day hours are grouped into, the day a call is issued for, and the day Lead Time counts to.
+Never a UTC day and never the reader's own — a viewer in Sydney reading "06:00" is being
+told when to be at Praia do Norte, not when to wake up at home. See ADR 0008.
+_Avoid_: date (when the local sense matters), UTC day, today
+
 **XXL Day**:
 A day on which Praia do Norte produced genuinely giant surf, confirmed by an external
 authority such as a contest being run, a record being ratified, or documented coverage.

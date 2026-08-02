@@ -19,9 +19,15 @@ from nazarenow.sources.open_meteo import (
 )
 from test_conditions import MARINE_BODY, WEATHER_BODY, ingest
 
-# Three days of hourly data is enough to prove grouping, ordering and summarising
-# without a fixture nobody can read. The provider returns sixteen.
-HOURS = [f"2026-02-{day:02d}T{hour:02d}:00" for day in (12, 13, 14) for hour in range(24)]
+# Six days of hourly data. Three proved grouping, ordering and summarising and was chosen
+# to stay readable, but `MINIMUM_FORECAST_HOURS` is now 120 — a run yielding three days is
+# a degraded response by definition (#25), so a three-day fixture would exercise the
+# rejection path in every test rather than the behaviour each one is about.
+#
+# Only the first three days carry shape. The rest are uniform filler whose sole job is to
+# clear the floor, so the fixture is no harder to read than it was.
+HOURS = [f"2026-02-{day:02d}T{hour:02d}:00" for day in range(12, 18) for hour in range(24)]
+DATES = [f"2026-02-{day:02d}" for day in range(12, 18)]
 
 
 # For the peak day, height, period and direction each peak at a *different* hour, and
@@ -49,10 +55,12 @@ def marine_with_hourly() -> dict:
                 350 if hour == DIRECTION_PEAK_HOUR else 270 if hour == HEIGHT_PEAK_HOUR else 298
             )
         else:
-            base = {"12": 1.4, "14": 3.5}[day]
+            # Filler days past the 14th take the 12th's quiet shape. They exist to clear
+            # `MINIMUM_FORECAST_HOURS`, and nothing asserts anything about them.
+            base = {"12": 1.4, "14": 3.5}.get(day, 1.4)
             heights.append(round(base + (0.2 if hour == 6 else 0.0), 2))
-            periods.append({"12": 9.0, "14": 12.0}[day] + (1.0 if hour == 11 else 0.0))
-            directions.append({"12": 250, "14": 280}[day] + (5 if hour == 17 else 0))
+            periods.append({"12": 9.0, "14": 12.0}.get(day, 9.0) + (1.0 if hour == 11 else 0.0))
+            directions.append({"12": 250, "14": 280}.get(day, 250) + (5 if hour == 17 else 0))
 
     return {
         **MARINE_BODY,
@@ -128,7 +136,7 @@ def test_the_forecast_covers_every_day_the_provider_returned(store, client) -> N
 
     body = client.get("/api/conditions/forecast").json()
 
-    assert [day["date"] for day in body["days"]] == ["2026-02-12", "2026-02-13", "2026-02-14"]
+    assert [day["date"] for day in body["days"]] == DATES
 
 
 def test_a_quiet_day_is_present_rather_than_omitted(store, client) -> None:
@@ -193,7 +201,7 @@ def test_a_later_run_replaces_the_previous_forecast(store, client) -> None:
 
     body = client.get("/api/conditions/forecast").json()
 
-    assert len(body["days"]) == 3
+    assert len(body["days"]) == len(DATES)
 
 
 def test_hourly_data_missing_a_variable_is_rejected(store, client) -> None:
@@ -247,15 +255,20 @@ def test_hours_the_provider_could_not_model_are_dropped(store, client) -> None:
     Those hours must not reach the store. A null has no honest rendering, and coercing
     it to zero would draw a flat calm sea for the back half of every forecast.
     """
+    # The last day is nulled, leaving five modelled days. Nulling more would drop the run
+    # below `MINIMUM_FORECAST_HOURS` and test the rejection path instead of this one — the
+    # provider padding its axis and the provider failing are different situations, and the
+    # whole point here is that the first is survived rather than treated as the second.
+    modelled = len(HOURS) - 24
     padded = marine_with_hourly()
     for name in ("swell_wave_height", "swell_wave_period", "swell_wave_direction"):
-        padded["hourly"][name] = padded["hourly"][name][:48] + [None] * 24
+        padded["hourly"][name] = padded["hourly"][name][:modelled] + [None] * 24
 
     ingest(store, forecasting_provider(marine=padded))
 
     body = client.get("/api/conditions/forecast").json()
 
-    assert [day["date"] for day in body["days"]] == ["2026-02-12", "2026-02-13"]
+    assert [day["date"] for day in body["days"]] == DATES[:-1]
     assert all(day["hours"] for day in body["days"])
 
 
@@ -303,7 +316,7 @@ def test_a_response_with_no_usable_hours_keeps_the_previous_forecast(store, clie
     absence for a successful-looking run that had just destroyed nine real days.
     """
     ingest(store, forecasting_provider())
-    assert len(client.get("/api/conditions/forecast").json()["days"]) == 3
+    assert len(client.get("/api/conditions/forecast").json()["days"]) == len(DATES)
 
     dead = marine_with_hourly()
     for name in dead["hourly"]:
@@ -313,7 +326,7 @@ def test_a_response_with_no_usable_hours_keeps_the_previous_forecast(store, clie
     with pytest.raises(ValueError, match="usable forecast hours"):
         ingest(store, forecasting_provider(marine=dead))
 
-    assert len(client.get("/api/conditions/forecast").json()["days"]) == 3
+    assert len(client.get("/api/conditions/forecast").json()["days"]) == len(DATES)
 
 
 def test_a_duplicated_hour_is_rejected(store, client) -> None:

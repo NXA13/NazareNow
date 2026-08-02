@@ -17,6 +17,7 @@ from typing import Any
 import httpx
 
 from nazarenow.pipeline import run_pipeline
+from nazarenow.sources.open_meteo import TIMEZONE
 
 # A flat, onshore, short-period day. Fails every condition of the rule.
 QUIET = {
@@ -129,6 +130,9 @@ def forecast_provider(
     marine_body = {
         "latitude": 39.541664,
         "longitude": -9.208328,
+        # Nazaré's own clock, which is what the run asks for and checks — a day here is a
+        # day a traveller stands on the beach, not a UTC day (ADR 0008).
+        "timezone": TIMEZONE,
         "current_units": MARINE_UNITS,
         "current": {"time": stamps[0], **{k: v[0] for k, v in marine.items()}},
         "hourly_units": MARINE_UNITS,
@@ -137,6 +141,7 @@ def forecast_provider(
     weather_body = {
         "latitude": 39.5,
         "longitude": -9.1875,
+        "timezone": TIMEZONE,
         "current_units": WEATHER_UNITS,
         "current": {"time": stamps[0], **{k: v[0] for k, v in weather.items()}},
         "hourly_units": WEATHER_UNITS,
