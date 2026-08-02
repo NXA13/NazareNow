@@ -22,6 +22,12 @@ Every date below was checked against a page retrieved during this research. Noth
 recollection of surfing history, and where a claim is widely repeated but could not be
 retrieved from a source, it is in **Unverified leads** rather than in the table.
 
+**Quoting convention.** Text inside quotation marks is verbatim from the cited page.
+Anything outside them is this document's own summary of what the page shows — the nominee
+listings especially, where a page names a dozen rides and only the fragment identifying this
+one is quoted. A reader checking an entry should be able to search the source for the quoted
+string and find it; if they cannot, the entry is wrong and should be raised.
+
 **Confidence tiers**, defined by evidence rather than impression:
 
 | Tier | Admitted on |
@@ -104,7 +110,7 @@ of the breaking wave, not Significant Wave Height, and not the Proxy Target.**
 **2011-11-01 — Garrett McNamara, 78 ft, Guinness World Record** · Ratified
 - Face Height: 78 ft / 23.77 m (Guinness-ratified, since superseded)
 - Source: https://www.guinnessworldrecords.com/news/2018/5/a-timeline-of-the-biggest-waves-surfed-as-rodrigo-koxa-sets-new-record-523752 — published 2018-05-01
-- Quote: McNamara "set the previous record at this same location" on "1 November 2011"
+- Quote: "American Garrett McNamara rode a 23.77 m (78 ft) wave on 1 November 2011."
 - Corroboration (does not pin the day): https://www.guinnessworldrecords.com/news/2012/5/video-78-foot-wave-surfed-by-garrett-mcnamara-confirmed-as-largest-ever-ridden-41598 — published 2012-05-09 — "surf a mammoth 78-foot wave last November at Nazaré, Portugal"
 - **Flag:** the day-level precision rests on the single Guinness timeline page. The 2012
   ratification article says only "last November". The live Guinness record page now names
