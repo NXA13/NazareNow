@@ -26,15 +26,22 @@ from nazarenow.models.base import Condition, ConditionOutcome, Prediction
 
 # Literals, deliberately. Importing the constants and testing `CONSTANT - 0.1` looks
 # rigorous and pins nothing: change the constant and both sides of the assertion move
-# with it. These are the values ticket #12's calibration produced, so a silent retuning
-# of any threshold fails here — which is the point, and which is why #12 had to come
-# through this file and say so rather than sliding past a green suite.
-HEIGHT_M = 3.75
-WATCH_PERIOD_S = 12.5
-GO_PERIOD_S = 13.0
+# with it. These are the values ticket #39's recalibration produced, so a silent retuning
+# of any threshold fails here — which is the point, and which is why #12 and then #39 each
+# had to come through this file and say so rather than sliding past a green suite.
+#
+# #39 refitted against 38 Gold Days rather than #12's 9, on the Copernicus reanalysis, and
+# translated the wave bars back into Open-Meteo units. Every one of them moved, and the
+# period bars moved a long way: a Watch bar that had to catch 25 Gold Days rather than 6
+# lands far lower than one that only had to catch the recent, well-documented ones.
+HEIGHT_M = 2.75
+WATCH_PERIOD_S = 10.1
+GO_PERIOD_S = 12.9
 SWELL_ARC_FROM, SWELL_ARC_TO = 255.0, 330.0
 WIND_ARC_FROM, WIND_ARC_TO = 20.0, 180.0
 MAX_WIND_KMH = 35.0
+LIGHT_WIND_KMH = 16.5
+"""ADR 0009: below this the offshore arc is not consulted. Not a second cap — see the ADR."""
 CONFIRMED_LEAD = 1
 GO_LEAD = 7
 
@@ -363,19 +370,23 @@ class TestCallContent:
 
         Asserted on the API rather than only in the frontend because this is the half that
         has to survive a redesign: a UI that quietly stopped rendering the caveat would
-        leave the user reading fitted-looking calls with no idea the fit is nine days wide.
+        leave the user reading fitted-looking calls with no idea how wide the fit is.
+
+        #39 took the fit from 9 Gold Days to 38. The caveat is still owed — 38 is a better
+        number and still a small one — but it is no longer the same sentence, so the figure
+        the interface states is pinned here rather than left to drift.
         """
         ingest(store, forecast_provider({SOON: GIANT}, today=TODAY))
 
         calibration = client.get("/api/conditions/forecast").json()["calibration"]
 
-        assert calibration["gold_days_total"] == 9
+        assert calibration["gold_days_total"] == 38
         # Named as Big-Wave Seasons, not calendar years, and the two must not share one.
         # CONTEXT.md: a season is never a calendar year. Splitting on the calendar put
         # October-to-December 2023 in the fit and January-to-March 2024 in the held-out
         # half — one season in both, so the held-out split was not held out.
-        assert calibration["fitted_on"] == "2021/22-2022/23"
-        assert calibration["validated_on"] == "2023/24-2025/26"
+        assert calibration["fitted_on"] == "2011/12-2019/20"
+        assert calibration["validated_on"] == "2020/21-2025/26"
         assert "analysis/calibration" in calibration["source"]
 
 

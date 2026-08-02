@@ -20,20 +20,30 @@ from nazarenow.pipeline import run_pipeline
 from nazarenow.sources.open_meteo import TIMEZONE
 
 # A flat, onshore, short-period day. Fails every condition of the rule.
+#
+# The wind speed has to sit **above** `light_wind_exemption_kmh` to fail. Since ADR 0009 a
+# wind below the exemption holds the condition whatever its direction, so the old 14 km/h
+# from 260° now passes and this fixture would quietly stop failing every condition while
+# still being named as though it did.
 QUIET = {
     "significant_wave_height": 0.9,
     "swell_period": 7.0,
     "swell_direction": 250,
-    "wind_speed": 14.0,
+    "wind_speed": 22.0,
     "wind_direction": 260,
 }
 
 # Clears every condition comfortably.
+#
+# Its wind is deliberately above the exemption too, so this exercises the *offshore* branch
+# of the condition rather than the light-wind one. A day that passes only because the air is
+# still is a different day from one groomed by an offshore breeze, and this fixture is meant
+# to be the second.
 GIANT = {
     "significant_wave_height": 4.2,
     "swell_period": 16.5,
     "swell_direction": 298,
-    "wind_speed": 11.0,
+    "wind_speed": 18.0,
     "wind_direction": 110,
 }
 

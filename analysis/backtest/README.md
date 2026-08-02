@@ -16,14 +16,24 @@ Ticket #11. The benchmark every later Amplification Model must beat, per ADR 000
 > showed recovers 41% of threshold crossings. #39 ingested the Copernicus IBI reanalysis, which
 > carries a real Swell partition from 1980, and the split is gone.
 >
-> **Scored over the whole record instead of its last four years, the shipped rule catches 16 of
-> 38 Gold Days at Watch or better, not the 9 of 9 the old headline reports.**
+> **Scored over the whole record instead of its last four years, against thresholds refitted on
+> all 38 Gold Days, the rule catches 37 of 38 at Watch or better and 16 at Go Call.**
 >
 > | Panel | Span | Gold Days | Watch or better | Go Call | Go Calls issued |
 > |---|---|---|---|---|---|
-> | **reanalysis** (headline) | 2011–2025 | **38** | **16/38** | 9/38 | 34, of which 9 Gold |
-> | operational (diagnostic) | 2022–2025 | 9 | 9/9 | 7/9 | 16, of which 7 Gold |
-> | reconstructed (superseded) | 2011–2021 | 29 | 13/29 | 7/29 | 37, of which 7 Gold |
+> | **reanalysis** (headline) | 2011–2025 | **38** | **37/38** | 16/38 | 128, of which 16 Gold |
+> | operational (diagnostic) | 2022–2025 | 9 | 9/9 | 7/9 | 40, of which 7 Gold |
+> | reconstructed (superseded) | 2011–2021 | 29 | 27/29 | 11/29 | 107, of which 11 Gold |
+>
+> **Read the recall beside what it cost.** Against #12's thresholds this same panel caught 16 of
+> 38 at Watch; the refit takes it to 37 of 38 by lowering the Watch bar from 12.5 s to 10.1 s,
+> and the Watch tier goes from 106 days to **1050** — about 70 a season. ADR 0003 makes the
+> Watch the recall tier, so this is the intended direction, but it is a materially different
+> thing to receive. The Go tier, which is the one that costs money, issues about 8.5 calls a
+> season against a stated budget of 8.
+>
+> The single remaining miss fails on significant wave height, not period — the first time since
+> #11 that period has not been the binding constraint.
 >
 > The two lower rows are kept as diagnostics, not results. The operational panel is the tie to
 > production — the exact variables the live Pipeline Run reads — and reading it as the rule's
@@ -34,19 +44,18 @@ Ticket #11. The benchmark every later Amplification Model must beat, per ADR 000
 > significant wave height on 12, the Watch period bar on 11, wind on 3.
 >
 > **The bars are converted, not carried across.** The shipped file is written in Open-Meteo
-> units and the reanalysis reads about half a second longer for the same sea, so 3.75 m / 12.5 s
-> / 13.0 s is restated as 3.62 m / 13.12 s / 13.65 s before scoring. Applying them unconverted
+> units and the reanalysis reads about half a second longer for the same sea, so 2.75 m / 10.1 s
+> / 12.9 s is restated as 2.56 m / 10.54 s / 13.55 s before scoring. Applying them unconverted
 > would have fired on 1311 hours where the live feed fires on 576, and the extra Go Calls would
 > have read as a finding instead of a unit mismatch. `analysis/overlap/README.md` measures the
 > relationship.
 >
-> **#39's recalibration did not complete**, so these numbers still score #12's thresholds. The
-> wind condition blocks six Gold Days once the fit sees 25 instead of 6 — by the offshore arc,
-> on days with 4–16 km/h winds — which disproves the assumption #12 rests on. Filed as
-> [#40](https://github.com/NXA13/NazareNow/issues/40), which #39 is blocked by; see
-> `analysis/calibration/README.md`. **This headline will move when #40 lands**, because #40
-> changes the benchmark's own definition rather than its thresholds — 16 of 38 is the last
-> figure measured against the current wind condition, not against the one that will ship.
+> **The benchmark's definition changed too, per ADR 0009.** The wind condition is now a
+> disjunction — light enough not to matter, *or* offshore and within the cap — because the old
+> conjunction rejected six documented Gold Days on 4–16 km/h breezes from the wrong quarter.
+> That means figures here are **not comparable to anything measured before #40**: it is a
+> different predictor, not a retuned one. The 16-of-38 this section previously reported was the
+> last measurement against the old shape.
 
 Reproduce with, from the repository root:
 
