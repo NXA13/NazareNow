@@ -45,7 +45,7 @@ weather services separate a *watch* from a *warning*.
 | **Inputs** | Open-Meteo Marine API — swell height, period, direction, wind. One model today. ADR 0003 calls for several independent wave models per date, using their disagreement as the uncertainty estimate; ticket #8 introduces that, so **no uncertainty estimate exists yet**. |
 | **Training target** | *Planned, not yet built.* Significant wave height from Monican02, the Instituto Hidrográfico mooring 15km off Nazaré near the canyon head. Hourly from 2010, via the Copernicus Marine In Situ TAC. Fourteen usable seasons — coverage is uneven and two winters are missing entirely. No buoy data reaches the running system: it is analysed in `analysis/buoy_coverage/` and becomes a dataset in ticket #9. |
 | **Calibration** | *Researched, not yet applied.* A hand-verified set of days confirmed as genuinely giant — contest days, ratified records — to establish what a predicted height actually means. Thirty-eight such days are sourced in `analysis/gold_days/`; ticket #12 fits thresholds to them. Until it does, the thresholds in use are an uncalibrated rule of thumb and the interface says so. |
-| **Baseline** | The surf community's rule of thumb, implemented first and retained permanently as the benchmark any learned model must beat. |
+| **Baseline** | The surf community's rule of thumb, implemented first and retained permanently as the benchmark any learned model must beat. Scored in [`analysis/backtest/`](./analysis/backtest/): across the four seasons where the Swell partition exists it catches 3 of 9 Gold Days and issues 5 Go Calls, and a single threshold — the 14 s minimum swell period — causes every miss. |
 
 ## Running it locally
 
@@ -157,10 +157,11 @@ downloaded data, so CI checks them statically:
 .venv/Scripts/python.exe -m ruff format --check analysis/
 ```
 
-One exception, which is fully runnable because it reads only committed files:
+Two exceptions, both fully runnable because they need no credentials:
 
 ```bash
 .venv/Scripts/python.exe analysis/gold_days/build.py --check
+.venv/Scripts/python.exe analysis/backtest/swell.py --check
 ```
 
 The Gold Day list is hand-written in `analysis/gold_days/README.md` and built from it into
@@ -168,6 +169,24 @@ The Gold Day list is hand-written in `analysis/gold_days/README.md` and built fr
 enforces the sourcing protocol — a missing quote, a missing publication date, a `Documented`
 entry resting on a single source. A Gold Day recorded on weak evidence does not add noise;
 it silently moves the threshold that decides whether someone is told to book a flight.
+
+The second self-tests the arithmetic behind the backtest's Combined Sea to Swell
+reconstruction — quantile mapping and bearings that wrap past north.
+
+**The backtest itself** reads only free Open-Meteo data, so it runs too, though it downloads
+about 10 MB the first time:
+
+```bash
+.venv/Scripts/python.exe analysis/backtest/hindcast.py
+cd analysis/backtest && ../../.venv/Scripts/python.exe backtest.py
+```
+
+[`analysis/backtest/`](./analysis/backtest/) is the benchmark of ADR 0006: what the
+Heuristic Baseline would have called across 2011-2025, and what it would have missed.
+Deliberately not part of any test suite — an assertion that fails when accuracy shifts
+slightly gets disabled within weeks. `backend/tests/test_baseline_is_fixed.py` pins the
+thresholds the committed report describes, so the report cannot silently stop matching the
+rule.
 
 ### Known gaps
 
