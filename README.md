@@ -157,6 +157,18 @@ downloaded data, so CI checks them statically:
 .venv/Scripts/python.exe -m ruff format --check analysis/
 ```
 
+One exception, which is fully runnable because it reads only committed files:
+
+```bash
+.venv/Scripts/python.exe analysis/gold_days/build.py --check
+```
+
+The Gold Day list is hand-written in `analysis/gold_days/README.md` and built from it into
+`gold_days.jsonl`, which #12 calibrates against. `--check` fails if the two have drifted and
+enforces the sourcing protocol — a missing quote, a missing publication date, a `Documented`
+entry resting on a single source. A Gold Day recorded on weak evidence does not add noise;
+it silently moves the threshold that decides whether someone is told to book a flight.
+
 ### Known gaps
 
 **Mobile layout has no automated protection.** jsdom has no layout engine, so the

@@ -13,8 +13,31 @@ training data, and never a Face Height regression target. There are thirty-eight
 against roughly 2,900 Big-Wave Season days in the same span; that is a calibration set, not
 a dataset.
 
-**What this is not.** This is not the machine-readable Gold Day file. That is the
-implementation of #10 and is built from this document.
+**What this is not.** This is not the machine-readable Gold Day file. That is
+`gold_days.jsonl`, and it is **built from this document** by `build.py` — never edited by
+hand, and never retyped. This document stays the source of truth: it is where a human
+records what a source said, argues a tier, and flags an ambiguity. Correct it here and
+rebuild.
+
+```bash
+.venv/Scripts/python.exe analysis/gold_days/build.py           # rebuild
+.venv/Scripts/python.exe analysis/gold_days/build.py --check   # fail if the two disagree
+```
+
+`build.py` refuses to write a file that breaks the protocol below — a missing quote, a
+missing source date, a `Documented` entry resting on one source, an inferred date with no
+flag recording the inference. It also resolves the abbreviated `posts/504185/...` URLs to
+their full form, because a truncated URL cannot be opened by the stranger this file is
+written for.
+
+**Evidence class is computed, not asserted.** Criterion 6 asks each entry to record whether
+its conditions are buoy-measured or hindcast-only. That is a join against
+`analysis/buoy_coverage/output/`, so `build.py` does it: a season Monican02 recorded nothing
+in makes every day in it hindcast-only by construction, and the per-day readings settle the
+days #2 checked. Everything else is `unknown` — which is not the same as hindcast-only. It
+means nobody has looked, and resolving it needs the full Monican02 series (#9).
+
+Currently **7 buoy-measured, 7 hindcast-only, 24 unknown**.
 
 ## Method
 
@@ -279,7 +302,7 @@ which is unusual and is itself a sourced finding (see *Date ambiguities and cont
 - Source 2: https://www.worldsurfleague.com/posts/495219/nazare-portugal-january-2022-swell-coverage — published 2022-01-08 — "After a turbulent, wind-whipped opening day, the Atlantic sorted itself out overnight as all the elements came together for a massive day of surfing at Nazare."
 
 **2022-01-12 — Lucas Chianca and Pedro Calado, Biggest Paddle placings** · Reported
-- Source: https://www.worldsurfleague.com/posts/504185/... — published 2022-07-07 — Chianca and Calado at Nazaré on January 12, 2022
+- Source: https://www.worldsurfleague.com/posts/504185/... — published 2022-07-07 — Biggest Paddle placings for "Lucas Chumbo Chianca At Nazaré on January 12, 2022" (2nd) and "Pedro Calado At Nazaré on January 12, 2022" (3rd)
 
 **2022-02-09 — Jamie Mitchell, Biggest Paddle placing** · Reported
 - Source: https://www.worldsurfleague.com/posts/504185/... — published 2022-07-07 — "Jamie Mitchell at Nazaré, Portugal on February 9, 2022"
