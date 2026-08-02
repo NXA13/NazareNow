@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { ForecastRange } from './Forecast';
 import { compassPoint } from './format';
-import { dayFrom, forecast } from './test/handlers';
+import { calibration, dayFrom, forecast } from './test/handlers';
 import { server } from './test/server';
 
 const QUIET = forecast.days[0]!;
@@ -156,10 +156,44 @@ describe('calls', () => {
     expect(await screen.findByRole('status')).toHaveTextContent(/rule of thumb/i);
   });
 
-  it('drops the warning once the model is calibrated', async () => {
+  it('drops the rule-of-thumb warning once the model is calibrated', async () => {
     server.use(
       http.get('*/api/conditions/forecast', () =>
-        HttpResponse.json({ ...forecast, calibrated: true }),
+        HttpResponse.json({ ...forecast, calibrated: true, calibration }),
+      ),
+    );
+
+    render(<ForecastRange />);
+
+    await screen.findByTestId(`call-${BIG.date}`);
+    expect(screen.queryByText(/rule of thumb/i)).not.toBeInTheDocument();
+  });
+
+  it('states how few Gold Days the calibration rests on', async () => {
+    // Removing the uncalibrated warning and saying nothing in its place would leave the
+    // user reading fitted-looking calls with no idea the fit is nine days wide. #12 asks
+    // for the replacement explicitly, so it is asserted rather than assumed.
+    server.use(
+      http.get('*/api/conditions/forecast', () =>
+        HttpResponse.json({ ...forecast, calibrated: true, calibration }),
+      ),
+    );
+
+    render(<ForecastRange />);
+
+    const note = await screen.findByRole('status');
+    expect(note).toHaveTextContent(String(calibration.gold_days_total));
+    expect(note).toHaveTextContent(String(calibration.gold_days_validated));
+    expect(note).toHaveTextContent(/very small number of days/i);
+  });
+
+  it('keeps the rule-of-thumb warning when a calibrated flag arrives without provenance', async () => {
+    // The two halves are stored together but arrive over a network. A response claiming a
+    // calibration it cannot describe must not silently drop the caveat and replace it with
+    // nothing, which is what rendering on `calibrated` alone would do.
+    server.use(
+      http.get('*/api/conditions/forecast', () =>
+        HttpResponse.json({ ...forecast, calibrated: true, calibration: null }),
       ),
     );
 

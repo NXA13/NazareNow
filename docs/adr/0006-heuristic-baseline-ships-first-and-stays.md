@@ -20,3 +20,20 @@ side. Neither is reported alone.
 
 The first deployable slice contains no machine learning, which must not be mistaken for the
 project being off-track — it is the point.
+
+## Amendment: the thresholds were fitted (ticket #12)
+
+The numbers quoted above — 3 m, 14 s — are the community's rule of thumb as this decision
+found it, and are kept here as the record of where the baseline started. They are no longer
+what ships. Ticket #12 fitted them to the Gold Days: 3.75 m, and a swell period bar of 12.5 s
+for a Watch against 13 s for a Go Call. They now live in `backend/src/nazarenow/thresholds.json`
+rather than in code, and `analysis/calibration/` is the fit.
+
+Nothing in the decision changes. The Heuristic Baseline is still the permanent benchmark, and
+a calibrated rule of thumb is a *harder* floor for a learned model to clear than an unfitted
+one — on the operational panel it went from catching 3 of 9 Gold Days to 7 of 9 at Go Call.
+Ticket #13 has more to beat than this ADR anticipated, which is the outcome to want.
+
+The requirement that both be reported side by side is unaffected, and now carries a second
+obligation: the calibration rests on nine Gold Days, and any figure derived from it states
+that alongside the figure.

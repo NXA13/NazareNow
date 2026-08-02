@@ -13,8 +13,9 @@ independent wave models, which ticket #8 introduces. Until then tiers are decide
 Time alone, and nothing in this system may claim a forecast has "converged" — there is no
 measurement behind such a claim.
 
-*Thresholds are uncalibrated.* Ticket #12 fits them to Gold Days. Until then they are the
-surf community's rule of thumb and the API reports `calibrated: false`.
+*Model Spread is still the gap.* Thresholds are no longer the other one: ticket #12 fitted
+them to the Gold Days, they load from data rather than code (`thresholds.py`), and the API
+reports `calibrated` from the fit's own provenance rather than from an assertion.
 """
 
 from __future__ import annotations
@@ -42,15 +43,22 @@ WATCH_CONDITIONS = (
     Condition.SWELL_DIRECTION,
 )
 
-# A Go Call and a Confirmed statement require all four, wind included.
+# A Go Call and a Confirmed statement require wind, and a *longer* swell period than a
+# Watch — the same measurement judged against the stricter of the two calibrated bars.
+#
+# That second requirement is what ticket #12 added, and it is what finally makes the tiers
+# trade differently. Before it, a Watch and a Go Call differed only by the wind condition,
+# and #11's backtest measured the consequence: across four seasons the two tiers caught
+# exactly the same three Gold Days, because wind was never what blocked a Gold Day. Period
+# always was. A recall tier that surfaces nothing the precision tier misses is one rule
+# with two names, which is the outcome ADR 0003 exists to prevent.
 #
 # Named explicitly rather than read off `Prediction.matches_rule`, which asks only whether
 # every condition a model *chose to judge* held. A model that never judges wind satisfies
-# that on any clean swell and earns a Go Call through onshore wind — the tiers collapsing
-# into one rule with two names, which is what ADR 0003 exists to prevent. Fixing the Watch
-# tier to name its conditions and leaving these two reading `matches_rule` reproduced the
-# same defect one branch lower.
-GO_CONDITIONS = (*WATCH_CONDITIONS, Condition.WIND)
+# that on any clean swell and earns a Go Call through onshore wind — the same collapse from
+# the other direction. Fixing the Watch tier to name its conditions and leaving these two
+# reading `matches_rule` reproduced the defect one branch lower.
+GO_CONDITIONS = (*WATCH_CONDITIONS, Condition.SWELL_PERIOD_FOR_GO_CALL, Condition.WIND)
 
 
 class Status(StrEnum):
@@ -98,10 +106,12 @@ def conditions_behind(status: Status) -> tuple[Condition, ...]:
 def decide(prediction: Prediction, lead_time_days: int) -> Call:
     """Turn a prediction into a call at the given Lead Time.
 
-    A Go Call or a Confirmed statement requires every condition of the rule, wind
-    included: a long-period swell arriving through onshore wind is not the day anyone
-    flew for, and a Go Call costs money. A Watch requires only the swell conditions, so a
-    building swell whose wind has not yet turned is still surfaced at range.
+    A Go Call or a Confirmed statement requires every condition of the rule: wind, because
+    a long-period swell arriving through onshore wind is not the day anyone flew for, and
+    the longer of the two calibrated swell periods, because a Go Call costs money. A Watch
+    requires only the swell conditions at the looser period bar, so a building swell whose
+    wind has not yet turned — or whose period is long enough to be worth watching without
+    yet being long enough to book on — is still surfaced at range.
 
     Raises on a negative Lead Time. A call is issued *for* a date in the forecast, from
     the first day that forecast covers, so a date before its own issue date is a caller

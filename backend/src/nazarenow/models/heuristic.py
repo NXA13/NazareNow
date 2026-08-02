@@ -1,48 +1,35 @@
-"""The Heuristic Baseline: the surf community's rule of thumb, as code.
+"""The Heuristic Baseline: the rule of thumb, now with thresholds fitted to Gold Days.
 
 Per ADR 0006 this ships first and stays permanently. It is the number every learned
 model has to beat, and reporting a learned model's accuracy without it would be
 meaningless — 0.87 says nothing until you know what guessing well scores.
 
-It contains no machine learning and is deliberately weak. Its job is to be a floor.
+It contains no machine learning. What ticket #12 changed is where its numbers come from:
+they are no longer written in this file. `thresholds.py` loads them from data carrying the
+provenance of the fit that produced them, and `analysis/calibration/` is the fit. The rule
+is still the rule; it is the constants that stopped being guesses.
+
+**The shape of the rule is unchanged, with one addition.** The model now reports two
+verdicts on swell period — one against the Watch bar, one against the stricter Go Call bar
+— because #11's backtest found period is the only condition that ever blocks a Gold Day,
+and therefore the only place ADR 0003's recall tier and precision tier can actually differ.
+See `Condition.SWELL_PERIOD_FOR_GO_CALL`.
 """
 
 from __future__ import annotations
 
+from nazarenow.thresholds import Thresholds, load
+
 from .base import Condition, ConditionOutcome, Prediction
-
-# Thresholds from the surf community's rule of thumb for Praia do Norte: a large swell,
-# a long period, arriving from the west-north-west, with light offshore wind. Ticket #12
-# replaces these with values calibrated against Gold Days; until then they are a
-# starting point and the interface says so.
-MINIMUM_WAVE_HEIGHT_M = 3.0
-MINIMUM_SWELL_PERIOD_S = 14.0
-SWELL_ARC = (255.0, 330.0)
-"""West-south-west through north-north-west. The canyon is fed from this arc."""
-
-OFFSHORE_WIND_ARC = (20.0, 180.0)
-"""Praia do Norte faces west, so wind blowing off the land arrives from the eastern half
-of the compass — north-north-east round through south. The previous arc of 45-200 accepted
-199 degrees, which has an onshore component, and rejected north-easterlies that are among
-the cleanest winds the spot gets.
-
-The lower bound is the weakest number here and it is not settled. An earlier version of
-this docstring justified 20 degrees by citing a real observation of wind from **15**
-degrees being reported to users as onshore — which this arc still rejects, so the comment
-claimed a fix it did not make. Whether the offshore arc truly begins at 20, or nearer 10,
-is a question about the coastline and not one this file can answer honestly: ticket #12
-fits these thresholds to the Gold Days and owns it. Until then the bound stands as a
-provisional guess and is documented as one, which is the part that was wrong before."""
-
-MAXIMUM_WIND_SPEED_KMH = 35.0
 
 
 def _within(value: float, arc: tuple[float, float]) -> bool:
     """Whether a bearing falls inside an arc, inclusive of both ends.
 
-    Raises on an arc that wraps past north. Neither shipped arc does, and silently
+    Raises on an arc that wraps past north. Neither calibrated arc does, and silently
     returning False for every bearing — which a naive comparison does — would be a
-    plausible-looking lie waiting for ticket #12 to recalibrate into existence.
+    plausible-looking lie. `thresholds.parse` rejects such an arc on load, so this is the
+    second of two guards: this one also covers a model constructed directly in a test.
     """
     low, high = arc
     if low > high:
@@ -57,7 +44,27 @@ class HeuristicBaseline:
     """Applies the rule of thumb. Deterministic, and cheap enough for ticket #15."""
 
     name = "heuristic-baseline"
-    calibrated = False
+
+    def __init__(self, thresholds: Thresholds | None = None) -> None:
+        """Takes its numbers, rather than reading them from module scope.
+
+        The parameter is what lets `analysis/calibration/` sweep candidate thresholds
+        against the real class instead of a copy of it. The sweep used to work by
+        reassigning a module constant, which mutated global state for the duration of the
+        loop and left every concurrent reader of the model looking at whichever value the
+        sweep happened to be on.
+        """
+        self.thresholds = thresholds if thresholds is not None else load()
+
+    @property
+    def calibrated(self) -> bool:
+        """Read off the thresholds' provenance, never asserted independently.
+
+        A model that could set this itself could claim a calibration its numbers do not
+        have, and `calibrated` is the flag the interface uses to decide whether to warn
+        the user that the calls are a rule of thumb.
+        """
+        return self.thresholds.calibrated
 
     def predict(self, readings: dict[str, float]) -> Prediction:
         # ADR 0006 defines the rule of thumb on Significant Wave Height, and CONTEXT.md
@@ -70,6 +77,11 @@ class HeuristicBaseline:
         wind_speed = readings["wind_speed"]
         wind_direction = readings["wind_direction"]
 
+        limits = self.thresholds
+        height_bar = limits.minimum_significant_wave_height_m
+        watch_bar = limits.watch_minimum_swell_period_s
+        go_bar = limits.go_call_minimum_swell_period_s
+
         # Each condition carries its identity alongside its sentence. The Decision Model
         # branches on the identity; only the interface reads the sentence.
         conditions = tuple(
@@ -77,30 +89,39 @@ class HeuristicBaseline:
             for condition, holds, held, failed in (
                 (
                     Condition.SIGNIFICANT_WAVE_HEIGHT,
-                    significant_wave_height >= MINIMUM_WAVE_HEIGHT_M,
+                    significant_wave_height >= height_bar,
                     f"significant wave height {significant_wave_height:g}m is at or above "
-                    f"{MINIMUM_WAVE_HEIGHT_M:g}m",
+                    f"{height_bar:g}m",
                     f"significant wave height {significant_wave_height:g}m is below "
-                    f"{MINIMUM_WAVE_HEIGHT_M:g}m",
+                    f"{height_bar:g}m",
                 ),
                 (
                     Condition.SWELL_PERIOD,
-                    period >= MINIMUM_SWELL_PERIOD_S,
-                    f"swell period {period:g}s is at or above {MINIMUM_SWELL_PERIOD_S:g}s",
-                    f"swell period {period:g}s is below {MINIMUM_SWELL_PERIOD_S:g}s",
+                    period >= watch_bar,
+                    f"swell period {period:g}s is at or above the {watch_bar:g}s a Watch needs",
+                    f"swell period {period:g}s is below the {watch_bar:g}s a Watch needs",
+                ),
+                (
+                    # Deliberately worded so that a day clearing the Watch bar and failing
+                    # this one reads as an explanation of its own tier rather than as a
+                    # contradiction of the line above it.
+                    Condition.SWELL_PERIOD_FOR_GO_CALL,
+                    period >= go_bar,
+                    f"swell period {period:g}s is at or above the {go_bar:g}s a Go Call needs",
+                    f"swell period {period:g}s is below the {go_bar:g}s a Go Call needs",
                 ),
                 (
                     Condition.SWELL_DIRECTION,
-                    _within(direction, SWELL_ARC),
+                    _within(direction, limits.swell_arc),
                     f"swell direction {direction:g}° is within the canyon's arc",
                     f"swell direction {direction:g}° is outside the canyon's arc",
                 ),
                 (
                     Condition.WIND,
-                    _within(wind_direction, OFFSHORE_WIND_ARC)
-                    and wind_speed <= MAXIMUM_WIND_SPEED_KMH,
+                    _within(wind_direction, limits.offshore_wind_arc)
+                    and wind_speed <= limits.maximum_wind_speed_kmh,
                     f"wind is offshore and light at {wind_speed:g} km/h",
-                    _wind_fault(wind_speed, wind_direction),
+                    self._wind_fault(wind_speed, wind_direction),
                 ),
             )
         )
@@ -116,8 +137,7 @@ class HeuristicBaseline:
             conditions=conditions,
         )
 
-
-def _wind_fault(speed: float, direction: float) -> str:
-    if not _within(direction, OFFSHORE_WIND_ARC):
-        return f"wind direction {direction:g}° is onshore"
-    return f"wind speed {speed:g} km/h is above {MAXIMUM_WIND_SPEED_KMH:g} km/h"
+    def _wind_fault(self, speed: float, direction: float) -> str:
+        if not _within(direction, self.thresholds.offshore_wind_arc):
+            return f"wind direction {direction:g}° is onshore"
+        return f"wind speed {speed:g} km/h is above {self.thresholds.maximum_wind_speed_kmh:g} km/h"

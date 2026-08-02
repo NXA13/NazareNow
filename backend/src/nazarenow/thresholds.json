@@ -1,0 +1,23 @@
+{
+  "minimum_significant_wave_height_m": 3.75,
+  "watch_minimum_swell_period_s": 12.5,
+  "go_call_minimum_swell_period_s": 13.0,
+  "swell_arc": [
+    255.0,
+    330.0
+  ],
+  "offshore_wind_arc": [
+    20.0,
+    180.0
+  ],
+  "maximum_wind_speed_kmh": 35.0,
+  "calibration": {
+    "fitted_on": "2021/22-2022/23",
+    "validated_on": "2023/24-2025/26",
+    "gold_days_fitted": 6,
+    "gold_days_validated": 3,
+    "method": "Swell period fitted per tier against Gold Days on the real Swell partition, split on Big-Wave Season boundaries. The Watch bar is the highest period catching every Gold Day in the fitting split. The Go Call bar is the lowest period sitting above the Watch bar and within 8 Go Calls per Big-Wave Season; in this fit what actually set it was the Watch bar rather than the budget \u2014 bars from 12.5s up are already within 8 calls per season, so 13s is simply the first step above the Watch bar and the record does not distinguish it from the higher bars that also qualify. Height, swell arc and wind were verified to block no Gold Day rather than fitted.",
+    "source": "analysis/calibration/calibrate.py",
+    "fitted_at": "2026-08-02"
+  }
+}

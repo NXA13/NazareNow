@@ -220,6 +220,23 @@ class ForecastDay(BaseModel):
     hours: list[ForecastHour]
 
 
+class Calibration(BaseModel):
+    """The provenance of the thresholds a call was decided against.
+
+    Mirrors `thresholds.Calibration`, restated here because this is the published shape of
+    the API and it should not change silently when an internal dataclass does.
+    """
+
+    fitted_on: str
+    validated_on: str
+    gold_days_fitted: int
+    gold_days_validated: int
+    gold_days_total: int
+    method: str
+    source: str
+    fitted_at: str
+
+
 class Forecast(BaseModel):
     fetched_at: str
 
@@ -234,9 +251,17 @@ class Forecast(BaseModel):
     says so rather than guessing at one."""
 
     calibrated: bool
-    """False while thresholds are the surf community's rule of thumb rather than values
-    fitted to Gold Days. Ticket #12 changes that; until then the interface must not imply
-    a precision the numbers do not have."""
+    """Whether the thresholds behind these calls were fitted to Gold Days (#12) or are the
+    surf community's rule of thumb. Read from the stored call, not from today's threshold
+    file, so a call made before the fit keeps saying so."""
+
+    calibration: Calibration | None
+    """What the fit rests on, or None for calls decided before there was one.
+
+    Present so the interface can state the calibration's limits in the same breath as it
+    drops the uncalibrated warning. Nine Gold Days is a thin basis and the user is told the
+    number rather than left to infer confidence from the absence of a caveat — which is
+    what removing the warning and adding nothing would have done."""
 
     days: list[ForecastDay]
 
@@ -304,8 +329,12 @@ def forecast(store: Annotated[Store, Depends(get_store)]) -> Forecast:
         stale=is_stale(hours[0]["fetched_at"]),
         stale_after_hours=STALE_AFTER_HOURS,
         amplification_model=None if newest is None else newest["amplification_model"],
-        # Nothing to say the thresholds were fitted, so the interface must not imply it.
+        # Both read off the newest stored call rather than off today's threshold file, so a
+        # recalibration cannot retroactively describe calls it did not decide.
         calibrated=newest is not None and newest["calibrated"],
+        calibration=None
+        if newest is None or newest.get("calibration") is None
+        else Calibration(**newest["calibration"]),
         days=[summarise(day, by_date[day], stored.get(day)) for day in sorted(by_date)],
     )
 

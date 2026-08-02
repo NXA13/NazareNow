@@ -114,7 +114,17 @@ CREATE TABLE IF NOT EXISTS day_call (
     predicted_significant_wave_height REAL NOT NULL,
     unit                TEXT NOT NULL,
     amplification_model TEXT NOT NULL,
-    calibrated          INTEGER NOT NULL
+    calibrated          INTEGER NOT NULL,
+    -- The provenance of the thresholds this call was decided against (#12), as JSON.
+    --
+    -- Stored per call rather than read from the threshold file when the API answers,
+    -- because the file changes and the calls do not. A recalibration landing between a
+    -- Pipeline Run and a request would otherwise relabel every historical call with the
+    -- provenance of a fit it was never decided under — which is exactly the kind of
+    -- untraceable prediction #30 added run records to prevent.
+    --
+    -- Null for calls written before #12, which genuinely had no calibration.
+    calibration         TEXT
 );
 
 CREATE INDEX IF NOT EXISTS offshore_conditions_observed_at
@@ -131,10 +141,20 @@ CREATE INDEX IF NOT EXISTS day_call_date
 # eager verification exists to prevent.
 CALL_COLUMNS = (
     "date, issued_at, issued_for_date, status, lead_time_days, reasons, "
-    "predicted_significant_wave_height, unit, amplification_model, calibrated"
+    "predicted_significant_wave_height, unit, amplification_model, calibrated, calibration"
 )
 
 RUN_COLUMNS = "id, started_at, finished_at, outcome, failure_kind, failure_detail"
+
+
+def _optional_json(value: Any) -> str | None:
+    """Serialise a value that may legitimately be absent, keeping absence distinct from `null`.
+
+    A call with no calibration behind it stores SQL NULL rather than the four characters
+    "null", so `_call` can tell "written before #12" from "written with a calibration that
+    happened to be empty" without parsing anything.
+    """
+    return None if value is None else json.dumps(value)
 
 
 class StoreUnavailable(RuntimeError):
@@ -198,7 +218,9 @@ class Store:
 
     @staticmethod
     def _migrate(connection: sqlite3.Connection) -> None:
-        """Add the run reference to tables created before ticket #30.
+        """Add columns to tables created before the tickets that introduced them.
+
+        Ticket #30's run reference, and ticket #12's threshold provenance.
 
         `CREATE TABLE IF NOT EXISTS` leaves an existing table exactly as it found it, so a
         store that predates this ticket would otherwise keep its old shape and fail every
@@ -217,6 +239,15 @@ class Store:
                 connection.execute(
                     f"ALTER TABLE {table} ADD COLUMN run_id INTEGER REFERENCES pipeline_run (id)"
                 )
+
+        # Nullable and not backfilled, for the same reason `run_id` is. A call issued
+        # before #12 was decided against the rule of thumb and had no calibration behind
+        # it; writing today's provenance onto it would claim those calls came from a fit
+        # that did not exist when they were made.
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(day_call)")}
+        if "calibration" not in columns:
+            connection.execute("ALTER TABLE day_call ADD COLUMN calibration TEXT")
+
         connection.commit()
 
     def _verify(self) -> None:
@@ -414,8 +445,8 @@ class Store:
             connection.executemany(
                 "INSERT INTO day_call (run_id, date, issued_at, issued_for_date, status, "
                 "lead_time_days, reasons, predicted_significant_wave_height, unit, "
-                "amplification_model, calibrated) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "amplification_model, calibrated, calibration) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [
                     (
                         run_id,
@@ -429,6 +460,7 @@ class Store:
                         call["unit"],
                         call["amplification_model"],
                         int(call["calibrated"]),
+                        _optional_json(call.get("calibration")),
                     )
                     for call in calls
                 ],
@@ -525,6 +557,7 @@ class Store:
             "unit": row["unit"],
             "amplification_model": row["amplification_model"],
             "calibrated": bool(row["calibrated"]),
+            "calibration": None if row["calibration"] is None else json.loads(row["calibration"]),
         }
 
     def latest_conditions(self) -> dict[str, Any] | None:
