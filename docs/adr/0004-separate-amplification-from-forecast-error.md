@@ -71,15 +71,27 @@ strongly at half the depth, so the decision above is unchanged.
 `swell_wave_period` and `swell_wave_direction` are accepted with a `_previous_dayN` suffix and
 return HTTP 200 with every value null. Four of the Amplification Model's eight features are
 Swell-partition, so the Forecast Error Profile this decision promises can be measured for
-Combined Sea and wind and cannot be measured for those four. #14 quantifies the cost against
-`feature_reliance.csv`: the archived `combined_sea_m` carries the model, and the unmeasurable
-features account for roughly 2% of its big-swell MAE.
+Combined Sea and wind and cannot be measured for those four. The cost looks small rather than
+fatal: `feature_reliance.csv` puts the archived `combined_sea_m` at a standardised coefficient
+of 1.09 against ≤ 0.09 for every other feature, and removing all seven others as a group costs
+less than removing it alone. #14's README carries the figures and the caveat that individual
+ablation costs do not sum, so the split between archived and unarchived is indicative.
+
+Wind is measurable only to four days. Beyond that the day-0 reference stops being one product
+and the profile measures the provider's model blending rather than the weather — #14, finding 4.
 
 One consequence is new rather than corrected. This decision assumes the profile is injected
-around the incoming forecast; #14 finds that on big-swell hours beyond five days the forecast
-carries a **negative bias**, under-reading by 0.23 m at seven days. A profile applied
-symmetrically there would centre the Predictive Distribution on a number already known to be
-low, so #15 inherits an asymmetry this decision did not anticipate.
+symmetrically around the incoming forecast; #14 finds that on big-swell hours beyond five days
+the forecast carries a **negative bias**, under-reading by 0.23 m at seven days *against the
+provider's own settled analysis*. Against the buoy the under-read is larger again. A profile
+applied symmetrically there would centre the Predictive Distribution on a number already known
+to be low, so #15 inherits an asymmetry this decision did not anticipate.
+
+A second consequence for #15. This decision reads as though the Forecast Error Profile is the
+uncertainty; it is one of three components, and at one day's Lead Time the smallest — 0.095 m
+of drift against a 0.217 m Translation residual and a 0.356 m Amplification error. A Predictive
+Distribution built from the profile alone would be far too narrow exactly where a Go Call is
+issued.
 
 The ceiling this decision names is confirmed against the archive rather than the
 documentation: seven days, and nothing beyond it.

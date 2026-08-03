@@ -97,6 +97,21 @@ leaving a reader to infer it from an empty column."""
 
 SWELL_VARIABLES = ("swell_wave_height", "swell_wave_period", "swell_wave_direction")
 
+SAMPLED_DATES = (
+    date(2025, 12, 5),
+    date(2026, 1, 10),
+    date(2026, 3, 15),
+    date(2026, 6, 1),
+    date(2026, 7, 28),
+)
+"""Where `probe_archive` looks. Five dates spread across the archive, not one.
+
+The claim these support is that the Swell partition is missing *throughout*, and one date
+can only ever support "missing on that date" — the difference between a variable this
+provider does not archive and a variable that happens to have a hole in January. Two of the
+five sit inside a Big-Wave Season and two outside it, so a partition that existed only when
+the sea was interesting would show up rather than hide."""
+
 WIND_VARIABLES = ("wind_speed_10m", "wind_direction_10m")
 
 EXPECTED_UNITS = {
@@ -281,51 +296,51 @@ def _merge(parts: list[Runs], name: str) -> Runs:
     return Runs(name=name, readings=merged)
 
 
-def waves() -> Runs:
-    """Combined Sea at every Lead Time, from the marine archive's first run to `END`."""
+def _retrieve(
+    url: str,
+    variables: tuple[str, ...],
+    units: dict[str, str],
+    label: str,
+) -> Runs:
+    """One archive, month by month, from the wave archive's first run to `END`.
+
+    Both archives are retrieved over the *wave* span rather than each over its own. The
+    wind archive is the deeper of the two, but #14 pairs them, and a wind hour with no wave
+    hour beside it has nothing to be part of. How much deeper wind runs is recorded in
+    `WIND_ARCHIVE_START` and reported by the README from there.
+
+    The two callers differ only in host, variables, unit parameter and cache prefix, so
+    those are the arguments; everything else is the same request. `units` rather than a
+    fixed pair because the marine host names its length unit and the weather host its wind
+    unit, and sending the wrong one is accepted and ignored.
+    """
     parts = []
     for start, end in _months(WAVE_ARCHIVE_START, END):
         body = _get(
-            MARINE_URL,
+            url,
             {
                 "latitude": LATITUDE,
                 "longitude": LONGITUDE,
                 "start_date": start.isoformat(),
                 "end_date": end.isoformat(),
-                "hourly": ",".join(_previous_day_names(WAVE_VARIABLES)),
+                "hourly": ",".join(_previous_day_names(variables)),
                 "timezone": TIMEZONE,
-                "length_unit": "metric",
+                **units,
             },
-            f"marine_{start:%Y-%m}",
+            f"{label}_{start:%Y-%m}",
         )
-        parts.append(_parse(body, f"marine {start:%Y-%m}", WAVE_VARIABLES))
-    return _merge(parts, "marine combined sea runs")
+        parts.append(_parse(body, f"{label} {start:%Y-%m}", variables))
+    return _merge(parts, label)
 
 
-def wind(start: date | None = None) -> Runs:
-    """Wind at every Lead Time.
+def waves() -> Runs:
+    """Combined Sea at every Lead Time. No Swell partition — see `probe_archive`."""
+    return _retrieve(MARINE_URL, WAVE_VARIABLES, {"length_unit": "metric"}, "marine")
 
-    Defaults to the wave archive's start rather than its own, because #14 pairs the two and
-    a wind hour with no wave hour beside it has nothing to be part of. `start` is exposed so
-    the README can report how much deeper the wind archive runs than the waves.
-    """
-    parts = []
-    for chunk_start, chunk_end in _months(start or WAVE_ARCHIVE_START, END):
-        body = _get(
-            PREVIOUS_RUNS_URL,
-            {
-                "latitude": LATITUDE,
-                "longitude": LONGITUDE,
-                "start_date": chunk_start.isoformat(),
-                "end_date": chunk_end.isoformat(),
-                "hourly": ",".join(_previous_day_names(WIND_VARIABLES)),
-                "timezone": TIMEZONE,
-                "wind_speed_unit": "kmh",
-            },
-            f"wind_{chunk_start:%Y-%m}",
-        )
-        parts.append(_parse(body, f"wind {chunk_start:%Y-%m}", WIND_VARIABLES))
-    return _merge(parts, "previous-runs wind")
+
+def wind() -> Runs:
+    """Wind at every Lead Time, from the previous-runs host."""
+    return _retrieve(PREVIOUS_RUNS_URL, WIND_VARIABLES, {"wind_speed_unit": "kmh"}, "wind")
 
 
 def probe_archive() -> list[tuple[str, str, str]]:
@@ -341,28 +356,38 @@ def probe_archive() -> list[tuple[str, str, str]]:
     believe it had a swell forecast archive and would find out otherwise only when the
     profile came back computed on nothing.
     """
-    sampled = date(2026, 1, 10)
     findings: list[tuple[str, str, str]] = []
 
-    def count(url: str, variable: str, extra: dict[str, Any], key: str) -> int:
-        body = _get(
-            url,
-            {
-                "latitude": LATITUDE,
-                "longitude": LONGITUDE,
-                "start_date": sampled.isoformat(),
-                "end_date": sampled.isoformat(),
-                "hourly": variable,
-                "timezone": TIMEZONE,
-                **extra,
-            },
-            key,
-        )
-        series = (body.get("hourly") or {}).get(variable) or []
-        return sum(1 for value in series if value is not None)
+    def count(url: str, variable: str, extra: dict[str, Any], key: str) -> tuple[int, int]:
+        """Populated hours out of hours requested, summed across every sampled date.
+
+        Sampled across the archive's span rather than on one date, because the claim being
+        made is that the Swell partition is missing *throughout* — and a single date can
+        only ever support "missing on that date". One request per date rather than one
+        spanning request so a date the endpoint refuses outright is visible as a refusal.
+        """
+        populated = requested = 0
+        for sampled in SAMPLED_DATES:
+            body = _get(
+                url,
+                {
+                    "latitude": LATITUDE,
+                    "longitude": LONGITUDE,
+                    "start_date": sampled.isoformat(),
+                    "end_date": sampled.isoformat(),
+                    "hourly": variable,
+                    "timezone": TIMEZONE,
+                    **extra,
+                },
+                f"{key}_{sampled:%Y-%m-%d}",
+            )
+            series = (body.get("hourly") or {}).get(variable) or []
+            populated += sum(1 for value in series if value is not None)
+            requested += len(series)
+        return populated, requested
 
     for variable in WAVE_VARIABLES:
-        hours = count(
+        hours, asked = count(
             MARINE_URL,
             f"{variable}_previous_day1",
             {"length_unit": "metric"},
@@ -371,13 +396,13 @@ def probe_archive() -> list[tuple[str, str, str]]:
         findings.append(
             (
                 f"marine {variable}_previous_day1",
-                f"{hours}/24 hours",
+                f"{hours}/{asked} hours",
                 "archived" if hours else "accepted, returns null",
             )
         )
 
     for variable in SWELL_VARIABLES:
-        hours = count(
+        hours, asked = count(
             MARINE_URL,
             f"{variable}_previous_day1",
             {"length_unit": "metric"},
@@ -386,13 +411,13 @@ def probe_archive() -> list[tuple[str, str, str]]:
         findings.append(
             (
                 f"marine {variable}_previous_day1",
-                f"{hours}/24 hours",
+                f"{hours}/{asked} hours",
                 "archived" if hours else "**accepted, returns null** — not archived",
             )
         )
 
     for variable in WIND_VARIABLES:
-        hours = count(
+        hours, asked = count(
             PREVIOUS_RUNS_URL,
             f"{variable}_previous_day1",
             {"wind_speed_unit": "kmh"},
@@ -401,7 +426,7 @@ def probe_archive() -> list[tuple[str, str, str]]:
         findings.append(
             (
                 f"previous-runs {variable}_previous_day1",
-                f"{hours}/24 hours",
+                f"{hours}/{asked} hours",
                 "archived" if hours else "accepted, returns null",
             )
         )
@@ -411,7 +436,8 @@ def probe_archive() -> list[tuple[str, str, str]]:
 
 def main() -> int:
     if "--probe" in sys.argv:
-        print("What the archives carry, sampled on 2026-01-10:\n")
+        dates = ", ".join(f"{sampled:%Y-%m-%d}" for sampled in SAMPLED_DATES)
+        print(f"What the archives carry, sampled on {dates}:\n")
         print(f"  {'variable':48s} {'coverage':14s} verdict")
         for label, coverage, verdict in probe_archive():
             print(f"  {label:48s} {coverage:14s} {verdict}")

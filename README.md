@@ -217,9 +217,11 @@ the site actually runs; the sixth scores one it does not.
 The eighth self-tests the arithmetic behind the Forecast Error Profile: bearings that wrap past
 north, the split between bias a constant correction removes and noise it cannot, and that the
 big-swell subset is chosen on what the sea turned out to be rather than on what the forecast
-said — the second of which would silently drop every big swell the forecast missed and flatter
-exactly the failure the profile exists to find. See
-[`analysis/forecast_error/`](./analysis/forecast_error/).
+said. Choosing it on the forecast instead would silently drop every big swell the forecast
+missed, flattering exactly the failure the profile exists to find. It also pins the subset to
+the marine archive for variables held on another host, which shipped wrong once: wind is
+archived elsewhere and carries no wave height, so deciding its subset from its own response
+emptied it without erroring. See [`analysis/forecast_error/`](./analysis/forecast_error/).
 
 **The backtest and the calibration** read only free Open-Meteo data, so they run too, though
 the first downloads about 10 MB the first time:

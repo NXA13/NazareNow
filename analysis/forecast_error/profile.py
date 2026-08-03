@@ -183,12 +183,12 @@ def load_proxy_target() -> dict[str, float]:
             f"{TRAINING_DATASET.relative_to(ROOT)} is missing. It is gitignored and rebuilt "
             "by:\n    .venv/Scripts/python.exe analysis/training_dataset/build.py"
         )
-    horizon = WAVE_ARCHIVE_START.isoformat()
+    first_archived_hour = WAVE_ARCHIVE_START.isoformat()
     observed: dict[str, float] = {}
     with TRAINING_DATASET.open(newline="", encoding="utf-8") as handle:
         for row in csv.DictReader(handle):
             at = row["at_local"]
-            if at < horizon:
+            if at < first_archived_hour:
                 continue
             value = row["proxy_target_height_m"]
             if value:
@@ -196,12 +196,20 @@ def load_proxy_target() -> dict[str, float]:
     return observed
 
 
-def against_analysis(runs: Runs, variable: str) -> list[Summary]:
+def against_analysis(runs: Runs, variable: str, sea: Runs) -> list[Summary]:
     """Drift within Open-Meteo: the lead-N forecast against its own day-0 best match.
 
     Both readings come out of the same cached response, so nothing here is our own sampling
     of the provider drifting between two calls.
+
+    `sea` carries the day-0 Combined Sea that decides which hours were big, and is passed in
+    rather than read off `runs` because **wind is archived on a different host**. Its
+    responses hold no `wave_height` at all, so classifying wind hours from their own
+    response is not merely inaccurate — it silently yields an empty subset, and wind error
+    on big-swell hours is exactly what a Watch tier issued days out depends on.
     """
+    big_hours = big_sea_hours(sea)
+
     summaries = []
     for lead in LEAD_TIMES:
         pairs = runs.pairs(variable, lead)
@@ -216,21 +224,33 @@ def against_analysis(runs: Runs, variable: str) -> list[Summary]:
         big = [
             error(variable, forecast, reference)
             for hour, forecast, reference in pairs
-            if _reference_height(runs, hour) >= BIG_SWELL_M
+            if hour in big_hours
         ]
         if big:
             summaries.append(summarise(variable, lead, "big swell", big))
     return summaries
 
 
-def _reference_height(runs: Runs, hour: str) -> float:
-    """The day-0 Combined Sea at an hour, or zero where it is missing.
+def big_sea_hours(sea: Runs) -> set[str]:
+    """The hours whose day-0 Combined Sea cleared the big-swell bar.
 
-    Zero rather than a raise: an hour with no reference height simply falls outside the
-    big-swell subset, and it has already been excluded from the paired errors by the time
-    this is asked.
+    Resolved once, from the source that actually carries wave height, and it **raises if
+    that source carries none**. Deciding the subset hour by hour with a defaulting lookup is
+    what let wind be classified from its own response: wind is archived on a different host
+    and its readings hold no `wave_height`, so every hour defaulted to "not big", the subset
+    came out empty, and an absent table is indistinguishable from a calm nine months.
     """
-    return runs.readings.get(hour, {}).get(0, {}).get("wave_height", 0.0)
+    hours = {
+        hour
+        for hour, by_lead in sea.readings.items()
+        if by_lead.get(0, {}).get("wave_height", 0.0) >= BIG_SWELL_M
+    }
+    if not any("wave_height" in by_lead.get(0, {}) for by_lead in sea.readings.values()):
+        raise ValueError(
+            f"{sea.name} carries no day-0 wave_height, so the big-swell subset cannot be "
+            "decided from it — pass the marine runs as `sea`"
+        )
+    return hours
 
 
 def against_target(runs: Runs, observed: dict[str, float]) -> list[Summary]:
@@ -270,7 +290,7 @@ def stability(runs: Runs, variable: str) -> list[tuple[int, str, int, float]]:
     for seven consecutive months and is unbiased at leads 4 and 7 either side of it.
 
     A month-by-month table is what distinguishes the two explanations. A forecast that is
-    genuinely worse at one horizon is wrong in both directions and averages out; a reference
+    genuinely worse at one Lead Time is wrong in both directions and averages out; a reference
     that switches model is wrong in one direction for as long as the switch is in place.
     """
     rows = []
@@ -300,9 +320,9 @@ def breaks_monotonicity(summaries: list[Summary]) -> list[int]:
 
     ADR 0004's whole premise is that "forecast error grows with Lead Time". That is a claim
     about the world, and it is also the assumption that makes a day-0 reference usable: if
-    the same product answers at every horizon, a longer lead can only be more uncertain. A
+    the same product answers at every Lead Time, a longer one can only be more uncertain. A
     Lead Time where RMSE goes *down* falsifies one of the two, and the second is far likelier
-    — the reference is not one product at that horizon.
+    — the reference is not one product at that Lead Time.
 
     Preferred over any threshold on how large a bias has to be before it looks structural.
     A threshold would need a number nobody can defend; this needs only the ADR's own claim,
@@ -483,7 +503,11 @@ def check() -> int:
             "2026-01-01T01:00": {0: {"wave_height": 4.0}, 1: {"wave_height": 3.5}},
         },
     )
-    big = [row for row in against_analysis(subset_runs, "wave_height") if row.subset == "big swell"]
+    big = [
+        row
+        for row in against_analysis(subset_runs, "wave_height", sea=subset_runs)
+        if row.subset == "big swell"
+    ]
     if len(big) != 1 or big[0].hours != 1:
         failures.append(
             "against_analysis: the big-swell subset must be chosen on the reference, "
@@ -491,6 +515,46 @@ def check() -> int:
         )
     else:
         expect_close("the big-swell hour is the one that was big", big[0].bias, -0.5)
+
+    # A variable archived on a host that carries no wave height — wind — must still get a
+    # big-swell subset, decided from the marine runs passed as `sea`. This shipped wrong:
+    # a defaulting lookup classified every wind hour as small, the subset came out empty,
+    # and an absent table read exactly like a calm nine months. Both review axes found it.
+    off_host = Runs(
+        name="wind",
+        readings={
+            "2026-01-01T00:00": {0: {"wind_speed_10m": 20.0}, 1: {"wind_speed_10m": 26.0}},
+            "2026-01-01T01:00": {0: {"wind_speed_10m": 18.0}, 1: {"wind_speed_10m": 19.0}},
+        },
+    )
+    off_host_sea = Runs(
+        name="marine",
+        readings={
+            "2026-01-01T00:00": {0: {"wave_height": 4.0}},
+            "2026-01-01T01:00": {0: {"wave_height": 1.0}},
+        },
+    )
+    windy = [
+        row
+        for row in against_analysis(off_host, "wind_speed_10m", sea=off_host_sea)
+        if row.subset == "big swell"
+    ]
+    if len(windy) != 1 or windy[0].hours != 1:
+        failures.append(
+            "against_analysis: a variable archived on another host must still get a "
+            f"big-swell subset from `sea`, got {[(row.subset, row.hours) for row in windy]}"
+        )
+    else:
+        expect_close("the big wind hour is the one with the big sea", windy[0].bias, 6.0)
+
+    # And passing the wrong `sea` must fail loudly rather than yield an empty subset,
+    # which is the shape the original bug took.
+    try:
+        big_sea_hours(off_host)
+    except ValueError:
+        pass
+    else:
+        failures.append("big_sea_hours: a source with no wave_height must raise, not return {}")
 
     # --- the reference-stability flag ---------------------------------------------------
     # A profile whose error grows every day is the shape ADR 0004 assumes and must pass
@@ -542,15 +606,26 @@ def main() -> int:
 
     drift: list[Summary] = []
     for variable in ("wave_height", "wave_period", "wave_direction"):
-        drift.extend(against_analysis(wave_runs, variable))
+        drift.extend(against_analysis(wave_runs, variable, sea=wave_runs))
     for variable in ("wind_speed_10m", "wind_direction_10m"):
-        drift.extend(against_analysis(wind_runs, variable))
+        # `sea` is the marine runs even here: "big swell" is a property of the sea, not of
+        # the variable being measured, and wind's own host carries no wave height.
+        drift.extend(against_analysis(wind_runs, variable, sea=wave_runs))
 
     total = against_target(wave_runs, observed)
 
     print(
         f"Forecast Error Profile, {WAVE_ARCHIVE_START:%Y-%m-%d} onward — "
         f"{len(wave_runs)} archived hours, {len(observed)} of them with a Proxy Target."
+    )
+    # The Proxy Target stops well before the archive does, and the total-error tables are
+    # bounded by it rather than by the retrieval. Printed rather than left to be inferred
+    # from a row count: the two references are measured over different spans, and a reader
+    # comparing them needs to know that before comparing them.
+    print(
+        f"  The Proxy Target runs {min(observed)} to {max(observed)}, ending where #9's "
+        "dataset ends — every total-error figure below is bounded by that, not by the "
+        "archive."
     )
 
     print_table("Drift within Open-Meteo (lead N against its own day 0)", drift, "all hours")
@@ -571,7 +646,7 @@ def main() -> int:
             leads = ", ".join(str(lead) for lead in flagged)
             print(
                 f"  {variable:16s} NO — RMSE falls at lead {leads}. The day-0 reference is "
-                "not one product at every horizon here; see reference_stability.csv for "
+                "not one product at every Lead Time here; see reference_stability.csv for "
                 "the months. Not injectable as measured."
             )
         else:

@@ -19,9 +19,25 @@ distribution and the system's stated confidence means something.
 
 `download_runs.py` is separate and cached under gitignored `data/raw/forecast_runs/`, so
 re-deriving the profile does not re-download nine months of ocean and cannot pick up a
-different one between two runs. `profile.py` also needs
-`analysis/training_dataset/output/training_dataset.csv`, which is gitignored and rebuilt by
-`analysis/training_dataset/build.py`.
+different one between two runs.
+
+**What "reproducible by a single command" honestly means here.** Only `profile.py --check` runs
+from a clean checkout; it needs nothing but the repository. The rest sits on a retrieval chain:
+
+| Step | Needs | Credentials |
+|---|---|---|
+| `download_runs.py` | network | none — Open-Meteo is free |
+| `analysis/training_dataset/build.py` | `data/raw/{buoy,reanalysis,hindcast}/` | **Copernicus, for two of the three** |
+| `profile.py` | both of the above | inherited |
+
+So `profile.py` is one command **on a machine that already has the archives**, and on a fresh
+clone it is the last of several — two of which need Copernicus credentials that only work in a
+real terminal. That is the same shape `analysis/training_dataset/README.md` describes and the
+same honest qualification: a single command over a documented, re-runnable retrieval chain, not
+a single command from nothing.
+
+Only the total-error tables depend on the training dataset. The drift tables and the
+monotonicity check need `download_runs.py` alone, and therefore no credentials at all.
 
 ## The archive is two archives, and ADR 0004 describes only one of them
 
@@ -52,22 +68,30 @@ unblocks #14.
 
 This is the harder limit, and it is invisible from a status code.
 
-| Variable | Coverage on a sampled day | Verdict |
-|---|---|---|
-| `wave_height_previous_day1` | 24/24 hours | archived |
-| `wave_period_previous_day1` | 24/24 hours | archived |
-| `wave_direction_previous_day1` | 24/24 hours | archived |
-| `swell_wave_height_previous_day1` | **0/24 hours** | **accepted, returns null** |
-| `swell_wave_period_previous_day1` | **0/24 hours** | **accepted, returns null** |
-| `swell_wave_direction_previous_day1` | **0/24 hours** | **accepted, returns null** |
-| `wind_speed_10m_previous_day1` | 24/24 hours | archived |
-| `wind_direction_10m_previous_day1` | 24/24 hours | archived |
+Sampled on five dates spread across the archive — 2025-12-05, 2026-01-10, 2026-03-15,
+2026-06-01, 2026-07-28 — two inside a Big-Wave Season and two outside it, so a partition that
+existed only when the sea was interesting would show up rather than hide.
 
-The swell rows return **HTTP 200 with the variable present and every value null**, at every
-date tested across the archive's whole span. Code that requested them and checked the status
-would believe it had a swell forecast archive and would find out otherwise only when the
-profile came back computed on nothing — this project's characteristic failure, a response that
-looks like agreement and is not. `download_runs.py --probe` regenerates the table.
+| Variable | Coverage | Verdict |
+|---|---|---|
+| `wave_height_previous_day1` | 120/120 hours | archived |
+| `wave_period_previous_day1` | 120/120 hours | archived |
+| `wave_direction_previous_day1` | 120/120 hours | archived |
+| `swell_wave_height_previous_day1` | **0/120 hours** | **accepted, returns null** |
+| `swell_wave_period_previous_day1` | **0/120 hours** | **accepted, returns null** |
+| `swell_wave_direction_previous_day1` | **0/120 hours** | **accepted, returns null** |
+| `wind_speed_10m_previous_day1` | 120/120 hours | archived |
+| `wind_direction_10m_previous_day1` | 120/120 hours | archived |
+
+The swell rows return **HTTP 200 with the variable present and every value null**, on every
+date sampled. Code that requested them and checked the status would believe it had a swell
+forecast archive and would find out otherwise only when the profile came back computed on
+nothing — this project's characteristic failure, a response that looks like agreement and is
+not. `download_runs.py --probe` regenerates the table.
+
+One date would only ever have supported "missing on that date", which is a different claim
+from "not archived" — the difference between a variable this provider does not carry and one
+with a hole in January.
 
 ### What that costs, measured rather than shrugged at
 
@@ -111,16 +135,31 @@ nothing else.
 | 7 d | 6,008 | −0.050 m | 0.520 m | −0.90 to 0.74 m | 0.9% |
 
 Roughly **0.07 m of extra uncertainty per day of Lead Time**, and essentially unbiased at every
-horizon — the bias share never exceeds 0.9%, meaning a constant correction would remove under
+Lead Time — the bias share never exceeds 0.9%, meaning a constant correction would remove under
 1% of the squared error.
 
-**This is the quantity #15 should inject**, and the reason is worth stating: the product's
-standing offset from the Hindcast the model was fitted on is already handled by the
+**This is the *forecast* component #15 should inject**, and the reason is worth stating: the
+product's standing offset from the Hindcast the model was fitted on is already handled by the
 Translations in `amplification.json`. A profile measured against the buoy instead would carry
 that offset too, and injecting it would count the same error twice.
 
 **Nothing to correct, only spread to add.** Because bias share is ~0, #15 can perturb around
 the incoming forecast rather than around a shifted centre.
+
+**It is a component, not the whole uncertainty, and #15 must not treat it as the whole.** Three
+sources stack between an incoming forecast and a Predictive Distribution, and this table is only
+the first:
+
+| Source | Size | Where it is measured |
+|---|---|---|
+| forecast drift at 1 day | 0.095 m | this table |
+| the Translation's residual | 0.217 m | `amplification.json`, `residual_rmse` |
+| the Amplification Model's own big-swell error | 0.356 m | `feature_reliance.csv` |
+
+At one day out the drift is the **smallest** of the three by some margin. A Predictive
+Distribution built from drift alone would be roughly four times too narrow at short Lead Time,
+and it would be narrow in exactly the situation a user is most likely to act on — a Go Call
+issued close in. #15 has to carry all three; #14 measures one of them.
 
 ## Finding 2 — at size, long-range forecasts under-read the sea
 
@@ -134,9 +173,11 @@ same bar `analysis/amplification_model/train.py` selects on. 1,634 hours.
 | 6 d | −0.138 m | 0.622 m | −1.12 to 0.84 m | 4.9% |
 | 7 d | **−0.230 m** | 0.753 m | −1.24 to 0.97 m | 9.3% |
 
-Two things change on the big days. The spread is 40–60% wider than the all-hours figure at
+Two things change on the big days. The spread is 37–60% wider than the all-hours figure at
 every Lead Time, and beyond five days a **negative bias appears**: a seven-day forecast of a
-big swell under-reads what the same model later settles on by 0.23 m on average.
+big swell under-reads what the same model later settles on by 0.23 m on average. That is drift
+against the provider's own settled analysis, not against the sea — the under-read against the
+buoy is larger, and finding 3 has it.
 
 That direction is the unfavourable one for this system. A Watch tier issued at six or seven
 days is reading forecasts that systematically under-state exactly the swells it exists to
@@ -151,7 +192,10 @@ failure this table exists to find.
 ## Finding 3 — drift is not where most of the uncertainty lives
 
 `output/total_error_by_lead_time.csv`. The same forecasts against the **Proxy Target** measured
-at Monican02, over the 1,593 hours the two records share.
+at Monican02, over the 1,593 hours the two records share — **2025-11-26 to 2026-02-20**. That
+span is bounded at the far end by #9's dataset, not by the archive, and at the near end by a
+buoy gap. Everything in this section rests on those 1,593 hours, a quarter of the 6,192 the
+drift tables use.
 
 | Lead | All hours RMSE | Big swell RMSE | Big swell bias | Bias share |
 |---|---|---|---|---|
@@ -165,15 +209,32 @@ standing gap between what Open-Meteo says about this point and what the buoy mea
 
 And that gap is **systematic, not noise**: on big-swell hours the provider under-reads the
 Proxy Target by 0.39 m at one day and 0.69 m at seven, with a fifth to a third of the squared
-error removable by a constant correction. This is the direct answer to #14's question about
-whether providers are biased rather than merely noisy. They are, substantially, and in the
-direction that under-calls the days that matter.
+error removable by a constant correction.
 
-**This is not the system's error, and must not be quoted as it.** These are raw provider
-readings against the buoy with nothing in between. A Pipeline Run puts two stages between
-them — the Translations restate Open-Meteo in Hindcast units, and the Amplification Model maps
-Hindcast conditions to the Proxy Target — and absorbing exactly this offset is what those
-stages are for. What the table establishes is the *shape* of the error, not its magnitude
+### Which table answers #14's bias question
+
+#14 asks whether "providers are systematically biased rather than merely noisy". The two
+references answer two different readings of that, and blurring them would misattribute the
+result:
+
+- **As forecasters, they are not biased.** Drift's bias share is under 1% at every Lead Time on
+  all hours. When Open-Meteo revises its view of a date it revises in both directions about
+  equally, and there is nothing to correct — only spread to inject. The exception is big swells
+  beyond five days, where finding 2 shows a real forecast bias emerging.
+- **As a description of this mooring, they are.** The 0.39 m under-read is mostly *not* forecast
+  bias. It is present at one day's Lead Time, where there is almost no forecasting left to be
+  wrong about, so most of it is the standing difference between a model grid node and a buoy
+  15 km offshore. Calling that provider bias would blame the forecast for a representation gap.
+
+The honest summary: the systematic part is largely **not in the forecast**, and the part that is
+in the forecast is largely **not systematic** — until size and range are both extreme, which is
+finding 2.
+
+**Neither table is the system's error, and neither must be quoted as it.** These are raw
+provider readings against the buoy with nothing in between. A Pipeline Run puts two stages
+between them — the Translations restate Open-Meteo in Hindcast units, and the Amplification
+Model maps Hindcast conditions to the Proxy Target — and absorbing exactly this gap is what
+those stages are for. What the table establishes is the *shape* of the gap, not its magnitude
 after correction: it is systematic, it is size-dependent, and it grows with Lead Time.
 
 ## Finding 4 — the wind profile at long range is a provider artefact, not weather
@@ -192,7 +253,8 @@ sampling accident: leads 5 and 6 run +3 to +9 km/h high for seven consecutive mo
 2025-11, then vanish in June.
 
 **Suspected cause, not a documented one.** Open-Meteo's best match blends underlying models by
-horizon, so the day-0 reference and a lead-5 forecast may not be the same model — which would
+how far ahead each reaches, so the day-0 reference and a lead-5 forecast may not be the same
+model — which would
 put a step in the comparison exactly where the blend boundary sits. That is a plausible
 mechanism and it is not confirmed; the provider documents no per-lead model composition and
 nothing here reads its internals. What is measured is the step; the cause is an inference.
@@ -200,6 +262,10 @@ nothing here reads its internals. What is measured is the step; the cause is an 
 The wave series is the reason to believe it is the reference rather than the pairing: both go
 through the same code, and `wave_height` shows monthly biases within ±0.16 m at every Lead Time
 with no sign of a step.
+
+It is worse on the days that matter. Restricted to big-swell hours the lead-5 bias rises to
+**+6.78 km/h** with a 27.9% bias share, against −0.33 km/h at lead 1 — so the artefact is
+largest exactly where a Watch tier would be reading it.
 
 `profile.py` prints this check on every run rather than leaving it to a reader, because a
 profile injected from leads 5 and 6 as measured would encode a provider artefact as though it
@@ -234,14 +300,14 @@ be a stated exclusion, not a silent one.
 
 [#51](https://github.com/NXA13/NazareNow/issues/51) asks whether the light-wind exemption,
 fitted at 16.5 km/h with the windiest Gold Day it must admit at 16.3, survives being applied to
-wind that crosses a product boundary untranslated. That is a question about products, and this
-is a measurement about Lead Time, so nothing here answers it.
+wind that crosses a product boundary untranslated. That is a question about **products**; this
+is a measurement about **Lead Time**. Nothing here measures the product boundary, so nothing
+here settles #51.
 
-It is worth putting the two numbers beside each other anyway: the exemption's margin is
-**0.2 km/h**, and Open-Meteo's wind forecast moves by **3.18 km/h RMSE between one day out and
-its own settled analysis**. Whatever the product boundary turns out to cost, the exemption is
-already being applied to a number carrying an order of magnitude more movement than the margin
-it is decided on.
+What this does add is a second, independent reason the margin is thin. The exemption's margin is
+**0.2 km/h**. Open-Meteo's wind moves by **3.18 km/h RMSE** between one day out and its own
+settled analysis — before any product boundary is crossed. Whatever #51 finds the boundary
+costs, it is being added to this, not measured instead of it.
 
 ## Files
 
