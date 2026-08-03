@@ -1,0 +1,6 @@
+model,provider,first_hour,last_hour,hours_requested,null_hours,interior_null_hours,horizon_days
+meteofrance_wave,MeteoFrance,2026-08-03T00:00,2026-08-09T23:00,168,0,0,7.0
+dwd_ewam,DWD,2026-08-03T00:00,2026-08-06T07:00,168,88,0,3.3
+dwd_gwam,DWD,2026-08-03T00:00,2026-08-09T23:00,168,0,0,7.0
+ncep_gfswave025,NCEP,2026-08-03T00:00,2026-08-09T23:00,168,0,0,7.0
+ncep_gfswave016,NCEP,2026-08-03T00:00,2026-08-09T23:00,168,0,0,7.0
