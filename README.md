@@ -157,13 +157,14 @@ downloaded data, so CI checks them statically:
 .venv/Scripts/python.exe -m ruff format --check analysis/
 ```
 
-Four exceptions, all fully runnable because they need no credentials:
+Five exceptions, all fully runnable because they need no credentials:
 
 ```bash
 .venv/Scripts/python.exe analysis/gold_days/build.py --check
 .venv/Scripts/python.exe analysis/backtest/swell.py --check
 .venv/Scripts/python.exe analysis/calibration/calibrate.py --check
 .venv/Scripts/python.exe analysis/model_spread/probe.py --check
+.venv/Scripts/python.exe analysis/training_dataset/build.py --check
 ```
 
 The Gold Day list is hand-written in `analysis/gold_days/README.md` and built from it into
@@ -188,6 +189,13 @@ particular that each *provider* votes once. Five model identifiers at Praia do N
 organisations, and counting them as five makes the ensemble look twice as corroborated as it
 is. See [`analysis/model_spread/`](./analysis/model_spread/), which is groundwork for #8 rather
 than anything the running system uses.
+
+The fifth self-tests how the training dataset joins its sources: that an hour missing either
+the Proxy Target or the Hindcast is dropped rather than filled from its neighbour, that the
+one local stamp a year naming two UTC hours gets no wind rather than a guess, that a season
+boundary is read on the Nazaré local day rather than the UTC instant, and that the same rows
+written twice are byte-identical. See
+[`analysis/training_dataset/`](./analysis/training_dataset/).
 
 **The backtest and the calibration** read only free Open-Meteo data, so they run too, though
 the first downloads about 10 MB the first time:

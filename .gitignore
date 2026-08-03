@@ -21,6 +21,11 @@ dist/
 # Data — raw archives and trained models are large and reproducible; do not commit
 data/raw/
 data/interim/
+
+# The training dataset itself: ~10 MB, rebuilt byte-identically by one command from the
+# raw archives above (#9). Its coverage table and SHA-256 are committed instead, so a
+# rebuild can be verified without carrying the file in every clone forever.
+analysis/training_dataset/output/training_dataset.csv
 *.nc
 *.parquet
 models/*.pkl
