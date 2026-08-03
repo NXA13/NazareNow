@@ -4,8 +4,9 @@ ADR 0004 decided that the Amplification Model learns from a Hindcast rather than
 forecasts, and named **ERA5** as the Hindcast in passing. That name is no longer true. #36
 established that Copernicus publishes a genuine Swell partition back to 1980, #39 ingested
 `IBI_MULTIYEAR_WAV_005_006` / `cmems_mod_ibi_wav_my_0.027deg_PT1H-i` and refit the calibration
-against it, and every wave figure the project now quotes is measured on IBI. ERA5 stays, but
-only for wind.
+against it, and every wave threshold the project ships was fitted against IBI — then translated
+into the operational units a Pipeline Run reads, which is why `thresholds.json` carries numbers
+in Open-Meteo units and the translation constants beside them. ERA5 stays, but only for wind.
 
 We record that split here. It was made in code and in measurement without ever being written
 down as a decision, and ADR 0004 — the only ADR that names a source at all — still names the
@@ -15,22 +16,22 @@ one we left.
 
 ADR 0004's decision is the *separation*: learn the physical relationship from clean inputs,
 characterise forecast unreliability independently, and combine them at serving time. Swapping
-one reanalysis for another leaves that entirely intact. By ADR 0009's test — does this change
-the shape of the earlier decision, or only its numbers? — the correction to ADR 0004 is an
-amendment, and it carries one.
+one Hindcast source for another leaves that entirely intact. By ADR 0009's test — does this
+change the shape of the earlier decision, or only its numbers? — the correction to ADR 0004 is
+an amendment, and it carries one.
 
 What does not fit inside that amendment is that **choosing IBI was its own decision**. ADR 0004
 did not make it; it assumed a source while deciding something else. This one had real
-alternatives, a real cost, and a result a reader will not guess: the project reads two
-reanalysis products for one set of Offshore Conditions, and a reader who finds ERA5 wind beside
-IBI waves is entitled to ask why. Recording that as a footnote to a decision about forecast
+alternatives, a real cost, and a result a reader will not guess: the Hindcast is assembled from
+two products rather than one, and a reader who finds ERA5 wind beside IBI waves is entitled to
+ask why. Recording that as a footnote to a decision about forecast
 error would file the reasoning where nobody looking for it would search. ADR 0009 and ADR 0010
 set the precedent of a new record over an edit.
 
 ## What forced it
 
-ERA5 was never chosen for waves so much as inherited. It was the only free hindcast reaching
-back far enough, and it carries the **Combined Sea** only — no Swell partition at all. The
+ERA5 was never chosen for waves so much as inherited. It was the only free Hindcast source
+reaching back far enough, and it carries the **Combined Sea** only — no Swell partition. The
 Heuristic Baseline's conditions are stated in Swell terms, so #11 had to *reconstruct* Swell
 from ERA5's Combined Sea, and that reconstruction recovered **41% of threshold crossings** at
 the then-shipped 13 s bar. Its nearest node sits **25.7 km WSW** of the Proxy Target, far
@@ -69,8 +70,9 @@ equivocal on the partition question — its discriminating-and-big subset holds 
 finding rests on IBI alone, and `analysis/overlap/README.md` says so rather than claiming two
 products.
 
-**Taking wind from Copernicus too.** The wave reanalysis carries no wind variables, so a single
-supplier would mean a third product, another download and another refit — for an input that
+**Taking wind from Copernicus too.** The IBI wave product carries no wind variables — only wind
+*wave* — so a single supplier would mean a third product, another download and another refit,
+for an input that
 blocks nothing in the record once ADR 0009's light-wind exemption is applied. ERA5 wind is
 adequate, already cached, and already validated on arrival. This is the reason ERA5 stays, and
 the reason the project reads two products rather than one.
@@ -79,7 +81,7 @@ the reason the project reads two products rather than one.
 
 **The thresholds had to be refit, and were.** IBI reads the swell period roughly **+0.5 s** high
 against the operational feed, with a regression slope near 0.85 — a compressed range, not a
-clean offset. Carrying the shipped 13.0 s Go Call bar onto the reanalysis unchanged would have
+clean offset. Carrying the shipped 13.0 s Go Call bar onto IBI unchanged would have
 fired **128% more often**. #39 refit rather than carried across, which is why the numbers in
 `thresholds.json` moved and why figures measured in ERA5-era units are not comparable to figures
 measured now.
@@ -101,7 +103,7 @@ right bound for a backtest and the wrong one for training. Recorded as limitatio
 shortfall, when in fact it is the range mismatch above.
 
 **A second train/serve skew, which ADR 0004 does not cover.** ADR 0004 anticipated one — clean
-hindcast in training, noisy forecast at serving — and answers it with a Forecast Error Profile.
+Hindcast in training, noisy forecast at serving — and answers it with a Forecast Error Profile.
 Training on a *different product* adds something that profile cannot touch: perturbing a forecast
 by its own error distribution does not correct a systematic offset between two models, and with
 a slope of ~0.85 no additive correction undoes it either. #13 handled it by keeping the fit in
@@ -113,19 +115,26 @@ here.
 ## What this does not settle
 
 **Whether the IBI-to-operational mapping is stable across the record.** It is measured on
-2022–2025, the only span where both series exist, and *assumed* to hold earlier. Two documented
-reasons to doubt it: the SAR spectra that constrain the swell partitions begin March 2016, and 7
-of the 29 newly available Gold Days fall before that; the model source moved from ECWAM cy38 to
-cy42 in 2020. Neither can be checked with the data this project has.
+2022–2025, the only span where both series exist, and *assumed* to hold earlier. One documented
+reason to doubt it: the SAR spectra that constrain the swell partitions begin March 2016, and 7
+of the 29 newly available Gold Days fall before that. It cannot be checked with the data this
+project has.
+
+A second reason is suspected rather than documented, and the distinction is the point. WAVERYS's
+QUID records its source moving from ECWAM cy38 to cy42 in 2020. **That is WAVERYS's
+discontinuity, not IBI's** — #36 read IBI's catalogue entry, product page and mask file but not
+its QUID, so whether IBI carries the same break is unknown. The two share the MFWAM family,
+which makes it worth suspecting and does not make it a fact.
 
 **Whether wind carries the same skew.** `thresholds.json` states that the light-wind exemption
 needs no translation because wind reaches the fit and the Pipeline Run alike from ERA5. The
 first half is right — training wind is the ERA5 archive. The second is not: `open_meteo.py`
 reads wind at serving time from the **forecast** API, not the archive. So wind has a
 product-to-product gap of exactly the kind this ADR records for waves, and unlike the wave one
-it has never been measured. It is plausibly small and it is certainly not zero, and no figure
-here rests on it being zero, because the exemption is the only wind threshold the record
-actually exercises.
+it has never been measured. It is plausibly small — 10 m wind speed is far less model-dependent
+than a partitioned swell period — but the exemption is fitted rather than verified, and it sits
+0.2 km/h above the windiest Gold Day it has to admit. **Filed as #51**, which is where it gets
+settled; four other files still state the premise as fact until it is.
 
 **Whether the training set should be extended to IBI's real reach.** It could go back to 1980;
 it stops at 2011-01-01 for a reason that belonged to a different module. Extending it means a

@@ -168,8 +168,8 @@ would be its own distortion, but a report calling the result "Amplification" wou
 overclaiming, and CONTEXT.md's definition is specific.
 
 **2. Training on a reanalysis and serving on a forecast is a second skew, and ADR 0004 only
-anticipated the first.** (Since recorded as a consequence in ADR 0011, and handled by #13.) The
-ADR separates the physical relationship from forecast error and
+anticipated the first.** (Since recorded as a consequence in ADR 0011, and handled by #13.)
+The ADR separates the physical relationship from forecast error and
 handles the latter in #14. But `analysis/overlap/` measured that IBI's swell **period** reads
 systematically high against the operational feed the running system reads — by enough that #39
 had to refit the thresholds rather than carry them across. A model fitted on IBI periods and
