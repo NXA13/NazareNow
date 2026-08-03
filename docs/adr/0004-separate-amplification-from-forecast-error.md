@@ -36,3 +36,21 @@ inference.
 
 Forecast Error Profiles are only measurable out to seven days. Beyond that, Watch-tier
 uncertainty rests on Model Spread alone and should be presented more cautiously.
+
+## Amendment: the Hindcast is Copernicus IBI, not ERA5 (tickets #39, #48)
+
+Everything above about the *separation* stands unchanged. What is stale is the source it names.
+The wave Hindcast is **Copernicus IBI**, ingested by #39; ERA5 now supplies only wind. **ADR
+0011** records that decision and why. The three statements above that it makes wrong:
+
+- **"ERA5 Hindcast paired with the Proxy Target"** — read Copernicus IBI. ERA5 carries no Swell
+  partition at all, which is what forced the change.
+- **"roughly 76,000 quality-controlled hourly observations from 2010"** — the built dataset is
+  **73,601 rows from 2011-01-01**. See `analysis/training_dataset/README.md`, limitation 5.
+- **"The buoy record, not ERA5, bounds the training set"** — inverted. IBI's cached download
+  begins after the buoy does, so the Hindcast bounds the front. It is a download range rather
+  than a limit of the product, so unlike the ERA5-era claim it is recoverable.
+
+One thing this decision anticipated less than it appears to. It separates the physical
+relationship from *forecast* error, and training on a different **product** than the one served
+adds an offset no Forecast Error Profile can correct. ADR 0011 records how #13 handles it.
