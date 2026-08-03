@@ -12,8 +12,10 @@ picture.
 
 from __future__ import annotations
 
+import os
 import sqlite3
 import time
+from collections.abc import Callable
 from dataclasses import asdict
 from datetime import date
 from typing import Any
@@ -22,7 +24,7 @@ import httpx
 
 from nazarenow.days import group_by_date
 from nazarenow.decision import Status, conditions_behind, decide, strength
-from nazarenow.models import AmplificationModel, HeuristicBaseline
+from nazarenow.models import AmplificationModel, HeuristicBaseline, LearnedAmplification
 from nazarenow.runs import FailureKind
 from nazarenow.sources import open_meteo
 from nazarenow.sources.open_meteo import MARINE_READINGS, WEATHER_READINGS
@@ -52,23 +54,82 @@ MINIMUM_FORECAST_HOURS = 120
 MINIMUM_SHARE_OF_STORED_FORECAST = 0.5
 
 
+MODELS: dict[str, Callable[[], AmplificationModel]] = {
+    "heuristic-baseline": HeuristicBaseline,
+    "learned-amplification": LearnedAmplification,
+}
+"""Every Amplification Model this release can run, by the name it reports as its own.
+
+Keyed on `model.name` so the store's `amplification_model` field and this switch cannot
+disagree about what a model is called — the recorded name is the one you would set to
+reproduce the run.
+
+The Heuristic Baseline stays in this map permanently under ADR 0006. It is not a legacy
+entry: it is the benchmark, it is what `analysis/` scores every learned model against, and a
+release that could no longer run it could no longer justify the one it ships.
+"""
+
+DEFAULT_MODEL = "learned-amplification"
+"""What ships active, changed from the Heuristic Baseline by ticket #13.
+
+The learned model is **worse** on the record as a whole — 0.207 m against 0.196 m of mean
+absolute error across all held-out hours — and better exactly where the system earns its
+keep: 0.356 m against 0.403 m above 3 m of Combined Sea, and 0.564 m against 0.885 m on
+held-out Gold Day hours. The improvement grows monotonically with size across every band
+above 3 m and is measured on thousands of hours, not only on the 5 held-out Gold Days.
+
+That trade is the right way round for this system, which exists to call the days somebody
+would fly for and calls nothing at all below 3 m. It is still a trade, and
+`analysis/amplification_model/README.md` states it in both directions rather than quoting
+the flattering half.
+
+Switching the default is low-risk in a specific, checked sense: `LearnedAmplification`
+delegates every `Condition` verdict to the Heuristic Baseline, and `decide` branches on
+those identities alone. So this changes the predicted height a user reads and cannot change
+who receives a Watch or a Go Call. `test_learned.py` pins that, and it is the property that
+makes shipping a learned model on 5 held-out Gold Days defensible at all.
+"""
+
+MODEL_VARIABLE = "NAZARENOW_MODEL"
+"""Selects the active model without a code change, following `NAZARENOW_THRESHOLDS`.
+
+Read inside `amplification_model` rather than at import, so it is picked up on the next
+scheduled run — the same reason that function gives for building its model per run.
+"""
+
+
 def amplification_model() -> AmplificationModel:
     """The active Amplification Model, built fresh for each Pipeline Run.
 
-    ADR 0006 keeps the Heuristic Baseline permanently as the benchmark; ticket #13 swaps a
-    learned model in behind the same interface. The return type is that interface rather
-    than the concrete class, so the type checker is what proves the swap is possible — an
-    interface nothing is ever declared against is decoration.
+    ADR 0006 keeps the Heuristic Baseline permanently as the benchmark; ticket #13 swapped a
+    learned model in behind the same interface, and this function is the whole of that swap.
+    The return type is that interface rather than a concrete class, so the type checker is
+    what proves the swap is possible — an interface nothing is ever declared against is
+    decoration.
 
     Built per run, not once at import, for two reasons. It reads the calibrated thresholds
-    from disk (#12), so a recalibration takes effect on the next scheduled run rather than
-    at the next restart — which is what "configurable without redeployment" has to mean for
-    a system whose only writer is a scheduled batch job. And a misconfigured threshold file
-    then fails the run, which `run_pipeline` records with its cause attached, instead of
-    failing at import where it would take down the API for a fault in a file the API never
-    reads. `store` resolves its own path in a dependency for the same reason.
+    from disk (#12) and now the fitted coefficients too (#13), so a recalibration or a refit
+    takes effect on the next scheduled run rather than at the next restart — which is what
+    "configurable without redeployment" has to mean for a system whose only writer is a
+    scheduled batch job. And a misconfigured file then fails the run, which `run_pipeline`
+    records with its cause attached, instead of failing at import where it would take down
+    the API for a file the API never reads. `store` resolves its own path in a dependency for
+    the same reason.
+
+    An unrecognised name raises rather than falling back to the default. A typo that silently
+    ran the baseline would leave the store recording `heuristic-baseline` for a deployment
+    whose operator believed it was running the learned model, and every figure read off that
+    run would be attributed to the wrong component.
     """
-    return HeuristicBaseline()
+    name = os.environ.get(MODEL_VARIABLE) or DEFAULT_MODEL
+    try:
+        build = MODELS[name]
+    except KeyError:
+        raise ValueError(
+            f"{MODEL_VARIABLE}={name!r} names no Amplification Model this release can run. "
+            f"Choose one of: {', '.join(sorted(MODELS))}."
+        ) from None
+    return build()
 
 
 def calibration_of(model: AmplificationModel) -> dict[str, Any] | None:

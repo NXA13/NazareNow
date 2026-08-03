@@ -1,0 +1,52 @@
+{
+  "model": "learned-amplification",
+  "quantity": "significant_wave_height_m",
+  "target": "proxy_target_height_m",
+  "features": [
+    "combined_sea_m",
+    "swell_height_m",
+    "swell_period_s",
+    "swell_direction_sin",
+    "swell_direction_cos",
+    "wind_speed_kmh",
+    "wind_direction_sin",
+    "wind_direction_cos"
+  ],
+  "intercept": -0.686039102644881,
+  "coefficients": [
+    1.0968216847982941,
+    0.04253996654428534,
+    0.025890164976359924,
+    -0.28356209684260636,
+    0.31373348065265627,
+    -0.006997114292669378,
+    0.08522605210165576,
+    0.046986174416345505
+  ],
+  "weighting": "big-swell-weighted",
+  "translations": {
+    "significant_wave_height_m": {
+      "slope": 0.9412493315117243,
+      "intercept": 0.3434620210371433,
+      "fitted_on_hours": 4366,
+      "residual_rmse": 0.21652401904558438
+    },
+    "swell_period_s": {
+      "slope": 0.930739198196174,
+      "intercept": 0.29235347259012023,
+      "fitted_on_hours": 4366,
+      "residual_rmse": 0.508382474684805
+    }
+  },
+  "method": {
+    "ticket": 13,
+    "fitted_on": "2011/12-2019/20",
+    "held_out": "2020/21-2025/26",
+    "rows_fitted": 41424,
+    "selected_on": "2018/19-2019/20",
+    "held_out_gold_days": 5,
+    "selection_metric": "MAE on tuning rows with Combined Sea >= 3 m",
+    "units": "Fitted on the Copernicus IBI reanalysis. Serving readings arrive from Open-Meteo and are restated in reanalysis units by `translations` before the coefficients are applied (analysis/overlap/README.md).",
+    "not_amplification": "This fits the reanalysis's local error at Monican02, not the canyon's transformation toward Praia do Norte. See analysis/amplification_model/README.md and analysis/training_dataset/README.md limitation 1."
+  }
+}
