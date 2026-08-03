@@ -192,8 +192,9 @@ than anything the running system uses.
 
 The fifth self-tests how the training dataset joins its sources: that an hour missing either
 the Proxy Target or the Hindcast is dropped rather than filled from its neighbour, that the
-one local stamp a year naming two UTC hours gets no wind rather than a guess, and that the
-same rows written twice are byte-identical. See
+one local stamp a year naming two UTC hours gets no wind rather than a guess, that a season
+boundary is read on the Nazaré local day rather than the UTC instant, and that the same rows
+written twice are byte-identical. See
 [`analysis/training_dataset/`](./analysis/training_dataset/).
 
 **The backtest and the calibration** read only free Open-Meteo data, so they run too, though

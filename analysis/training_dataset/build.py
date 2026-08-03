@@ -16,7 +16,8 @@ construction: it cannot pick up a different ocean between two runs.
 and the same trap applies here — when Lisbon leaves summer time, 00:00 and 01:00 UTC both
 render as 01:00 local, so a dict keyed on the local string silently keeps one of them. That is
 one hour a year, every year, in late October, which is inside the Big-Wave Season. UTC is
-unique by construction; the Nazaré local stamp and local day (ADR 0008) are carried as fields.
+unique by construction; the Nazaré local stamp, local day, and the season that day falls in
+(ADR 0008) are carried as fields, all derived from the local moment rather than the UTC one.
 
 **Gaps are excluded and counted, never filled.** #2 found five effectively dead Big-Wave
 Seasons and outages running to 488 days. Interpolating across those would manufacture a
@@ -36,6 +37,7 @@ import datetime as dt
 import hashlib
 import json
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -144,8 +146,23 @@ class Counts:
         return self.target_hours - self.paired
 
 
+def local_moment(key: str) -> dt.datetime:
+    """The Nazaré local moment a UTC hour key names.
+
+    ADR 0008 makes the domain day a Nazaré local day, so which season an hour belongs to and
+    whether it falls inside the Big-Wave Season are questions about the local calendar rather
+    than the UTC one. Portugal runs an hour ahead through late October and late March, which
+    is precisely where the season boundaries sit: `2016-09-30T23:00Z` is local
+    `2016-10-01T00:00` and opens the 2016 season, though its UTC month still says September.
+    Asking this once, here, is what keeps `season` from disagreeing with `day` in the same row.
+    """
+    return dt.datetime.fromisoformat(reanalysis.local_stamp(dt.datetime.fromisoformat(key)))
+
+
 def season_of(moment: dt.datetime) -> int:
     """The Big-Wave Season a moment belongs to, named by the year it begins in.
+
+    Takes a **local** moment — see `local_moment`.
 
     October to December belong to the season starting that year; January to March belong to
     the one that started the previous year. April to September belong to no season, and are
@@ -162,6 +179,7 @@ def season_of(moment: dt.datetime) -> int:
 
 
 def is_big_wave_season(moment: dt.datetime) -> bool:
+    """Whether a **local** moment falls in the October-to-March window — see `local_moment`."""
     return moment.month in analyse_coverage.SEASON_MONTHS
 
 
@@ -225,7 +243,7 @@ def read_wind() -> tuple[dict[str, dict[str, float]], set[str]]:
     return rows, ambiguous_local_stamps(rows.keys())
 
 
-def ambiguous_local_stamps(stamps: Any) -> set[str]:
+def ambiguous_local_stamps(stamps: Iterable[str]) -> set[str]:
     """Local stamps that name two different UTC hours — the autumn summer-time fold.
 
     Found by asking the timezone rather than by hardcoding late October: the rule that sets
@@ -312,7 +330,7 @@ def pair(
             "at_utc": key,
             "at_local": at_local,
             "day": at_local[:10],
-            "season": season_of(moment),
+            "season": season_of(dt.datetime.fromisoformat(at_local)),
         }
         for column, value in hindcast_rows[key].items():
             row[column] = _round(value)
@@ -383,15 +401,15 @@ def count_by_season(
         )
 
     for key in hindcast_rows:
-        bucket(season_of(dt.datetime.fromisoformat(key)))["hindcast_hours"] += 1
+        bucket(season_of(local_moment(key)))["hindcast_hours"] += 1
     for key, reading in target_rows.items():
         if TARGET_COLUMN in reading:
-            bucket(season_of(dt.datetime.fromisoformat(key)))["target_hours"] += 1
+            bucket(season_of(local_moment(key)))["target_hours"] += 1
 
     for row in rows:
         counts = bucket(int(row["season"]))
         counts["paired"] += 1
-        counts["in_season"] += int(is_big_wave_season(dt.datetime.fromisoformat(row["at_utc"])))
+        counts["in_season"] += int(is_big_wave_season(dt.datetime.fromisoformat(row["at_local"])))
         counts["with_wind"] += int(bool(row["wind_present"]))
         counts["with_offshore_observation"] += int(bool(row["offshore_observation_present"]))
         counts["gold_day_rows"] += int(row["day"] in gold_days)
@@ -541,6 +559,24 @@ def check() -> int:
     expect("september belongs to the previous one", season_of(dt.datetime(2016, 9, 30)), 2015)
     expect("march closes the season before it", season_of(dt.datetime(2017, 3, 31)), 2016)
 
+    # ...and the boundary is the **local** one, per ADR 0008. Portugal is still an hour ahead
+    # on 30 September, so 23:00 UTC is 00:00 local on 1 October and opens the 2016 season —
+    # the UTC moment on its own says September and gets both answers wrong.
+    autumn = "2016-09-30T23:00:00"
+    expect("the season boundary is local", season_of(local_moment(autumn)), 2016)
+    expect("that hour is in the Big-Wave Season", is_big_wave_season(local_moment(autumn)), True)
+    expect("the UTC moment disagrees", season_of(dt.datetime.fromisoformat(autumn)), 2015)
+
+    # The same hour at the closing edge: 23:00 UTC on 31 March is 00:00 local on 1 April, so
+    # the season is over even though the UTC month is still March.
+    spring = "2017-03-31T23:00:00"
+    expect("the closing edge is local too", is_big_wave_season(local_moment(spring)), False)
+    expect(
+        "where the UTC moment disagrees",
+        is_big_wave_season(dt.datetime.fromisoformat(spring)),
+        True,
+    )
+
     hour = "2016-11-05T06:00:00"
     hindcast_rows = {
         hour: {
@@ -563,7 +599,11 @@ def check() -> int:
         },
     }
     wind_rows = {"2016-11-05T06:00": {"wind_speed_kmh": 12.0, "wind_direction_deg": 90.0}}
-    target_rows = {hour: {TARGET_COLUMN: 5.5}}
+    # Two target hours, one of which the Hindcast never covered. That second hour is the
+    # unpaired side of the join — the shape the 2,215 hours predating the IBI download take,
+    # and the number the coverage table reports as `target_hours_unpaired`.
+    unpaired_hour = "2016-11-05T08:00:00"
+    target_rows = {hour: {TARGET_COLUMN: 5.5}, unpaired_hour: {TARGET_COLUMN: 3.0}}
     offshore_rows = {hour: {"offshore_observed_height_m": 6.0}}
 
     rows = pair(hindcast_rows, wind_rows, set(), target_rows, offshore_rows)
@@ -597,13 +637,16 @@ def check() -> int:
     expect("the hour after it is not", "2016-10-30T02:00" in fold, False)
     expect("an ordinary hour is not", "2016-11-05T06:00" in fold, False)
 
-    # A missing target with a present Hindcast contributes no row at all, so a season that
-    # lost its instrument reads as zero rather than as the Hindcast's own hours.
+    # Availability is counted from the sources, not from the join, so a season that lost one
+    # instrument reads as a healthy number beside a low paired count rather than as a blank.
+    # Both directions are exercised: an hour the Hindcast has and the buoy does not, and an
+    # hour the buoy has and the Hindcast does not.
     counts = count_by_season(rows, hindcast_rows, target_rows, gold_days={"2016-11-05"})
     expect("one season is reported", len(counts), 1)
     expect("both Hindcast hours are counted as available", counts[0].hindcast_hours, 2)
+    expect("both target hours are counted as available", counts[0].target_hours, 2)
     expect("only one paired", counts[0].paired, 1)
-    expect("so one target hour is unpaired", counts[0].target_hours_unpaired, 0)
+    expect("so one target hour is unpaired", counts[0].target_hours_unpaired, 1)
     expect("november is inside the Big-Wave Season", counts[0].in_season, 1)
     expect("the row lands on its Gold Day", counts[0].gold_day_rows, 1)
 

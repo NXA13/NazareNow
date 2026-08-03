@@ -4,8 +4,13 @@ Ticket [#9](https://github.com/NXA13/NazareNow/issues/9). The rows the Amplifica
 will be fitted on: the **Proxy Target** — Significant Wave Height measured at Monican02 —
 paired hour by hour with the **Hindcast Offshore Conditions** that produced it, per ADR 0004.
 
-**73,601 rows, 2011-01-01 to 2026-02-20, across 15 Big-Wave Seasons.** Every number below
-comes out of `build.py`, and the file it describes is rebuilt byte-identically by one command.
+The Hindcast here is **Copernicus IBI**, following #39, not the ERA5 that ADR 0004 names — ERA5
+supplies only wind. The ADR has not caught up with that change; [#48](https://github.com/NXA13/NazareNow/issues/48)
+tracks correcting the record.
+
+**73,601 rows, 2011-01-01 to 2026-02-20, spanning 15 season-years — 14 of which carry rows
+inside a Big-Wave Season.** Every number below comes out of `build.py`, and the file it
+describes is rebuilt byte-identically by one command from the cached archives.
 
 ## Running it
 
@@ -25,6 +30,14 @@ established them, each caching into `data/raw/` and each re-runnable:
 | Copernicus IBI Hindcast | `analysis/backtest/reanalysis.py` (#39) | `data/raw/reanalysis/` |
 | ERA5 wind | `analysis/backtest/hindcast.py` (#11) | `data/raw/hindcast/` |
 
+So **one command rebuilds the dataset from the cached archives, not from the raw sources.** On
+a machine that already has `data/raw/`, `build.py` is the whole rebuild. On a fresh clone it is
+the fourth command, after the three above — and two of those need Copernicus credentials, which
+is why they are separate scripts owned by the tickets that established them rather than steps
+inlined here. #9 asks for "a single documented command"; what is delivered is a single command
+over a documented, re-runnable retrieval chain. The distinction matters to anyone trying to
+reproduce this from nothing, so it is stated rather than glossed.
+
 Keeping retrieval out is what makes the build deterministic: it cannot pick up a different
 ocean between two runs. The archives are gitignored — they are large and reproducible — and so
 is the dataset itself, at about 10 MB. What is committed is `output/coverage_by_season.csv`
@@ -32,7 +45,7 @@ and the digest below, which is enough to verify a rebuild without carrying the f
 clone forever.
 
 ```
-sha256  077dd85c71d08b8bf80803f87c2ee6b5eeaa89f5e9f848d704c6100bbe95728c
+sha256  8ad77669831b2ea050d41715fa5a38fa60f1404576c2265954604c6b16b23917
 ```
 
 ## What a row is
@@ -64,8 +77,16 @@ same choice for the same reason.
 
 ERA5 wind is the exception, because Open-Meteo is asked for local stamps and its response
 carries no UTC. On the one ambiguous stamp each autumn the wind is left **absent** rather than
-given to both UTC hours or arbitrarily to one. That is where most of the 763 rows without wind
-come from; the rest are the tail end of 2025, where ERA5 stops before the buoy does.
+given to both UTC hours or arbitrarily to one. Of the 763 rows without wind, 747 are the tail
+end of 2025 where ERA5 stops before the buoy does; the remaining 16 are those autumn fold
+hours, one per year the dataset covers.
+
+**The local day is what `season` and `in_big_wave_season` are computed from**, not the UTC
+instant. Portugal runs an hour ahead through late October and late March, which is exactly
+where the season boundaries fall: `2016-09-30T23:00Z` is local `2016-10-01T00:00` and opens the
+2016 season, though its UTC month says September. Deriving the season from UTC would have put
+those boundary hours in the wrong season while `day` — computed locally — said otherwise,
+disagreeing with itself inside a single row.
 
 ## Gaps are excluded and counted, never filled
 
@@ -98,7 +119,7 @@ Two of the seventeen seasons contribute nothing at all, and a third contributes 
 **inside** the Big-Wave Season:
 
 - **2013/14** — both moorings were down. #2 found it the only season both lost.
-- **2016/17** — Monican02 recorded nothing between October and March. Its 2,138 rows are all
+- **2016/17** — Monican02 recorded nothing between October and March. Its 2,137 rows are all
   from the following summer, which is why `in_big_wave_season` is the column to read and not
   `paired`.
 
@@ -164,15 +185,18 @@ train/test split made on rows rather than on seasons would leak badly. The datas
 the finest available grain so that #13 can aggregate; it is not a claim that hourly is the
 right unit to fit on.
 
-**4. Monican01's 42% coverage.** It is carried as an optional input, and no analysis here says
-whether it earns its place. If it does, the rows lacking it become a second, smaller dataset
-rather than a flag to ignore.
+**4. Monican01 is present on 57.7% of rows, and nothing here says it earns its place.** It is
+carried as an optional input on the strength of being a measurement rather than a model, not on
+any measured contribution. If it does earn its place, the 42.3% of rows lacking it become a
+second, smaller dataset rather than a flag to ignore.
 
-**5. The Hindcast does not yet reach the start of the buoy record, and could.** #9 asks for
+**5. The Hindcast covers neither end of the buoy record, and could cover both.** #9 asks for
 Hindcast conditions "covering the buoy's period". Monican02 begins 2010-06-12 and the cached
 IBI download begins 2011-01-01, so **2,215 hours of Proxy Target have no Hindcast to pair
-with** — that is three quarters of all unpaired hours, and it costs the 2010/11 Big-Wave
-Season most of its October to December.
+with** — three quarters of all unpaired hours, and it costs the 2010/11 Big-Wave Season most of
+its October to December. At the far end the buoy runs to 2026-06-30 while IBI stops 2026-04-21,
+costing a further **750 hours**. Together that is all 2,965 unpaired hours: every one is a
+range mismatch, and none is a hole in the middle of the record.
 
 This is a download range, not a limit of the product: #36 established IBI carries a Swell
 partition back to 1980. `reanalysis.START` is set to 2011-01-01 because it matches
