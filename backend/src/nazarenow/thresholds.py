@@ -109,6 +109,18 @@ class Thresholds:
     swell_arc: tuple[float, float]
     offshore_wind_arc: tuple[float, float]
     maximum_wind_speed_kmh: float
+
+    light_wind_exemption_kmh: float
+    """The speed below which wind direction stops being consulted at all (ADR 0009).
+
+    A different quantity from `maximum_wind_speed_kmh`, and the two must not be conflated.
+    The cap is an upper bound on a *good* wind — offshore wind strong enough to be a problem.
+    This is a lower bound on a wind that counts at all: below it, a breeze is too light to
+    groom or wreck a wave face whichever way it blows, and the offshore arc is not applied.
+
+    Required rather than defaulted. A file omitting it would silently change the shape of the
+    wind condition, not merely its strictness."""
+
     calibration: Calibration | None
     """`None` for an uncalibrated set. The API reports `calibrated` from this, so the
     interface cannot claim a fit that did not happen."""
@@ -120,7 +132,7 @@ class Thresholds:
     def as_dict(self) -> dict[str, Any]:
         """The file shape this set came from, ready to write back or vary.
 
-        Exists so the seven keys are spelled out in exactly one place. They were hand-built
+        Exists so the eight keys are spelled out in exactly one place. They were hand-built
         at three call sites — two in the calibration, one in the backtest — and a set
         assembled by hand is a set that can quietly omit a key and fall back to a default
         nobody chose.
@@ -132,6 +144,7 @@ class Thresholds:
             "swell_arc": list(self.swell_arc),
             "offshore_wind_arc": list(self.offshore_wind_arc),
             "maximum_wind_speed_kmh": self.maximum_wind_speed_kmh,
+            "light_wind_exemption_kmh": self.light_wind_exemption_kmh,
             "calibration": None if self.calibration is None else asdict(self.calibration),
         }
 
@@ -235,15 +248,30 @@ def parse(body: dict[str, Any]) -> Thresholds:
     watch_period = _number(body, "watch_minimum_swell_period_s")
     go_period = _number(body, "go_call_minimum_swell_period_s")
     wind_speed = _number(body, "maximum_wind_speed_kmh")
+    light_wind = _number(body, "light_wind_exemption_kmh")
 
     for name, value in (
         ("minimum_significant_wave_height_m", height),
         ("watch_minimum_swell_period_s", watch_period),
         ("go_call_minimum_swell_period_s", go_period),
         ("maximum_wind_speed_kmh", wind_speed),
+        ("light_wind_exemption_kmh", light_wind),
     ):
         if value <= 0:
             raise ThresholdsUnusable(f"{name} must be positive, got {value}")
+
+    # The exemption has to sit under the cap. At or above it, every wind the cap would allow
+    # is already exempt from the direction arc, so the arc stops being consulted for any
+    # passing day and the wind condition silently degenerates into a bare speed limit. Both
+    # fields would still be valid positive floats. ADR 0009 is explicit that these are
+    # different quantities and that collapsing them breaks both.
+    if light_wind >= wind_speed:
+        raise ThresholdsUnusable(
+            f"light_wind_exemption_kmh ({light_wind}) is not below maximum_wind_speed_kmh "
+            f"({wind_speed}), so no wind passing the cap would ever have its direction "
+            "checked and the offshore arc would be dead; the exemption is a lower bound on "
+            "a wind that counts, not a second cap"
+        )
 
     # The check this file exists for. ADR 0003 has a Watch reach further than a Go Call;
     # a Go bar at or below the Watch bar makes the Watch tier unreachable — every day
@@ -263,6 +291,7 @@ def parse(body: dict[str, Any]) -> Thresholds:
         swell_arc=_arc(body.get("swell_arc"), "swell_arc"),
         offshore_wind_arc=_arc(body.get("offshore_wind_arc"), "offshore_wind_arc"),
         maximum_wind_speed_kmh=wind_speed,
+        light_wind_exemption_kmh=light_wind,
         calibration=_calibration(body.get("calibration")),
     )
 

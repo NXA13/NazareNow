@@ -8,12 +8,19 @@ on years the fit never saw.
 running system and driven with candidate thresholds. A reimplementation here would drift
 from the thing it calibrates, and the drift would ship.
 
-**Only swell period is fitted per tier.** #11 measured that period blocked all six missed
-Gold Days and that height, direction and wind blocked none — so period is the only
-condition the evidence can distinguish, and the only place ADR 0003's recall tier and
-precision tier can genuinely differ. Fitting arcs to six Gold Days would narrow them onto
-noise while changing no call. `verify_shared_conditions` checks they admit every Gold Day
-and reports the margin instead, which is the honest version of the same claim.
+**Only swell period is fitted per tier.** Period is the one condition the evidence can
+distinguish, and so the only place ADR 0003's recall tier and precision tier can genuinely
+differ. Height and the two arcs are checked rather than fitted: fitting an arc to a couple
+of dozen Gold Days would narrow it onto noise while changing no call, so
+`verify_shared_conditions` checks they admit every Gold Day and reports the margin instead,
+which is the honest version of the same claim.
+
+**The light-wind exemption is fitted too, but once rather than per tier.** #11 read height,
+direction and wind as blocking no Gold Day, on the 9 Gold Days the Swell record then
+reached. #39's ingestion disproved that for wind — six of the 25 fitting Gold Days were
+blocked by the offshore arc on breezes of 4-16 km/h — and ADR 0009 answered it with
+`light_wind_exemption_kmh`, which `fit_light_wind_exemption` fits here. It is shared by both
+tiers, so it is fitted before the period sweep rather than inside it.
 
 **Chronological split.** Fitted on the earlier Big-Wave Seasons, validated on the later ones
 — the direction the system runs in: fit on the past, apply to the future.
@@ -23,8 +30,10 @@ Copernicus reanalysis, which is what takes this from 9 Gold Days to 38. The fit 
 reanalysis's own units, because a fit is only meaningful if it is internally consistent. But
 `thresholds.json` is read by the live Pipeline Run, which consumes Open-Meteo and never sees
 a reanalysis — and `analysis/overlap/README.md` measured that the same sea reads about half a
-second longer in the reanalysis. So the three fitted bars are translated back into
+second longer in the reanalysis. So the three fitted wave bars are translated back into
 operational units on the way out, and the translation is recorded in the file beside them.
+The light-wind exemption is deliberately not translated: wind reaches both sides of that
+boundary from ERA5, so it is already in the units it is applied in.
 Shipping the untranslated numbers would have made the deployed system quietly stricter than
 the fit intended, which is the mirror image of the mistake #39 was written to prevent.
 
@@ -37,6 +46,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 import sys
 from dataclasses import dataclass
 from datetime import date as date_type
@@ -56,7 +66,7 @@ import measure  # noqa: E402
 from backtest import GoldDay, load_gold_days, reanalysis_hours, season_of  # noqa: E402
 from nazarenow.days import group_by_date  # noqa: E402
 from nazarenow.decision import Status, decide, strength  # noqa: E402
-from nazarenow.models.heuristic import HeuristicBaseline  # noqa: E402
+from nazarenow.models.heuristic import HeuristicBaseline, _within  # noqa: E402
 from nazarenow.thresholds import DEFAULT_PATH, Thresholds, parse  # noqa: E402
 
 LEAD_TIME_DAYS = backtest.LEAD_TIME_DAYS
@@ -142,6 +152,15 @@ hand-chosen number left in the calibration.
 HEIGHT_STEP_M = 0.25
 """Height bars are floored to this, so the fitted value is a number a person would choose."""
 
+LIGHT_WIND_STEP_KMH = 0.5
+"""The light-wind exemption is rounded **up** to this, not down.
+
+The opposite direction from `HEIGHT_STEP_M`, because the two bars point opposite ways: a
+lower height bar is more permissive, and a *higher* exemption is. Rounding the exemption down
+would put it just under the calmest hour of the Gold Day that set it and drop that day
+straight back out of the fit.
+"""
+
 
 @dataclass(frozen=True)
 class Split:
@@ -226,12 +245,13 @@ UNFITTED = parse(
         "swell_arc": [255.0, 330.0],
         "offshore_wind_arc": [20.0, 180.0],
         "maximum_wind_speed_kmh": 35.0,
-        # Placeholders. Every candidate replaces all three; `parse` will not accept a set
+        # Placeholders. Every candidate replaces all four; `parse` will not accept a set
         # without them, and a set that could omit one would silently inherit whatever these
         # said.
         "minimum_significant_wave_height_m": 3.0,
         "watch_minimum_swell_period_s": 12.0,
         "go_call_minimum_swell_period_s": 13.0,
+        "light_wind_exemption_kmh": 1.0,
         "calibration": None,
     }
 )
@@ -266,16 +286,31 @@ def buoy_measured_recall(
     return sum(1 for date in measured if calls[date] in tiers), len(measured)
 
 
-def candidate(watch_period: float, go_period: float, height: float) -> Thresholds:
+def candidate(
+    watch_period: float,
+    go_period: float,
+    height: float,
+    light_wind: float = LIGHT_WIND_STEP_KMH,
+) -> Thresholds:
     """A threshold set to try, built through the same parser the running system uses.
 
     Going through `parse` rather than constructing `Thresholds` directly means a candidate
     the deployed system would refuse to load can never be scored here and recommended.
+
+    `light_wind` must be the **fitted** exemption everywhere the sweep is scored. The Go bar
+    is chosen against a Go Calls-per-season budget, and the exemption changes which days
+    produce a Go Call — so a sweep run under a different exemption would fit the period bar
+    to a rule that is not the one shipping. The default exists only for `check`, which drives
+    the choosers with synthetic rows and never touches wind.
+
+    There is no circularity in fitting the exemption first: it is determined entirely by the
+    wind on Gold Days and does not depend on any period bar.
     """
     return UNFITTED.replacing(
         minimum_significant_wave_height_m=height,
         watch_minimum_swell_period_s=watch_period,
         go_call_minimum_swell_period_s=go_period,
+        light_wind_exemption_kmh=light_wind,
     )
 
 
@@ -298,9 +333,65 @@ def fit_height(split: Split) -> tuple[float, float]:
     return (int(smallest / HEIGHT_STEP_M) * HEIGHT_STEP_M, smallest)
 
 
+def fit_light_wind_exemption(split: Split) -> tuple[float, float, int]:
+    """The lowest exemption speed that stops wind blocking any Gold Day in the fitting split.
+
+    ADR 0009's new threshold, and the only condition besides swell period this calibration
+    fits. Returns the bar, the calmest-hour wind it had to admit, and how many Gold Days
+    needed it at all — the last so the report can say whether the record pinned the number
+    down or merely failed to contradict it.
+
+    A day is counted as needing the exemption when **no** hour of it passes on direction and
+    speed alone. For such a day the cheapest hour to admit is its calmest, so the exemption
+    has to reach that day's minimum wind speed; the bar is the largest of those minima across
+    the days that need it. Taking anything higher would admit non-Gold days for nothing,
+    which costs precision on exactly the days a Go Call is expensive.
+    """
+    needed: list[float] = []
+    arc = UNFITTED.offshore_wind_arc
+    cap = UNFITTED.maximum_wind_speed_kmh
+    for day, day_hours in group_by_date(split.hours).items():
+        if day not in split.gold:
+            continue
+        # Through the model's own arc test rather than an inline comparison. `_within` raises
+        # on an arc that wraps past north, where the naive comparison this replaced would
+        # quietly match no bearing at all — and a fit that silently saw every hour as onshore
+        # would set the exemption at the windiest Gold Day and look entirely plausible.
+        passes_on_direction = any(
+            _within(float(hour["wind_direction"]), arc) and float(hour["wind_speed"]) <= cap
+            for hour in day_hours
+        )
+        if passes_on_direction:
+            continue
+        needed.append(min(float(hour["wind_speed"]) for hour in day_hours))
+
+    if not needed:
+        # Every Gold Day already passes on direction, so nothing in the record says how high
+        # the exemption should sit. Report the smallest expressible value rather than a
+        # comfortable-looking guess, and let `main` say the record does not constrain it.
+        return (LIGHT_WIND_STEP_KMH, 0.0, 0)
+
+    largest = max(needed)
+    bar = math.ceil(largest / LIGHT_WIND_STEP_KMH) * LIGHT_WIND_STEP_KMH
+    if bar >= cap:
+        raise RuntimeError(
+            f"the light-wind exemption fits at {bar:g} km/h, at or above the "
+            f"{cap:g} km/h cap. Every wind the cap allows would then skip the direction "
+            "check and the offshore arc would be dead (thresholds.parse refuses such a "
+            "file). A Gold Day needing this much exemption is not a light-wind day, and "
+            "ADR 0009's premise does not cover it"
+        )
+    return (bar, largest, len(needed))
+
+
 @dataclass(frozen=True)
 class SharedCondition:
-    """A condition that was checked rather than fitted, and the room it had to spare."""
+    """A condition shared by both tiers, and the room it had to spare.
+
+    "Shared" rather than "unfitted" since ADR 0009: height and the two arcs are checked and
+    never fitted, but the wind condition now carries a fitted exemption inside it. What all
+    of these have in common is that one value serves both tiers, not that nothing was fitted.
+    """
 
     name: str
     observed: str
@@ -311,9 +402,12 @@ class SharedCondition:
 def verify_shared_conditions(split: Split, thresholds: Thresholds) -> list[SharedCondition]:
     """Check that height, swell direction and wind admit every Gold Day in the split.
 
-    These are not fitted, and this is what makes that defensible rather than lazy: if one
-    of them turns out to bind, the claim that period is the only condition worth splitting
-    per tier is false and the report says so instead of asserting the opposite.
+    None of them is fitted per tier, and this is what makes that defensible rather than
+    lazy: if one of them turns out to bind, the claim that period is the only condition
+    worth splitting per tier is false and the report says so instead of asserting the
+    opposite. This is the check that raised on the full record and produced ADR 0009 —
+    wind bound, and the answer was to fit an exemption inside the wind condition rather
+    than to quietly widen an arc until the check passed.
 
     A condition counts as holding for a day if it held in **any** hour of that day, matching
     how a day earns its call — a swell that cleaned up in the evening is not a wind failure.
@@ -361,8 +455,11 @@ def verify_shared_conditions(split: Split, thresholds: Thresholds) -> list[Share
         SharedCondition(
             name="wind",
             observed=f"calmest hour {min(speeds):.0f}-{max(speeds):.0f} km/h across Gold Days",
-            threshold=f"offshore {wind_low:g}-{wind_high:g}°, <= "
-            f"{thresholds.maximum_wind_speed_kmh:g} km/h",
+            # The disjunction ADR 0009 made it, in the order the model evaluates. Printed as
+            # a conjunction this table asserted a rule the model stopped applying, in the one
+            # place a reader goes to check what the shipped conditions actually are.
+            threshold=f"<= {thresholds.light_wind_exemption_kmh:g} km/h, or offshore "
+            f"{wind_low:g}-{wind_high:g}° and <= {thresholds.maximum_wind_speed_kmh:g} km/h",
             binds=bool(never_held["wind"]),
         ),
     ]
@@ -375,7 +472,7 @@ class SweepRow:
     go_recall: Score
 
 
-def sweep(split: Split, height: float) -> list[SweepRow]:
+def sweep(split: Split, height: float, light_wind: float) -> list[SweepRow]:
     """Score every candidate period, as both a Watch bar and a Go Call bar.
 
     One pass, two readings. A candidate is scored as a Watch bar by pairing it with a Go bar
@@ -386,8 +483,8 @@ def sweep(split: Split, height: float) -> list[SweepRow]:
     rows = []
     floor, ceiling = min(PERIOD_SWEEP), max(PERIOD_SWEEP)
     for period in PERIOD_SWEEP:
-        as_watch = candidate(period, max(period + 0.5, ceiling + 0.5), height)
-        as_go = candidate(min(period - 0.5, floor - 0.5), period, height)
+        as_watch = candidate(period, max(period + 0.5, ceiling + 0.5), height, light_wind)
+        as_go = candidate(min(period - 0.5, floor - 0.5), period, height, light_wind)
         rows.append(
             SweepRow(
                 period=period,
@@ -475,9 +572,16 @@ def translate(thresholds: Thresholds, translations: dict[str, measure.Translatio
     and shipping 13.5 s would silently move the deployed bar half a second stricter than
     anything the Gold Days justify.
 
-    Only the three fitted numbers are translated. The swell arc and the wind conditions are
-    verified rather than fitted (`verify_shared_conditions`), and the measured direction
-    offset is 1-3° against an arc 75° wide.
+    Only the two *wave* quantities are translated. The swell arc is verified rather than
+    fitted, and its measured direction offset is 1-3° against an arc 75° wide.
+
+    **The light-wind exemption is deliberately not translated**, and this is not an
+    oversight. Height and period are read from the reanalysis during the fit and from
+    Open-Meteo in production, which is what makes them need converting. Wind is read from
+    ERA5 via `hindcast.wind()` in *both* paths — `operational_hours` and `reanalysis_hours`
+    take the same series — so the exemption is already in the units it will be applied in.
+    Translating it with a transform fitted on wave height would be arithmetic applied to the
+    wrong variable.
 
     Rounded after translating, not before: a translated bar lands on some number like
     12.8637, and the fitted values are supposed to be numbers a person would choose. Height
@@ -502,6 +606,31 @@ def translate(thresholds: Thresholds, translations: dict[str, measure.Translatio
     )
 
 
+def _describe_exemption(thresholds: Thresholds, support: tuple[float, int]) -> str:
+    """How the light-wind exemption was fitted, and what the record had to say about it.
+
+    ADR 0009 asks that a value the Gold Days do not pin down says so rather than shipping a
+    confident-looking number. The count of days that needed the exemption is the whole of
+    that evidence: at zero, the bar is an assertion the record neither supports nor
+    contradicts, and a reader deciding how much weight to give it needs to know which case
+    they are in. It travels in `method` because that is what reaches the API.
+    """
+    calmest, days_needing = support
+    exemption = thresholds.light_wind_exemption_kmh
+    if not days_needing:
+        return (
+            f"The {exemption:g} km/h light-wind exemption (ADR 0009) is the smallest "
+            "expressible value, not a measured one: no Gold Day in the fitting split needed "
+            "it, so the record does not constrain where it sits."
+        )
+    return (
+        f"The light-wind exemption (ADR 0009) was fitted, not verified: {exemption:g} km/h, "
+        f"the lowest value admitting the {days_needing} Gold Days in the fitting split that "
+        "no hour passes on direction and speed alone, the calmest hour of the windiest of "
+        f"them being {calmest:.1f} km/h."
+    )
+
+
 def write_thresholds(
     thresholds: Thresholds,
     fitted: Thresholds,
@@ -509,6 +638,7 @@ def write_thresholds(
     test: Split,
     binding: str,
     translations: dict[str, measure.Translation],
+    exemption_support: tuple[float, int],
     path: Path,
 ) -> None:
     """Write the calibrated set where the running system reads it.
@@ -539,8 +669,10 @@ def write_thresholds(
                 "highest period catching every Gold Day in the fitting split. The Go Call "
                 "bar is the lowest period sitting above the Watch bar and within "
                 f"{GO_CALLS_PER_SEASON_BUDGET:g} Go Calls per Big-Wave Season; in this fit "
-                f"what actually set it was {binding}. Height, swell arc and wind were "
-                "verified to block no Gold Day rather than fitted. The bars above are in "
+                f"what actually set it was {binding}. Height and both arcs were verified to "
+                "block no Gold Day rather than fitted. "
+                + _describe_exemption(thresholds, exemption_support)
+                + " The wave bars above are in "
                 "Open-Meteo units, which is what the Pipeline Run reads; the fit ran in "
                 "reanalysis units, where the same sea reports a longer swell period, and "
                 "chose "
@@ -548,7 +680,9 @@ def write_thresholds(
                 f"{fitted.watch_minimum_swell_period_s:g} s / "
                 f"{fitted.go_call_minimum_swell_period_s:g} s. Translated by "
                 + "; ".join(t.describe() for t in translations.values())
-                + " (analysis/overlap/README.md)."
+                + " (analysis/overlap/README.md). The light-wind exemption is not "
+                "translated: wind reaches the fit and the Pipeline Run alike from ERA5, so "
+                "it is already in the units it is applied in."
             ),
             "source": "analysis/calibration/calibrate.py",
             "fitted_at": date_type.today().isoformat(),
@@ -751,8 +885,26 @@ def main() -> int:
         f"(smallest Gold Day peak in the fitting split: {smallest:.2f} m)"
     )
 
+    # Fitted before the sweep, because the exemption changes which days produce a Go Call and
+    # the Go bar is chosen against a Go Calls-per-season budget. Not circular: the exemption
+    # is settled entirely by the wind on Gold Days and does not depend on any period bar.
+    light_wind, calmest_admitted, days_needing = fit_light_wind_exemption(fit)
+    if days_needing:
+        print(
+            f"\nLight-wind exemption fitted to {light_wind:g} km/h "
+            f"(ADR 0009; {days_needing} Gold Days in the fitting split are blocked by the "
+            f"offshore arc and need it, the calmest hour of the windiest being "
+            f"{calmest_admitted:.1f} km/h)"
+        )
+    else:
+        print(
+            f"\nLight-wind exemption set to {light_wind:g} km/h, the smallest expressible "
+            "value: no Gold Day in the fitting split needs it, so the record does not "
+            "constrain it and this number should not be read as measured"
+        )
+
     print("\nSweeping swell period on the fitting split...")
-    rows = sweep(fit, height)
+    rows = sweep(fit, height, light_wind)
     print(
         f"  {'bar':>6s}  {'as Watch: gold':>15s}  {'flags/season':>12s}  "
         f"{'as Go: gold':>12s}  {'calls/season':>12s}"
@@ -778,9 +930,9 @@ def main() -> int:
     binding = describe_binding_constraint(rows, watch_bar, go_bar)
     print(f"  binding constraint: {binding}")
 
-    chosen = candidate(watch_bar, go_bar, height)
+    chosen = candidate(watch_bar, go_bar, height, light_wind)
 
-    print("\nConditions verified rather than fitted:")
+    print("\nConditions shared by both tiers, checked to admit every Gold Day:")
     binding_conditions = []
     for shared in verify_shared_conditions(fit, chosen):
         mark = "BINDS" if shared.binds else "clear"
@@ -858,7 +1010,16 @@ def main() -> int:
 
     sweep_path = write_sweep_csv(rows)
     report_path = write_report_csv(results)
-    write_thresholds(shipped, chosen, fit, test, binding, translations, DEFAULT_PATH)
+    write_thresholds(
+        shipped,
+        chosen,
+        fit,
+        test,
+        binding,
+        translations,
+        (calmest_admitted, days_needing),
+        DEFAULT_PATH,
+    )
     print(f"\nWrote {sweep_path.relative_to(ROOT)}")
     print(f"Wrote {report_path.relative_to(ROOT)}")
     print(f"Wrote {DEFAULT_PATH.relative_to(ROOT)}  <- the file the running system reads")

@@ -31,6 +31,7 @@ VALID = {
     "swell_arc": [255.0, 330.0],
     "offshore_wind_arc": [20.0, 180.0],
     "maximum_wind_speed_kmh": 35.0,
+    "light_wind_exemption_kmh": 16.5,
     "calibration": {
         "fitted_on": "2021/22-2022/23",
         "validated_on": "2023/24-2025/26",
@@ -183,6 +184,34 @@ class TestRefusals:
 
         with pytest.raises(ThresholdsUnusable, match="positive whole number"):
             parse(VALID | {"calibration": calibration})
+
+
+class TestTheLightWindExemption:
+    """ADR 0009's new field, validated like every other threshold."""
+
+    def test_a_file_without_it_is_refused(self) -> None:
+        """Not defaulted, because a default would change the *shape* of the wind condition
+        rather than its strictness — a file silently missing this would apply the offshore
+        arc to winds ADR 0009 exempts, which is the defect the ADR exists to remove."""
+        body = {k: v for k, v in VALID.items() if k != "light_wind_exemption_kmh"}
+
+        with pytest.raises(ThresholdsUnusable, match="light_wind_exemption_kmh"):
+            parse(body)
+
+    @pytest.mark.parametrize("exemption", [35.0, 40.0])
+    def test_an_exemption_at_or_above_the_cap_is_refused(self, exemption: float) -> None:
+        """At or above the cap every wind the cap allows is already exempt, so the offshore
+        arc is never consulted for a passing day and the condition degenerates into a bare
+        speed limit. Every field would still be a valid positive float."""
+        with pytest.raises(ThresholdsUnusable, match="not below maximum_wind_speed_kmh"):
+            parse(VALID | {"light_wind_exemption_kmh": exemption})
+
+    def test_it_survives_a_round_trip_through_as_dict(self) -> None:
+        """`as_dict` is what the calibration writes back; a key it dropped would produce a
+        file the running system then refuses to load."""
+        thresholds = parse(VALID)
+
+        assert parse(thresholds.as_dict()).light_wind_exemption_kmh == 16.5
 
 
 class TestLoading:

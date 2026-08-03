@@ -3,39 +3,50 @@
 Ticket #12. #11 established the benchmark and found what was wrong with it. This chooses the
 numbers, and writes them where the running system reads them.
 
-> ## ⚠️ #39 stopped this fit, and the numbers below are the superseded ones
+> ## Superseded: refitted on 38 Gold Days by #39 and #40
 >
 > Everything from "The headline" down describes the fit on **9 Gold Days**, which was all the
-> Swell record reached at the time. #39 ingested the Copernicus reanalysis and re-ran this
-> against **38**. The re-run **does not complete**, and that is the finding rather than a bug.
+> Swell record reached at the time. It is kept as the record of where the numbers came from.
+> The shipped values are no longer these.
 >
-> `verify_shared_conditions` raised. On 25 fitting Gold Days the **wind condition blocks six
-> of them**, so the assumption this whole calibration rests on — that swell period is the only
-> condition the evidence can distinguish — is false on the full record. See
-> "[Only swell period is fitted per tier](#only-swell-period-is-fitted-per-tier)" below for the
-> claim that has now been disproved.
+> | | #12 (9 Gold Days) | now (38 Gold Days) |
+> |---|---|---|
+> | `minimum_significant_wave_height_m` | 3.75 | **2.75** |
+> | `watch_minimum_swell_period_s` | 12.5 | **10.1** |
+> | `go_call_minimum_swell_period_s` | 13.0 | **12.9** |
+> | `light_wind_exemption_kmh` | — | **16.5** (new, ADR 0009) |
+> | fitted on | 2021/22–2022/23, 6 Gold Days | 2011/12–2019/20, **25** |
+> | validated on | 2023/24–2025/26, 3 Gold Days | 2020/21–2025/26, **13** |
 >
-> **It is the arc, not the speed.** 2013-10-28, 2015-10-27, 2017-02-28, 2018-02-11, 2019-11-13
-> and 2020-02-17 had calmest-hour winds of **4–16 km/h** — far under the 35 km/h cap — from
-> bearings of **225–346°**, outside the offshore arc of 20–180°. `HeuristicBaseline.predict`
-> requires the arc *and* the speed, so a dead-calm 4 km/h breeze from the wrong quarter fails
-> the condition as surely as a gale would. On the six recent Gold Days #12 fitted, that never
-> showed.
+> **The first re-run did not complete, and that was the finding.** On 25 fitting Gold Days the
+> wind condition blocked six, so this calibration's central claim — that swell period is the
+> only condition the evidence can distinguish, in
+> "[Only swell period is fitted per tier](#only-swell-period-is-fitted-per-tier)" below — is
+> false on the full record. It was the offshore arc rather than the speed: 2013-10-28,
+> 2015-10-27, 2017-02-28, 2018-02-11, 2019-11-13 and 2020-02-17 had calmest-hour winds of
+> **4–16 km/h**, far under the 35 km/h cap, from bearings of 225–346°. ADR 0009 fixed it by
+> exempting light winds from the arc, and the exemption is itself fitted here — 16.5 km/h, the
+> lowest value admitting all six.
 >
-> **`thresholds.json` was not rewritten.** The shipped numbers are still #12's, in Open-Meteo
-> units, fitted on 9 Gold Days. #39 deliberately did not overwrite them, because fixing this
-> means changing the shipped `HeuristicBaseline` — which ADR 0006 fixes as the permanent
-> benchmark, making it an ADR-level change rather than a threshold tweak.
+> **Fitted on the reanalysis, shipped in Open-Meteo units.** The fit runs on the Copernicus IBI
+> series, where the same sea reads about half a second longer than the live feed reports. The
+> three wave bars are translated on the way out; the wind exemption is not, because wind comes
+> from ERA5 on both sides. `analysis/overlap/README.md` measures the transform.
 >
-> **Filed as [#40](https://github.com/NXA13/NazareNow/issues/40)**, which exempts light winds
-> from the direction arc rather than widening the arc: the six days are evidence that 4 km/h is
-> fine, not that 225–346° is. #39 is marked blocked by it.
+> **What it costs.** Recall went from 16 of 38 Gold Days at Watch to **37 of 38**, and Go Calls
+> from 9 of 38 to 16. The Watch tier is much noisier for it: 1050 Watch days over the record
+> against 106 before, roughly 70 a season. That is the recall tier behaving as ADR 0003 asks —
+> "missing a forming swell is worse than raising a Watch that fades" — but it is a different
+> product experience and worth seeing before it ships. Go Calls run at about 8.5 a season
+> against a stated budget of 8, slightly over because the budget is enforced on the fitting
+> split only.
 >
-> What #39 *did* establish is in `analysis/overlap/README.md` (what Open-Meteo's Swell is, in
-> Copernicus terms) and `analysis/backtest/README.md` (one panel over the whole record). The
-> backtest's headline is the number that matters here: scored over 38 Gold Days rather than 9,
-> the shipped rule catches **16**, not the 9 of 9 the operational panel shows. The rule was
-> calibrated and evaluated on the same small recent subset, and it scores accordingly.
+> **The bars are far more permissive than #12's, and that is the honest consequence of full
+> recall over 25 Gold Days rather than 6.** A Watch bar that has to catch every Gold Day in the
+> fitting split lands wherever the least impressive of them sits. Whether "full recall on the
+> fitting split" is still the right rule for choosing that bar is a fair question this fit does
+> not answer — it is the same class of assumption as the wind condition, and it has not been
+> re-examined.
 
 Reproduce with, from the repository root:
 

@@ -9,11 +9,18 @@ they are no longer written in this file. `thresholds.py` loads them from data ca
 provenance of the fit that produced them, and `analysis/calibration/` is the fit. The rule
 is still the rule; it is the constants that stopped being guesses.
 
-**The shape of the rule is unchanged, with one addition.** The model now reports two
-verdicts on swell period — one against the Watch bar, one against the stricter Go Call bar
-— because #11's backtest found period is the only condition that ever blocks a Gold Day,
-and therefore the only place ADR 0003's recall tier and precision tier can actually differ.
-See `Condition.SWELL_PERIOD_FOR_GO_CALL`.
+**The shape of the rule has changed twice.** The model reports two verdicts on swell period
+— one against the Watch bar, one against the stricter Go Call bar — because #11's backtest
+found period was the only condition that ever blocked a Gold Day, and therefore the only
+place ADR 0003's recall tier and precision tier can actually differ. See
+`Condition.SWELL_PERIOD_FOR_GO_CALL`.
+
+And per **ADR 0009**, the wind condition is a disjunction rather than a conjunction: wind
+light enough not to matter, *or* offshore and within the cap. That claim about period being
+the only binding condition was measured on six Gold Days; #39 re-ran it against 25 and found
+the wind condition rejecting six documented XXL Days on breezes of 4-16 km/h, blocked by the
+offshore arc rather than by the speed. A wind too light to raise a ripple cannot wreck a wave
+face whichever way it blows, and the rule now says so.
 """
 
 from __future__ import annotations
@@ -117,10 +124,17 @@ class HeuristicBaseline:
                     f"swell direction {direction:g}° is outside the canyon's arc",
                 ),
                 (
+                    # A disjunction since ADR 0009: wind light enough not to matter, OR
+                    # offshore and within the cap. Written as a conjunction this rejected six
+                    # documented Gold Days on 4-16 km/h breezes that happened to blow from
+                    # the wrong quarter — the condition claimed they were unsurfable.
                     Condition.WIND,
-                    _within(wind_direction, limits.offshore_wind_arc)
-                    and wind_speed <= limits.maximum_wind_speed_kmh,
-                    f"wind is offshore and light at {wind_speed:g} km/h",
+                    wind_speed <= limits.light_wind_exemption_kmh
+                    or (
+                        _within(wind_direction, limits.offshore_wind_arc)
+                        and wind_speed <= limits.maximum_wind_speed_kmh
+                    ),
+                    self._wind_held(wind_speed),
                     self._wind_fault(wind_speed, wind_direction),
                 ),
             )
@@ -137,7 +151,30 @@ class HeuristicBaseline:
             conditions=conditions,
         )
 
+    def _wind_held(self, speed: float) -> str:
+        """Which of the two ways the condition held.
+
+        They are not the same statement to a user. "Too light to matter" describes a glassy
+        morning with no wind worth naming; "offshore and light" describes a wind that is
+        actively grooming the face. Collapsing both into one sentence would tell somebody
+        deciding whether to fly to Portugal that the wind was favourable when in fact it was
+        merely absent.
+        """
+        if speed <= self.thresholds.light_wind_exemption_kmh:
+            return f"wind is too light to matter at {speed:g} km/h"
+        return f"wind is offshore and light at {speed:g} km/h"
+
     def _wind_fault(self, speed: float, direction: float) -> str:
+        """Why the condition failed, following the disjunction it now reports on.
+
+        A day failing on direction is only failing *because* it was too windy to be exempt,
+        and saying "onshore" without that leaves a reader wondering why a 20 km/h breeze was
+        judged differently from the 12 km/h one an hour earlier.
+        """
+        exemption = self.thresholds.light_wind_exemption_kmh
         if not _within(direction, self.thresholds.offshore_wind_arc):
-            return f"wind direction {direction:g}° is onshore"
+            return (
+                f"wind direction {direction:g}° is onshore and {speed:g} km/h is above the "
+                f"{exemption:g} km/h that would make direction irrelevant"
+            )
         return f"wind speed {speed:g} km/h is above {self.thresholds.maximum_wind_speed_kmh:g} km/h"

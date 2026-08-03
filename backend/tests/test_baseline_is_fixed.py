@@ -23,6 +23,7 @@ from __future__ import annotations
 import pytest
 
 from nazarenow.decision import Status, decide
+from nazarenow.models.base import Prediction
 from nazarenow.models.heuristic import HeuristicBaseline
 from nazarenow.thresholds import load
 
@@ -35,23 +36,35 @@ SHIPPED = load()
 
 # A day clearing every condition, and comfortably so: nothing here sits near a boundary, so
 # this fixture keeps meaning the same thing if a later recalibration nudges a threshold.
+#
+# The wind sits above `light_wind_exemption_kmh` on purpose. Since ADR 0009 the condition can
+# hold two ways, and at 10 km/h this day held by being too calm to care about — which meant
+# the direction row below tested nothing, because changing the bearing of an exempt wind
+# changes no verdict.
 GIANT = {
     "significant_wave_height": 5.0,
     "swell_period": 16.0,
     "swell_direction": 300.0,
-    "wind_speed": 10.0,
+    "wind_speed": 18.0,
     "wind_direction": 90.0,
 }
 
 
 def test_thresholds_are_what_the_reports_scored() -> None:
-    """The published numbers rest on these six values."""
-    assert SHIPPED.minimum_significant_wave_height_m == 3.75, RERUN
-    assert SHIPPED.watch_minimum_swell_period_s == 12.5, RERUN
-    assert SHIPPED.go_call_minimum_swell_period_s == 13.0, RERUN
+    """The published numbers rest on these seven values.
+
+    Refitted by #39 against 38 Gold Days rather than #12's 9, on the Copernicus reanalysis,
+    and translated back into Open-Meteo units on the way out. `light_wind_exemption_kmh` is
+    new in ADR 0009 and is the only one read in the units it was fitted in — wind comes from
+    ERA5 on both sides of that translation.
+    """
+    assert SHIPPED.minimum_significant_wave_height_m == 2.75, RERUN
+    assert SHIPPED.watch_minimum_swell_period_s == 10.1, RERUN
+    assert SHIPPED.go_call_minimum_swell_period_s == 12.9, RERUN
     assert SHIPPED.swell_arc == (255.0, 330.0), RERUN
     assert SHIPPED.offshore_wind_arc == (20.0, 180.0), RERUN
     assert SHIPPED.maximum_wind_speed_kmh == 35.0, RERUN
+    assert SHIPPED.light_wind_exemption_kmh == 16.5, RERUN
 
 
 def test_the_shipped_thresholds_carry_their_provenance() -> None:
@@ -64,9 +77,9 @@ def test_the_shipped_thresholds_carry_their_provenance() -> None:
     calibration = SHIPPED.calibration
 
     assert calibration is not None, RERUN
-    assert calibration.gold_days_fitted == 6
-    assert calibration.gold_days_validated == 3
-    assert calibration.gold_days_total == 9
+    assert calibration.gold_days_fitted == 25
+    assert calibration.gold_days_validated == 13
+    assert calibration.gold_days_total == 38
     assert calibration.fitted_on != calibration.validated_on
     assert calibration.source == "analysis/calibration/calibrate.py"
 
@@ -91,15 +104,17 @@ def test_the_same_readings_always_give_the_same_answer() -> None:
 @pytest.mark.parametrize(
     ("change", "expected_failures"),
     [
-        ({"significant_wave_height": 3.74}, ["significant wave height"]),
+        ({"significant_wave_height": 2.74}, ["significant wave height"]),
         # Below the Watch bar fails both period conditions, because a period too short to
         # watch is necessarily too short to book on. Asserting the pair rather than one of
         # them is what would catch the two bars being wired to the same number.
-        ({"swell_period": 12.4}, ["swell period", "swell period for a go call"]),
+        ({"swell_period": 10.0}, ["swell period", "swell period for a go call"]),
         # Between the bars: worth a Watch, not worth a Go Call. This row is the tier split.
-        ({"swell_period": 12.9}, ["swell period for a go call"]),
+        ({"swell_period": 12.8}, ["swell period for a go call"]),
         ({"swell_direction": 254.0}, ["swell direction"]),
         ({"swell_direction": 331.0}, ["swell direction"]),
+        # Onshore *and* windy enough that the ADR 0009 exemption does not rescue it. Both
+        # halves matter: at 16.5 km/h or below this bearing would hold.
         ({"wind_direction": 270.0}, ["wind"]),
         ({"wind_speed": 35.1}, ["wind"]),
     ],
@@ -119,6 +134,71 @@ def test_one_condition_short_of_the_rule(
     assert failed == expected_failures
 
 
+class TestTheLightWindExemption:
+    """ADR 0009: below the exemption speed, direction stops being consulted.
+
+    The defect this fixes rejected six documented XXL Days on breezes of 4-16 km/h that
+    happened to blow from the wrong quarter — the rule claimed they were unsurfable.
+    """
+
+    def test_a_wind_too_light_to_matter_holds_from_any_direction(self) -> None:
+        onshore = GIANT | {"wind_speed": 4.1, "wind_direction": 225.0}
+
+        prediction = HeuristicBaseline().predict(onshore)
+
+        assert prediction.matches_rule
+        assert prediction.unmatched == ()
+
+    def test_the_exemption_stops_exactly_at_its_speed(self) -> None:
+        """Checked from both sides, so a `<` written for a `<=` fails here.
+
+        2020-02-17 is the Gold Day that set this bar: its calmest hour was 16.3 km/h, and a
+        comparison one step tight would put it back outside the rule that was changed to
+        admit it.
+        """
+        model = HeuristicBaseline()
+        at_the_bar = GIANT | {"wind_speed": 16.5, "wind_direction": 225.0}
+        just_over = GIANT | {"wind_speed": 16.6, "wind_direction": 225.0}
+
+        assert model.predict(at_the_bar).matches_rule
+        assert not model.predict(just_over).matches_rule
+
+    def test_an_onshore_gale_still_fails(self) -> None:
+        """The exemption must not have quietly become a licence for any onshore wind."""
+        prediction = HeuristicBaseline().predict(
+            GIANT | {"wind_speed": 30.0, "wind_direction": 270.0}
+        )
+
+        assert not prediction.matches_rule
+        assert [o.condition.value for o in prediction.conditions if not o.holds] == ["wind"]
+
+    def test_the_two_ways_of_holding_say_different_things(self) -> None:
+        """A day that passes because the air is still is not a day groomed by an offshore
+        breeze, and somebody deciding whether to fly to Portugal is owed the difference."""
+        model = HeuristicBaseline()
+        becalmed = model.predict(GIANT | {"wind_speed": 4.0, "wind_direction": 225.0})
+        groomed = model.predict(GIANT)
+
+        def wind_sentence(prediction: Prediction) -> str:
+            return next(o.explanation for o in prediction.conditions if o.condition.value == "wind")
+
+        assert "too light to matter" in wind_sentence(becalmed)
+        assert "offshore and light" in wind_sentence(groomed)
+
+    def test_an_onshore_failure_says_why_the_exemption_did_not_apply(self) -> None:
+        """Otherwise a reader cannot tell why a 20 km/h breeze was judged differently from
+        the 12 km/h one an hour earlier."""
+        prediction = HeuristicBaseline().predict(
+            GIANT | {"wind_speed": 20.0, "wind_direction": 270.0}
+        )
+
+        explanation = next(
+            o.explanation for o in prediction.conditions if o.condition.value == "wind"
+        )
+        assert "onshore" in explanation
+        assert "16.5" in explanation
+
+
 def test_the_baseline_reports_itself_calibrated() -> None:
     """#12 fitted the thresholds, so the interface's caveat comes down.
 
@@ -132,11 +212,11 @@ def test_the_baseline_reports_itself_calibrated() -> None:
 @pytest.mark.parametrize(
     ("period", "expected"),
     [
-        (13.1, Status.GO),
         (13.0, Status.GO),
-        (12.9, Status.WATCH),
-        (12.5, Status.WATCH),
-        (12.4, Status.NONE),
+        (12.9, Status.GO),
+        (12.8, Status.WATCH),
+        (10.1, Status.WATCH),
+        (10.0, Status.NONE),
     ],
 )
 def test_the_calibrated_period_decides_the_tier(period: float, expected: Status) -> None:
