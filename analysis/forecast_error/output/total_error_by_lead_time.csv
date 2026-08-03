@@ -1,0 +1,15 @@
+variable,unit,reference,lead_time_days,subset,hours,bias,mae,rmse,noise,bias_share,p5,p95
+wave_height,m,proxy target,1,all hours,1593,-0.1709,0.3254,0.5977,0.5728,0.0817,-0.9502,0.3898
+wave_height,m,proxy target,1,big swell,807,-0.3931,0.4699,0.8092,0.7073,0.2360,-1.2208,0.2734
+wave_height,m,proxy target,2,all hours,1593,-0.1535,0.3487,0.6098,0.5901,0.0634,-0.9868,0.4640
+wave_height,m,proxy target,2,big swell,807,-0.3776,0.4953,0.8186,0.7263,0.2128,-1.2435,0.3787
+wave_height,m,proxy target,3,all hours,1593,-0.1512,0.3571,0.6199,0.6012,0.0595,-1.0434,0.4884
+wave_height,m,proxy target,3,big swell,807,-0.3890,0.5060,0.8312,0.7346,0.2190,-1.3180,0.3911
+wave_height,m,proxy target,4,all hours,1593,-0.1748,0.3862,0.6569,0.6332,0.0708,-1.0628,0.5030
+wave_height,m,proxy target,4,big swell,807,-0.4198,0.5418,0.8756,0.7684,0.2299,-1.4071,0.4063
+wave_height,m,proxy target,5,all hours,1593,-0.1931,0.4504,0.7405,0.7148,0.0680,-1.1684,0.6290
+wave_height,m,proxy target,5,big swell,807,-0.4460,0.6300,0.9812,0.8740,0.2065,-1.5371,0.5848
+wave_height,m,proxy target,6,all hours,1593,-0.2211,0.5060,0.8232,0.7929,0.0722,-1.3570,0.8034
+wave_height,m,proxy target,6,big swell,807,-0.5470,0.6930,1.0739,0.9241,0.2595,-1.8080,0.4753
+wave_height,m,proxy target,7,all hours,1593,-0.2972,0.6128,0.9282,0.8793,0.1026,-1.6704,0.9720
+wave_height,m,proxy target,7,big swell,807,-0.6892,0.8272,1.1843,0.9631,0.3387,-2.1347,0.5154
