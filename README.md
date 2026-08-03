@@ -158,7 +158,7 @@ downloaded data, so CI checks them statically:
 .venv/Scripts/python.exe -m ruff format --check analysis/
 ```
 
-Six exceptions, all fully runnable because they need no credentials:
+Eight exceptions, all fully runnable because they need no credentials:
 
 ```bash
 .venv/Scripts/python.exe analysis/gold_days/build.py --check
@@ -167,6 +167,8 @@ Six exceptions, all fully runnable because they need no credentials:
 .venv/Scripts/python.exe analysis/model_spread/probe.py --check
 .venv/Scripts/python.exe analysis/training_dataset/build.py --check
 .venv/Scripts/python.exe analysis/amplification_model/train.py --check
+.venv/Scripts/python.exe analysis/amplification_model/served_path.py --check
+.venv/Scripts/python.exe analysis/forecast_error/profile.py --check
 ```
 
 The Gold Day list is hand-written in `analysis/gold_days/README.md` and built from it into
@@ -207,6 +209,17 @@ make — that the feature vector `train.py` fits on is the one
 diverging would land every coefficient on the wrong column while the model went on returning
 entirely plausible numbers. See
 [`analysis/amplification_model/`](./analysis/amplification_model/).
+
+The seventh reproduces the published scored figures from its own feature construction, which is
+what makes the served-path table comparable with the fit it is set beside. It scores the model
+the site actually runs; the sixth scores one it does not.
+
+The eighth self-tests the arithmetic behind the Forecast Error Profile: bearings that wrap past
+north, the split between bias a constant correction removes and noise it cannot, and that the
+big-swell subset is chosen on what the sea turned out to be rather than on what the forecast
+said — the second of which would silently drop every big swell the forecast missed and flatter
+exactly the failure the profile exists to find. See
+[`analysis/forecast_error/`](./analysis/forecast_error/).
 
 **The backtest and the calibration** read only free Open-Meteo data, so they run too, though
 the first downloads about 10 MB the first time:
