@@ -157,12 +157,13 @@ downloaded data, so CI checks them statically:
 .venv/Scripts/python.exe -m ruff format --check analysis/
 ```
 
-Three exceptions, all fully runnable because they need no credentials:
+Four exceptions, all fully runnable because they need no credentials:
 
 ```bash
 .venv/Scripts/python.exe analysis/gold_days/build.py --check
 .venv/Scripts/python.exe analysis/backtest/swell.py --check
 .venv/Scripts/python.exe analysis/calibration/calibrate.py --check
+.venv/Scripts/python.exe analysis/model_spread/probe.py --check
 ```
 
 The Gold Day list is hand-written in `analysis/gold_days/README.md` and built from it into
@@ -179,6 +180,12 @@ The third self-tests the two rules that choose the thresholds, which are the who
 calibration and both easy to write backwards: a Watch bar taking the lowest rather than the
 highest period with full recall would still report full recall while flagging several times as
 many days.
+
+The fourth self-tests how Model Spread would be computed from disagreeing forecasters — in
+particular that each *provider* votes once. Five model identifiers at Praia do Norte are three
+organisations, and counting them as five makes the ensemble look twice as corroborated as it
+is. See [`analysis/model_spread/`](./analysis/model_spread/), which is groundwork for #8 rather
+than anything the running system uses.
 
 **The backtest and the calibration** read only free Open-Meteo data, so they run too, though
 the first downloads about 10 MB the first time:
