@@ -176,9 +176,11 @@ The second self-tests the arithmetic behind the backtest's Combined Sea to Swell
 reconstruction — quantile mapping and bearings that wrap past north.
 
 The third self-tests the two rules that choose the thresholds, which are the whole of the
-calibration and both easy to write backwards: a Watch bar taking the lowest rather than the
-highest period with full recall would still report full recall while flagging several times as
-many days.
+calibration and both easy to write backwards. Since ADR 0010 both tiers take the *lowest*
+period they can afford against a stated budget, so the rule written backwards would take the
+strictest affordable bar instead — throwing away the recall each tier exists for while still
+reporting a rate comfortably inside budget, which is exactly the shape of mistake that looks
+correct in a report.
 
 **The backtest and the calibration** read only free Open-Meteo data, so they run too, though
 the first downloads about 10 MB the first time:
