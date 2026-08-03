@@ -34,8 +34,12 @@ from nazarenow.models.base import Condition, ConditionOutcome, Prediction
 # translated the wave bars back into Open-Meteo units. Every one of them moved, and the
 # period bars moved a long way: a Watch bar that had to catch 25 Gold Days rather than 6
 # lands far lower than one that only had to catch the recent, well-documented ones.
+#
+# #43 then moved the Watch bar back up, from 10.1 s to 11.5 s, by giving the recall tier a
+# stated price (ADR 0010) instead of requiring it to catch every Gold Day whatever that cost.
+# Only this bar moved: the Go Call bar, the height bar and the wind exemption are unchanged.
 HEIGHT_M = 2.75
-WATCH_PERIOD_S = 10.1
+WATCH_PERIOD_S = 11.5
 GO_PERIOD_S = 12.9
 SWELL_ARC_FROM, SWELL_ARC_TO = 255.0, 330.0
 WIND_ARC_FROM, WIND_ARC_TO = 20.0, 180.0

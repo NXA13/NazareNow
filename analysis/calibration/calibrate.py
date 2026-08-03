@@ -22,6 +22,14 @@ blocked by the offshore arc on breezes of 4-16 km/h — and ADR 0009 answered it
 `light_wind_exemption_kmh`, which `fit_light_wind_exemption` fits here. It is shared by both
 tiers, so it is fitted before the period sweep rather than inside it.
 
+**Each tier buys the lowest bar it can afford.** Both period bars are now chosen the same
+way, against a budget saying what that tier is allowed to cost — ADR 0010 for the Watch,
+ADR 0003's precision target for the Go Call. The Watch bar used to be the highest period
+catching *every* Gold Day in the fitting split, which sounds like the recall tier ADR 0003
+asks for and behaves like an unpriced one: on #12's 6 fitting Gold Days it was invisible,
+and on #39's 25 it put a Watch on more than a third of the Big-Wave Season to catch a
+25th Gold Day that bought nothing held out. #43 is where that was re-argued.
+
 **Chronological split.** Fitted on the earlier Big-Wave Seasons, validated on the later ones
 — the direction the system runs in: fit on the past, apply to the future.
 
@@ -145,8 +153,35 @@ optimising a precision *number* would optimise against who happened to be holdin
 What can be stated honestly is what a Go Call costs the person receiving it. It says book
 travel to Portugal. Eight per Big-Wave Season is roughly one every three weeks — frequent
 enough to be worth subscribing to, rare enough that acting on one is a decision rather than
-a routine. That is a product judgement, written down here as one, and it is the only
-hand-chosen number left in the calibration.
+a routine. That is a product judgement, written down here as one — and until #43 gave the
+Watch tier the same treatment below, it was the only hand-chosen number in the calibration.
+"""
+
+WATCH_DAYS_PER_SEASON_BUDGET = 40.0
+"""What the recall tier is allowed to cost, per ADR 0010.
+
+The Watch tier's counterpart to `GO_CALLS_PER_SEASON_BUDGET`, and the asymmetry #43 was
+filed about: the precision tier had a stated price and the recall tier had none, so the
+Watch bar landed wherever the least impressive Gold Day in the fitting split happened to
+sit and nothing in the rule noticed what that cost.
+
+A Big-Wave Season is October through March, about 182 days. Forty of them is roughly one
+day in five — often enough that somebody checking weekly usually finds a swell forming,
+rare enough that four days in five make no claim on their attention. At the 73 days a
+season the previous rule chose, a Watch covered more than a third of the season, which is
+not a warning about anything.
+
+The second hand-chosen number in this calibration, and it is stated as a product judgement
+exactly as the first one is. What makes it defensible rather than arbitrary is that it is
+not near a boundary: every budget from 36 to 46 days a season selects the same bar on this
+record, and budgets outside that move it one step of the sweep at a time. ADR 0010 records
+the sensitivity and the alternatives that were rejected.
+
+Counted over the whole record rather than over Big-Wave Season days alone, so a Watch
+raised in July is in the numerator while the denominator counts only seasons. That makes
+the budget **conservative** — the chosen bar flags 18% of Big-Wave Season days against a
+budget nominally allowing 22% — and it keeps this rate in the same unit as the Go Call
+budget, which matters more than the small overcount.
 """
 
 HEIGHT_STEP_M = 0.25
@@ -496,21 +531,40 @@ def sweep(split: Split, height: float, light_wind: float) -> list[SweepRow]:
 
 
 def choose_watch_bar(rows: list[SweepRow]) -> float:
-    """The **highest** period bar that still catches every Gold Day in the fitting split.
+    """The **lowest** period bar whose Watch rate stays inside the stated budget.
 
-    Recall-optimised, per ADR 0003: full recall is the constraint, and among the bars that
-    achieve it the highest is chosen because it flags fewest days. Taking the lowest bar
-    instead would score the same recall while burying it in noise, which is a worse Watch,
-    not a safer one.
+    Recall-optimised subject to a cost ceiling, per ADR 0010. Recall rises as the bar falls,
+    so the lowest affordable bar catches the most Gold Days the tier can pay for — which is
+    what makes this still the recall tier ADR 0003 describes. The budget is what stops it
+    running away: without one the bar lands wherever the least impressive Gold Day in the
+    fitting split sits, whatever that costs.
+
+    Deliberately the same shape as `choose_go_bar`, differing only in its budget. The two
+    tiers price the same thing in the same unit and disagree about how much of it they can
+    afford, which is the honest version of ADR 0003's "one optimised for recall, one for
+    precision".
+
+    **Recall is not a constraint here, and that is the change #43 asked for.** The previous
+    rule required full recall on the fitting split, which is the quantity this record
+    measures worst — 25 Gold Days against thousands of flagged days — and the guarantee did
+    not survive the split anyway. Constraining the well-measured quantity and maximising the
+    noisy one is the way round that the evidence supports.
+
+    Raises when nothing in the sweep is affordable, rather than returning the strictest bar
+    available: a Watch tier that cannot be afforded at any period this record can express is
+    a finding about the sweep or the budget, not a threshold to ship.
     """
-    full = [row.period for row in rows if row.watch_recall.recall >= 1.0]
-    if not full:
+    within = [
+        row.period for row in rows if row.watch_recall.per_season <= WATCH_DAYS_PER_SEASON_BUDGET
+    ]
+    if not within:
         raise RuntimeError(
-            "no swell period bar in the sweep catches every Gold Day in the fitting split; "
-            "the range of PERIOD_SWEEP is too narrow, or a condition other than period is "
-            "blocking one of them"
+            f"no swell period bar in the sweep keeps Watch days within "
+            f"{WATCH_DAYS_PER_SEASON_BUDGET:g} per Big-Wave Season; the range of "
+            "PERIOD_SWEEP does not reach high enough, or the budget is too small for any "
+            "rule this record can express"
         )
-    return max(full)
+    return min(within)
 
 
 def choose_go_bar(rows: list[SweepRow], watch_bar: float) -> float:
@@ -536,6 +590,50 @@ def choose_go_bar(rows: list[SweepRow], watch_bar: float) -> float:
             "both be honoured on this record"
         )
     return min(within)
+
+
+def describe_watch_binding_constraint(rows: list[SweepRow], watch_bar: float) -> str:
+    """Which constraint chose the Watch bar: the budget, or the floor of the sweep.
+
+    #43's third criterion. "A bar set by a recall floor and a bar set by a cost budget are
+    different claims and the report should distinguish them" — and so are a bar the budget
+    genuinely selected and a bar that is merely the lowest period anyone swept. In the second
+    case the budget chose nothing and the record does not pin the bar down, which is exactly
+    what `describe_binding_constraint` discloses for the Go bar when its budget is slack.
+
+    Where the budget did bind, the price of the step it refused travels with it. That price
+    is the whole subject of #43: the rule that chose 10.5 s was paying about 14 Watch days a
+    season for its last Gold Day without ever being asked, and a report that named the
+    constraint while hiding what it turned down would repeat the omission in a smaller way.
+    """
+    floor = min(row.period for row in rows)
+    if watch_bar <= floor:
+        return (
+            f"the floor of the sweep rather than the budget — {floor:g}s is the lowest period "
+            f"swept and it is already within {WATCH_DAYS_PER_SEASON_BUDGET:g} Watch days per "
+            "season, so the budget selected nothing and a lower bar might be affordable too"
+        )
+
+    below = max((row for row in rows if row.period < watch_bar), key=lambda row: row.period)
+    chosen = next(row for row in rows if row.period == watch_bar)
+    gained = below.watch_recall.gold_called - chosen.watch_recall.gold_called
+    cost = below.watch_recall.per_season - chosen.watch_recall.per_season
+    price = (
+        f"{cost / gained:.0f} more Watch days a season for each"
+        if gained
+        else f"{cost:.0f} more Watch days a season and no"
+    )
+    # The rejected step is named in the fit's own units, which this sentence says out loud.
+    # It has to: the shipped Watch bar is the *translated* number, and on this record the two
+    # collide — the fit chose 12 s and refused 11.5 s, and 12 s translates to a shipped 11.5 s.
+    # Unlabelled, the file would carry 11.5 twice meaning two different bars.
+    return (
+        f"the budget of {WATCH_DAYS_PER_SEASON_BUDGET:g} Watch days per Big-Wave Season — the "
+        f"next step down the sweep ({below.period:g}s in the reanalysis units the fit ran in) "
+        f"would have cost {price} additional Gold Day "
+        f"({below.watch_recall.gold_called}/{below.watch_recall.gold_total} against "
+        f"{chosen.watch_recall.gold_called}/{chosen.watch_recall.gold_total})"
+    )
 
 
 def describe_binding_constraint(rows: list[SweepRow], watch_bar: float, go_bar: float) -> str:
@@ -636,6 +734,7 @@ def write_thresholds(
     fitted: Thresholds,
     fit: Split,
     test: Split,
+    watch_binding: str,
     binding: str,
     translations: dict[str, measure.Translation],
     exemption_support: tuple[float, int],
@@ -665,12 +764,14 @@ def write_thresholds(
             # that selected the number, which the same sentence then had to walk back.
             "method": (
                 "Swell period fitted per tier against Gold Days on the Copernicus IBI wave "
-                "reanalysis, split on Big-Wave Season boundaries. The Watch bar is the "
-                "highest period catching every Gold Day in the fitting split. The Go Call "
-                "bar is the lowest period sitting above the Watch bar and within "
-                f"{GO_CALLS_PER_SEASON_BUDGET:g} Go Calls per Big-Wave Season; in this fit "
-                f"what actually set it was {binding}. Height and both arcs were verified to "
-                "block no Gold Day rather than fitted. "
+                "reanalysis, split on Big-Wave Season boundaries. Each tier takes the lowest "
+                "period it can afford, against a budget stating what that tier is allowed to "
+                f"cost: {WATCH_DAYS_PER_SEASON_BUDGET:g} Watch days per Big-Wave Season "
+                "(ADR 0010), and "
+                f"{GO_CALLS_PER_SEASON_BUDGET:g} Go Calls per Big-Wave Season, with the Go "
+                f"bar also required to sit above the Watch bar. What set the Watch bar in "
+                f"this fit was {watch_binding}; what set the Go Call bar was {binding}. "
+                "Height and both arcs were verified to block no Gold Day rather than fitted. "
                 + _describe_exemption(thresholds, exemption_support)
                 + " The wave bars above are in "
                 "Open-Meteo units, which is what the Pipeline Run reads; the fit ran in "
@@ -791,13 +892,18 @@ def check() -> int:
         if got != want:
             failures.append(f"{label}: expected {want!r}, got {got!r}")
 
-    def row(period: float, watch_recall: float, go_per_season: float) -> SweepRow:
+    def row(
+        period: float,
+        watch_recall: float,
+        go_per_season: float,
+        watch_per_season: float = 0.0,
+    ) -> SweepRow:
         return SweepRow(
             period=period,
             watch_recall=Score(
                 gold_called=int(watch_recall * 10),
                 gold_total=10,
-                flagged=0,
+                flagged=int(watch_per_season),
                 flagged_that_are_gold=0,
                 seasons=1.0,
             ),
@@ -810,11 +916,23 @@ def check() -> int:
             ),
         )
 
-    # The Watch bar takes the HIGHEST bar with full recall, not the lowest and not the
-    # first. Written backwards it would still produce full recall on the fitting split and
-    # look correct in the report, while flagging several times as many days.
-    rows = [row(11.0, 1.0, 0), row(12.0, 1.0, 0), row(13.0, 0.8, 0)]
-    expect("watch bar picks the highest with full recall", choose_watch_bar(rows), 12.0)
+    # The Watch bar takes the LOWEST bar inside its budget (ADR 0010). Written backwards it
+    # would take the strictest affordable bar and throw away the recall the tier exists for,
+    # while reporting a Watch rate well inside budget and looking correct.
+    rows = [row(11.0, 1.0, 0, 90), row(12.0, 0.9, 0, 30), row(13.0, 0.6, 0, 10)]
+    expect("watch bar picks the lowest inside budget", choose_watch_bar(rows), 12.0)
+
+    # Recall does not enter the choice at all. These rows are the previous rule's answer —
+    # 11s has full recall and 12s does not — and the budget still rejects 11s. A rule that
+    # kept a recall floor would return 11.0 here.
+    expect("watch bar does not chase recall past the budget", choose_watch_bar(rows), 12.0)
+
+    try:
+        choose_watch_bar([row(12.0, 1.0, 0, 99)])
+    except RuntimeError:
+        pass
+    else:
+        failures.append("watch bar: expected a RuntimeError when no bar meets the budget")
 
     # The Go bar takes the LOWEST bar inside the budget. Written backwards it would pick the
     # strictest bar in the sweep, scoring near-perfect precision by almost never speaking.
@@ -831,12 +949,38 @@ def check() -> int:
     else:
         failures.append("go bar: expected a RuntimeError when no bar meets the budget")
 
-    try:
-        choose_watch_bar([row(12.0, 0.5, 0)])
-    except RuntimeError:
-        pass
-    else:
-        failures.append("watch bar: expected a RuntimeError when no bar reaches full recall")
+    # Which constraint set the Watch bar. Slack when the sweep's own floor is affordable —
+    # the budget then chose nothing and the record does not pin the bar down, which is the
+    # same disclosure `describe_binding_constraint` makes for the Go bar.
+    rows = [row(11.0, 1.0, 0, 10), row(12.0, 0.9, 0, 5)]
+    expect(
+        "watch binding: slack when the sweep floor is affordable",
+        "the floor of the sweep" in describe_watch_binding_constraint(rows, watch_bar=11.0),
+        True,
+    )
+    # Asserted on the refused step rather than on the word "budget", which the slack branch
+    # also contains — "the floor of the sweep rather than the budget". Matching that would
+    # pass whichever branch ran, which is no test of the branching at all.
+    rows = [row(11.0, 1.0, 0, 90), row(12.0, 0.9, 0, 30)]
+    binding_says = describe_watch_binding_constraint(rows, watch_bar=12.0)
+    expect(
+        "watch binding: names the step the budget refused",
+        "next step down the sweep (11s" in binding_says,
+        True,
+    )
+    # 60 flagged days a season separate the two rows and one Gold Day separates their recall,
+    # so the price of the refused step is 60. Checked because it is the number #43 exists to
+    # surface, and an inverted subtraction would report a negative price without failing.
+    expect(
+        "watch binding: prices the refused step",
+        "60 more Watch days a season for each additional Gold Day" in binding_says,
+        True,
+    )
+    expect(
+        "watch binding: does not claim the floor bound",
+        "the floor of the sweep" in binding_says,
+        False,
+    )
 
     # A candidate that would invert the tiers must be refused by the parser the running
     # system uses, not merely by the chooser above it.
@@ -920,15 +1064,21 @@ def main() -> int:
 
     watch_bar = choose_watch_bar(rows)
     go_bar = choose_go_bar(rows, watch_bar)
-    print(f"\nWatch bar:    {watch_bar:g}s  (highest with full recall on the fitting split)")
+    print(
+        f"\nWatch bar:    {watch_bar:g}s  "
+        f"(lowest within {WATCH_DAYS_PER_SEASON_BUDGET:g} Watch days/season)"
+    )
     print(f"Go Call bar:  {go_bar:g}s  (lowest within {GO_CALLS_PER_SEASON_BUDGET:g} calls/season)")
 
-    # Which of the two constraints actually chose the Go bar. Worth printing because the
-    # answer here is not the flattering one: the budget is slack, and reporting the Go bar
-    # as "the precision target's doing" when the target never bit would be a claim the
-    # record does not support.
+    # Which constraint actually chose each bar, rather than which one it would flatter the
+    # method to name. A Go bar held up by the Watch bar while its own budget sat slack is not
+    # "the precision target's doing", and #12's fit was exactly that case even though this
+    # one is not. On the Watch side the price of the step the budget refused travels with it,
+    # since an unexamined marginal price is what #43 was filed about.
+    watch_binding = describe_watch_binding_constraint(rows, watch_bar)
     binding = describe_binding_constraint(rows, watch_bar, go_bar)
-    print(f"  binding constraint: {binding}")
+    print(f"  Watch bar set by:   {watch_binding}")
+    print(f"  Go Call bar set by: {binding}")
 
     chosen = candidate(watch_bar, go_bar, height, light_wind)
 
@@ -1015,6 +1165,7 @@ def main() -> int:
         chosen,
         fit,
         test,
+        watch_binding,
         binding,
         translations,
         (calmest_admitted, days_needing),

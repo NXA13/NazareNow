@@ -3,20 +3,44 @@
 Ticket #12. #11 established the benchmark and found what was wrong with it. This chooses the
 numbers, and writes them where the running system reads them.
 
-> ## Superseded: refitted on 38 Gold Days by #39 and #40
+> ## Superseded: refitted on 38 Gold Days by #39 and #40, and repriced by #43
 >
 > Everything from "The headline" down describes the fit on **9 Gold Days**, which was all the
 > Swell record reached at the time. It is kept as the record of where the numbers came from.
 > The shipped values are no longer these.
 >
-> | | #12 (9 Gold Days) | now (38 Gold Days) |
-> |---|---|---|
-> | `minimum_significant_wave_height_m` | 3.75 | **2.75** |
-> | `watch_minimum_swell_period_s` | 12.5 | **10.1** |
-> | `go_call_minimum_swell_period_s` | 13.0 | **12.9** |
-> | `light_wind_exemption_kmh` | — | **16.5** (new, ADR 0009) |
-> | fitted on | 2021/22–2022/23, 6 Gold Days | 2011/12–2019/20, **25** |
-> | validated on | 2023/24–2025/26, 3 Gold Days | 2020/21–2025/26, **13** |
+> | | #12 (9 Gold Days) | #39/#40 (38 Gold Days) | now (#43) |
+> |---|---|---|---|
+> | `minimum_significant_wave_height_m` | 3.75 | 2.75 | **2.75** |
+> | `watch_minimum_swell_period_s` | 12.5 | 10.1 | **11.5** |
+> | `go_call_minimum_swell_period_s` | 13.0 | 12.9 | **12.9** |
+> | `light_wind_exemption_kmh` | — | 16.5 (new, ADR 0009) | **16.5** |
+> | fitted on | 2021/22–2022/23, 6 Gold Days | 2011/12–2019/20, 25 | **25** |
+> | validated on | 2023/24–2025/26, 3 Gold Days | 2020/21–2025/26, 13 | **13** |
+>
+> ### #43: the Watch tier now has a price, and it is the only thing that moved
+>
+> The open question this file recorded at the bottom of the #39/#40 block — whether "full recall
+> on the fitting split" is the right way to choose the Watch bar — was answered no. **ADR 0010**
+> replaces it with a budget, mirroring the Go Call bar: the Watch bar is the *lowest* period
+> whose Watch rate stays within **40 Watch days per Big-Wave Season**. Recall is no longer a
+> constraint on it.
+>
+> | Split | Tier | Recall before | Recall now | Days/season before | Days/season now |
+> |---|---|---|---|---|---|
+> | Fitting | Watch or better | 25/25 | **21/25** | 72.9 | **35.1** |
+> | **Held-out** | **Watch or better** | **12/13** | **12/13** | **61.2** | **32.2** |
+> | Fitting | Go Call | 10/25 | 10/25 | 7.2 | 7.2 |
+> | Held-out | Go Call | 9/13 | 9/13 | 7.2 | 7.2 |
+>
+> **The held-out row is the whole argument.** Halving what the Watch tier costs changes its
+> held-out recall by nothing at all — held-out recall is 12/13 at every bar from 12.0 s down to
+> 10.0 s in the fit's units. The four Gold Days the old rule bought were bought in-sample only,
+> at about 13 Watch days a season each, and a Watch that covered 35% of the Big-Wave Season is
+> not a warning. ADR 0010 has the sweep, the alternatives that were rejected, and the
+> sensitivity of the budget.
+>
+> The Go Call rows are identical either side. That is the check that this changed one tier.
 >
 > **The first re-run did not complete, and that was the finding.** On 25 fitting Gold Days the
 > wind condition blocked six, so this calibration's central claim — that swell period is the
@@ -46,9 +70,10 @@ numbers, and writes them where the running system reads them.
 > fitting split lands wherever the least impressive of them sits. Whether "full recall on the
 > fitting split" is still the right rule for choosing that bar is a fair question this fit does
 > not answer — it is the same class of assumption as the wind condition, and it has not been
-> re-examined. **#43 is where it gets re-examined**, filed out of #40's review with this fit's
+> re-examined. **#43 is where it got re-examined**, filed out of #40's review with this fit's
 > own numbers: the 25th Gold Day costs about 14 Watch days a season at the margin, and the bar
-> chosen for full recall on the fitting split scores 12/13 held out anyway.
+> chosen for full recall on the fitting split scores 12/13 held out anyway. The answer was ADR
+> 0010 and the section above; the numbers in this block are the ones it replaced.
 
 Reproduce with, from the repository root:
 
@@ -145,6 +170,11 @@ Two rules, one per tier, matching what ADR 0003 says each tier is for.
 split.** Recall is the constraint; among the bars achieving it, the highest flags fewest days.
 Taking the lowest instead would score identical recall while burying it in noise.
 
+> **Replaced by ADR 0010.** Both bars are now chosen the same way — the lowest period the tier
+> can afford against a stated budget — and the Watch tier's budget is 40 days a Big-Wave
+> Season. The rule described in the paragraph above is the one #43 removed; the paragraph
+> below, on the Go Call bar, still stands.
+
 **The Go Call bar is the lowest swell period whose Go Call rate stays inside a stated budget
 of eight per Big-Wave Season**, and which sits strictly above the Watch bar. Recall falls as
 the bar rises, so the lowest affordable bar catches most Gold Days without exceeding what a Go
@@ -160,8 +190,11 @@ be holding a camera, which is the failure #11 warned about and ADR 0006 forbids.
 
 What can be stated honestly is what a Go Call costs its recipient: it says book travel to
 Portugal. Eight per season is roughly one every three weeks. That is a product judgement,
-written down as one in `GO_CALLS_PER_SEASON_BUDGET`, and it is the only hand-chosen number
-left in the calibration.
+written down as one in `GO_CALLS_PER_SEASON_BUDGET`.
+
+It was the only hand-chosen number left in the calibration until #43, which gave the Watch tier
+the same treatment for the same reason: `WATCH_DAYS_PER_SEASON_BUDGET`, 40 days a Big-Wave
+Season, argued in ADR 0010. There are two now, both product judgements, both stated as such.
 
 ### The budget did not actually bind, and that matters
 
