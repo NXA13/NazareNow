@@ -599,7 +599,7 @@ def describe_watch_binding_constraint(rows: list[SweepRow], watch_bar: float) ->
     different claims and the report should distinguish them" — and so are a bar the budget
     genuinely selected and a bar that is merely the lowest period anyone swept. In the second
     case the budget chose nothing and the record does not pin the bar down, which is exactly
-    what `describe_binding_constraint` discloses for the Go bar when its budget is slack.
+    what `describe_go_binding_constraint` discloses for the Go bar when its budget is slack.
 
     Where the budget did bind, the price of the step it refused travels with it. That price
     is the whole subject of #43: the rule that chose 10.5 s was paying about 14 Watch days a
@@ -636,7 +636,7 @@ def describe_watch_binding_constraint(rows: list[SweepRow], watch_bar: float) ->
     )
 
 
-def describe_binding_constraint(rows: list[SweepRow], watch_bar: float, go_bar: float) -> str:
+def describe_go_binding_constraint(rows: list[SweepRow], watch_bar: float, go_bar: float) -> str:
     """Which constraint chose the Go Call bar: the budget, or having to clear the Watch bar.
 
     `choose_go_bar` takes the lowest bar satisfying both, so whichever constraint the chosen
@@ -734,8 +734,9 @@ def write_thresholds(
     fitted: Thresholds,
     fit: Split,
     test: Split,
+    *,
     watch_binding: str,
-    binding: str,
+    go_binding: str,
     translations: dict[str, measure.Translation],
     exemption_support: tuple[float, int],
     path: Path,
@@ -745,6 +746,11 @@ def write_thresholds(
     Deliberately the shipped default rather than a file in `output/`. A calibration nobody
     deploys is a report; the point of #12 is that these numbers reach the Decision Model.
     `output/` gets the tables that justify them.
+
+    Everything after the two splits is keyword-only. `watch_binding` and `go_binding` are two
+    strings of the same type sitting next to each other, and transposing them would attribute
+    each tier's constraint to the other tier — in a field the API serves to a reader, with
+    nothing failing. Since #43 there is one of these per tier, so the risk is new.
 
     `thresholds` arrives already translated, and `fitted` carries the reanalysis-unit values
     it was translated from. Both go into `method` rather than into new top-level keys: a
@@ -770,7 +776,7 @@ def write_thresholds(
                 "(ADR 0010), and "
                 f"{GO_CALLS_PER_SEASON_BUDGET:g} Go Calls per Big-Wave Season, with the Go "
                 f"bar also required to sit above the Watch bar. What set the Watch bar in "
-                f"this fit was {watch_binding}; what set the Go Call bar was {binding}. "
+                f"this fit was {watch_binding}; what set the Go Call bar was {go_binding}. "
                 "Height and both arcs were verified to block no Gold Day rather than fitted. "
                 + _describe_exemption(thresholds, exemption_support)
                 + " The wave bars above are in "
@@ -951,7 +957,7 @@ def check() -> int:
 
     # Which constraint set the Watch bar. Slack when the sweep's own floor is affordable —
     # the budget then chose nothing and the record does not pin the bar down, which is the
-    # same disclosure `describe_binding_constraint` makes for the Go bar.
+    # same disclosure `describe_go_binding_constraint` makes for the Go bar.
     rows = [row(11.0, 1.0, 0, 10), row(12.0, 0.9, 0, 5)]
     expect(
         "watch binding: slack when the sweep floor is affordable",
@@ -1076,9 +1082,9 @@ def main() -> int:
     # one is not. On the Watch side the price of the step the budget refused travels with it,
     # since an unexamined marginal price is what #43 was filed about.
     watch_binding = describe_watch_binding_constraint(rows, watch_bar)
-    binding = describe_binding_constraint(rows, watch_bar, go_bar)
+    go_binding = describe_go_binding_constraint(rows, watch_bar, go_bar)
     print(f"  Watch bar set by:   {watch_binding}")
-    print(f"  Go Call bar set by: {binding}")
+    print(f"  Go Call bar set by: {go_binding}")
 
     chosen = candidate(watch_bar, go_bar, height, light_wind)
 
@@ -1165,11 +1171,11 @@ def main() -> int:
         chosen,
         fit,
         test,
-        watch_binding,
-        binding,
-        translations,
-        (calmest_admitted, days_needing),
-        DEFAULT_PATH,
+        watch_binding=watch_binding,
+        go_binding=go_binding,
+        translations=translations,
+        exemption_support=(calmest_admitted, days_needing),
+        path=DEFAULT_PATH,
     )
     print(f"\nWrote {sweep_path.relative_to(ROOT)}")
     print(f"Wrote {report_path.relative_to(ROOT)}")

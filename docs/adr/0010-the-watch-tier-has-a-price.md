@@ -32,8 +32,14 @@ how the previous rule got in.
 ## What forced it
 
 On #12's 6 fitting Gold Days the rule was invisible. #39 took the fitting split to 25, and the
-bar fell from 12.5 s to 10.1 s while the Watch tier went from 106 days issued to 1050 — about
-73 a season. #40's review filed this as **#43** rather than retuning it in place.
+bar fell from 12.5 s to 10.1 s while the Watch tier went from 106 days issued over the record
+to 1050 — and, on the fitting split the bar is actually chosen from, to 72.9 days a season.
+#40's review filed this as **#43** rather than retuning it in place.
+
+Those two denominators are not interchangeable and this ADR keeps them apart: the record spans
+16 Big-Wave Seasons and the fitting split 9, so the same rule reads 65.6 days a season over the
+whole record and 72.9 over the half it was fitted on. Every figure below is the fitting split's
+unless it says otherwise, because that is the split the rule can see when it chooses.
 
 Two things in that fit's own output say the constraint was doing more than ADR 0003 asks.
 
