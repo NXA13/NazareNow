@@ -331,3 +331,115 @@ def fetch_marine(client: httpx.Client, sleep=time.sleep) -> tuple[dict[str, Any]
 
 def fetch_weather(client: httpx.Client, sleep=time.sleep) -> tuple[dict[str, Any], str]:
     return fetch(client, WEATHER_URL, WEATHER_VARIABLES, sleep)
+
+
+# The variables Model Spread is measured on: the three the Heuristic Baseline decides a day
+# by. Spread in anything else would be measuring doubt no tier consults.
+SPREAD_VARIABLES = ["swell_wave_height", "swell_wave_period", "swell_wave_direction"]
+
+
+def fetch_ensemble(
+    client: httpx.Client, models: list[str], sleep=time.sleep
+) -> tuple[dict[str, Any], str]:
+    """Every wave model's forecast, in one request, for Model Spread (#8, ADR 0003).
+
+    **One request, not one per model.** Open-Meteo accepts a comma-separated `models` list
+    and answers with one series per model per variable, suffixed with the model name. That
+    matters for more than the request budget: every member is then read from a single
+    response at a single instant, so none of the measured disagreement is our own sampling
+    drifting between calls. It does not fix the members' own publication cadences —
+    `analysis/model_spread/` measures what that costs and finds it inflates the spread,
+    which errs toward caution.
+
+    Deliberately **not** routed through `validate`. That function fails the run on a missing
+    or null variable, which is right for the forecast the site displays and wrong here: ADR
+    0003 says a provider being unavailable must degrade the uncertainty estimate rather than
+    fail the Pipeline Run. A member returning nulls is an ensemble with fewer votes, and
+    `spread.derive` is what decides whether enough are left.
+
+    No `current` block is requested. Model Spread is about dates ahead, and asking for
+    current conditions per model would add a second way for this call to fail for something
+    the caller never reads.
+    """
+    params = {
+        "latitude": LATITUDE,
+        "longitude": LONGITUDE,
+        "hourly": ",".join(SPREAD_VARIABLES),
+        "models": ",".join(models),
+        "forecast_days": FORECAST_DAYS,
+        "timezone": TIMEZONE,
+        **UNIT_PARAMS,
+    }
+
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            response = client.get(MARINE_URL, params=params, timeout=30)
+        except httpx.HTTPError:
+            if attempt == MAX_ATTEMPTS:
+                raise
+            sleep(min(BACKOFF_SECONDS * attempt, MAX_BACKOFF_SECONDS))
+            continue
+
+        retryable = response.status_code >= 500 or is_rate_limited(response)
+        if retryable and attempt < MAX_ATTEMPTS:
+            sleep(retry_delay(response, attempt))
+            continue
+
+        response.raise_for_status()
+        body = response.json()
+        validate_ensemble(body, models)
+        return body, str(response.url)
+
+    raise RuntimeError("unreachable: the retry loop returns or raises")  # pragma: no cover
+
+
+def validate_ensemble(body: dict[str, Any], models: list[str]) -> None:
+    """Check only what a degraded ensemble still has to get right.
+
+    Three things, and no more. The timestamps must be on the zone this system groups days
+    by, or every date is off by an hour and nothing downstream could tell. The units must be
+    the ones the thresholds are named in, for the reason `validate_units` gives. And the
+    response must carry a time axis and at least one model's series, because a body with
+    neither is a fault rather than an unavailable provider.
+
+    What it does *not* check is that every model answered. That is the whole point: ADR 0003
+    requires a missing provider to degrade Model Spread visibly rather than stop the run.
+    """
+    hourly = body.get("hourly") or {}
+    if not hourly.get("time"):
+        raise ValueError("Open-Meteo ensemble response has no time axis")
+
+    if body.get("timezone") != TIMEZONE:
+        raise ValueError(
+            f"Open-Meteo returned ensemble timestamps on {body.get('timezone')!r}; this "
+            f"system groups hours into days on {TIMEZONE!r} and would put them on the "
+            "wrong date"
+        )
+
+    # Each series carried alongside the base variable it came from, rather than recovered
+    # from the key by splitting on underscores. Model names contain them — `dwd_gwam`,
+    # `meteofrance_wave` — so a split would sometimes strip half a model name and look up a
+    # unit for a variable that does not exist.
+    present = [
+        (f"{variable}_{model}", variable)
+        for model in models
+        for variable in SPREAD_VARIABLES
+        if f"{variable}_{model}" in hourly
+    ]
+    if not present:
+        raise ValueError(
+            f"Open-Meteo ensemble response carries no series for any of {models}; every "
+            "member absent is a contract change, not an unavailable provider"
+        )
+
+    units = body.get("hourly_units") or {}
+    wrong = {
+        key: units[key]
+        for key, variable in present
+        if key in units and units[key] != EXPECTED_UNITS[variable]
+    }
+    if wrong:
+        raise ValueError(
+            f"Open-Meteo returned ensemble units {wrong}; Model Spread is measured in the "
+            "metres, seconds and degrees the thresholds are named in"
+        )
