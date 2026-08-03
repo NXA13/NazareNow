@@ -168,6 +168,19 @@ right unit to fit on.
 whether it earns its place. If it does, the rows lacking it become a second, smaller dataset
 rather than a flag to ignore.
 
+**5. The Hindcast does not yet reach the start of the buoy record, and could.** #9 asks for
+Hindcast conditions "covering the buoy's period". Monican02 begins 2010-06-12 and the cached
+IBI download begins 2011-01-01, so **2,215 hours of Proxy Target have no Hindcast to pair
+with** — that is three quarters of all unpaired hours, and it costs the 2010/11 Big-Wave
+Season most of its October to December.
+
+This is a download range, not a limit of the product: #36 established IBI carries a Swell
+partition back to 1980. `reanalysis.START` is set to 2011-01-01 because it matches
+`hindcast.START` and the first Gold Day is 2011-11-01, which is the right bound for the
+*backtest* that module was written for and the wrong one for training. Extending it means a
+re-download with Copernicus credentials and would shift the backtest's span too, so it is
+recorded here rather than changed underneath #11.
+
 ## Files
 
 | File | What it is |
