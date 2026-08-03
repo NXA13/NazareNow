@@ -30,6 +30,15 @@ rather than the prediction.
 Watch and Go Call must be evaluated against different metrics. Reporting a single accuracy
 figure for the system would be meaningless.
 
+**Only one of the two tiers was given a price here, and ADR 0010 gives the other one.** This
+ADR states what a Go Call may cost — a budget per Big-Wave Season — and says only that a Watch
+is "optimised for recall", which the calibration read as a constraint with no ceiling. On six
+Gold Days that was invisible; on twenty-five it put a Watch on more than a third of the season
+for recall that did not survive the held-out split. ADR 0010 gives the recall tier a budget of
+its own, and the two tiers are now chosen by the same rule with different numbers. The sentence
+above still stands: they are still evaluated against different metrics, and the Watch tier is
+still the looser of the two.
+
 ## Implementation status
 
 **The roster named above cannot be implemented as written.** Requested on its own at Praia

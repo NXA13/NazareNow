@@ -57,9 +57,14 @@ def test_thresholds_are_what_the_reports_scored() -> None:
     and translated back into Open-Meteo units on the way out. `light_wind_exemption_kmh` is
     new in ADR 0009 and is the only one read in the units it was fitted in — wind comes from
     ERA5 on both sides of that translation.
+
+    The Watch bar then moved once more, from 10.1 s to 11.5 s, when #43 gave the recall tier
+    a stated price under ADR 0010. It is the only one of the seven that #43 moved, which is
+    the claim this list is best placed to hold: a change meant to affect one tier that
+    quietly moved another would show up here as two failures rather than one.
     """
     assert SHIPPED.minimum_significant_wave_height_m == 2.75, RERUN
-    assert SHIPPED.watch_minimum_swell_period_s == 10.1, RERUN
+    assert SHIPPED.watch_minimum_swell_period_s == 11.5, RERUN
     assert SHIPPED.go_call_minimum_swell_period_s == 12.9, RERUN
     assert SHIPPED.swell_arc == (255.0, 330.0), RERUN
     assert SHIPPED.offshore_wind_arc == (20.0, 180.0), RERUN
@@ -215,8 +220,8 @@ def test_the_baseline_reports_itself_calibrated() -> None:
         (13.0, Status.GO),
         (12.9, Status.GO),
         (12.8, Status.WATCH),
-        (10.1, Status.WATCH),
-        (10.0, Status.NONE),
+        (11.5, Status.WATCH),
+        (11.4, Status.NONE),
     ],
 )
 def test_the_calibrated_period_decides_the_tier(period: float, expected: Status) -> None:

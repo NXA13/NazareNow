@@ -8,6 +8,30 @@ Ticket #11. The benchmark every later Amplification Model must beat, per ADR 000
 > headline, and the two findings that drove #12 — it is shown beside the current one.
 > `analysis/calibration/` is where the thresholds come from and why.
 
+> ## Re-run after #43: the Watch tier costs half as much and gives up nothing held out
+>
+> #43 gave the Watch tier a stated price — 40 Watch days per Big-Wave Season, ADR 0010 — where
+> it previously had to catch every Gold Day in the calibration's fitting split whatever that
+> cost. The shipped Watch bar moves from **10.1 s to 11.5 s** and nothing else moves.
+>
+> **Recall and cost, together, which is the pairing #43 was filed about:**
+>
+> | | Watch or better | Watch days over the record | Per season | Go Call | Go Calls |
+> |---|---|---|---|---|---|
+> | Before #43 (Watch bar 10.1 s) | 37/38 | 1050 | 65.6 | 16/38 | 128 |
+> | **Now (Watch bar 11.5 s)** | **33/38** | **574** | **35.9** | **16/38** | **128** |
+>
+> Sixteen seasons in the denominator. Four Gold Days for 476 fewer Watch days is the whole
+> trade, and **all four sit in the calibration's fitting split**: on the held-out seasons the
+> figure is 12 of 13 either way, at 32.2 Watch days a season instead of 61.2. The recall the
+> old bar bought was in-sample only, which is what ADR 0010 argues from.
+>
+> The Go tier is untouched — same bar, same 16 of 38, same 128 calls — so this is a change to
+> one tier and the table shows it as one.
+>
+> Of the 5 Gold Days now missed entirely, the Go Call period bar never held on 5, the Watch
+> period bar on 2, significant wave height on 1.
+>
 > ## Re-run after #39: the two panels have collapsed into one, and the headline got worse
 >
 > "[Why there are two panels](#why-there-are-two-panels)" below describes a split that no
@@ -17,23 +41,26 @@ Ticket #11. The benchmark every later Amplification Model must beat, per ADR 000
 > carries a real Swell partition from 1980, and the split is gone.
 >
 > **Scored over the whole record instead of its last four years, against thresholds refitted on
-> all 38 Gold Days, the rule catches 37 of 38 at Watch or better and 16 at Go Call.**
+> all 38 Gold Days, the rule catches 37 of 38 at Watch or better and 16 at Go Call.** The Watch
+> row of that claim is superseded by #43 above; the panel structure and the Go Call row stand.
 >
 > | Panel | Span | Gold Days | Watch or better | Go Call | Go Calls issued |
 > |---|---|---|---|---|---|
-> | **reanalysis** (headline) | 2011–2025 | **38** | **37/38** | 16/38 | 128, of which 16 Gold |
+> | **reanalysis** (headline) | 2011–2025 | **38** | **33/38** *(was 37/38)* | 16/38 | 128, of which 16 Gold |
 > | operational (diagnostic) | 2022–2025 | 9 | 9/9 | 7/9 | 40, of which 7 Gold |
-> | reconstructed (superseded) | 2011–2021 | 29 | 27/29 | 11/29 | 107, of which 11 Gold |
+> | reconstructed (superseded) | 2011–2021 | 29 | 26/29 *(was 27/29)* | 11/29 | 107, of which 11 Gold |
 >
 > **Read the recall beside what it cost.** Against #12's thresholds this same panel caught 16 of
-> 38 at Watch; the refit takes it to 37 of 38 by lowering the Watch bar from 12.5 s to 10.1 s,
-> and the Watch tier goes from 106 days to **1050** — about 70 a season. ADR 0003 makes the
-> Watch the recall tier, so this is the intended direction, but it is a materially different
-> thing to receive. The Go tier, which is the one that costs money, issues about 8.5 calls a
-> season against a stated budget of 8.
+> 38 at Watch; the refit took it to 37 of 38 by lowering the Watch bar from 12.5 s to 10.1 s,
+> and the Watch tier went from 106 days to **1050**. ADR 0003 makes the
+> Watch the recall tier, so that was the intended direction, but it is a materially different
+> thing to receive, and reporting the recall without the cost is what #43 was filed to correct.
+> The Go tier, which is the one that costs money, issues 8.0 calls a season against a stated
+> budget of 8.
 >
-> The single remaining miss fails on significant wave height, not period — the first time since
-> #11 that period has not been the binding constraint.
+> Under that refit the single remaining miss failed on significant wave height, not period —
+> the first time since #11 that period had not been the binding constraint. #43's higher Watch
+> bar puts period back in front.
 >
 > The two lower rows are kept as diagnostics, not results. The operational panel is the tie to
 > production — the exact variables the live Pipeline Run reads — and reading it as the rule's
