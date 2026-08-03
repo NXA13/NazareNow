@@ -63,6 +63,27 @@ naively measures our sampling of their publication schedules alongside genuine d
 and reports the sum as uncertainty. #8 must align model runs before differencing, or this
 ADR's central mechanism will be reading staleness as doubt.
 
+**#8 settled this, and the requirement above is met by measurement rather than by alignment.**
+Run age still cannot be read from the provider and the runs are still not aligned. What #8
+established (`analysis/model_spread/alignment.py`, finding 4) is how much that costs: staleness
+accounts for roughly **6% of the measured spread at one day** on the expected cadence gap,
+rising to **29% at six days** in the worst case, over 6,192 archived hours. The figure is real
+and it grows with Lead Time, so the concern above was well founded.
+
+It does not block the mechanism, because the contamination has a direction. Sampling two
+providers at different run ages can only make them look *more* different than they are; it
+cannot hide genuine agreement. So staleness inflates Model Spread, a wide spread reads as
+doubt, and doubt makes the system quieter — **the error is always toward caution, never toward
+a Go Call that should not have been issued.** Model Spread is therefore an upper bound on
+disagreement, loose at long range, and must not be quoted as a calibrated uncertainty.
+
+Two limits on that finding. It is measured on **Combined Sea**, because the archive carries no
+Swell partition per model, while Model Spread is defined on Swell — the leap is argued, not
+measured, and `alignment.py` reports both partitions' live spread so its size is visible. And
+the 6-to-12-hour figures are extrapolated from a 24-hour measurement by a fitted growth
+exponent of 0.83; the exponent is measured across six intervals rather than assumed, but the
+extrapolation still runs below the measured range.
+
 As of ticket #6 the tiers are decided by Lead Time alone. Model Spread does not exist
 yet — ticket #8 introduces it — so nothing in the system measures forecast agreement, and
 no part of it may claim a forecast has "converged". A Watch is kept genuinely looser than
