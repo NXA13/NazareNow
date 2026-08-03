@@ -46,7 +46,9 @@ numbers, and writes them where the running system reads them.
 > fitting split lands wherever the least impressive of them sits. Whether "full recall on the
 > fitting split" is still the right rule for choosing that bar is a fair question this fit does
 > not answer — it is the same class of assumption as the wind condition, and it has not been
-> re-examined.
+> re-examined. **#43 is where it gets re-examined**, filed out of #40's review with this fit's
+> own numbers: the 25th Gold Day costs about 14 Watch days a season at the margin, and the bar
+> chosen for full recall on the fitting split scores 12/13 held out anyway.
 
 Reproduce with, from the repository root:
 
