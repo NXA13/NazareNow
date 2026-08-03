@@ -264,20 +264,48 @@ the regime `analysis/overlap/README.md` measured the relationship is *not* const
 6. **The 2010/11 season and the 2026 tail are still missing**, per #9's limitation 5. The fit
    inherits that gap; recovering it needs a Copernicus re-download.
 
-7. **The model scored here is not quite the model that ships.** Every score above is measured on
-   Copernicus IBI reanalysis rows, in reanalysis units. In a Pipeline Run the learned model first
-   inverts the translation on every Open-Meteo reading (`LearnedAmplification._restate`), while
-   the baseline receives its reading untouched — so the served comparison has a step in it that
-   the held-out comparison does not. That step is not free: the Hs translation carries a
-   `residual_rmse` of **0.217 m**, larger than the entire +0.047 m MAE gain at ≥ 3 m. It is a
-   scatter around a fitted line rather than a bias, so it should not move the average much — but
-   nothing here has measured that, and it cannot be measured without an operational archive to
-   score against. Read the held-out table as the fit's own quality, not as a promise about what
-   the site will show.
+7. **The model scored here is not quite the model that ships** — and the difference is large
+   enough to change two bands' sign. Every score above is measured on Copernicus IBI reanalysis
+   rows, in reanalysis units. In a Pipeline Run the learned model first inverts the translation
+   on every Open-Meteo reading (`LearnedAmplification._restate`), at the cost of that
+   translation's residual scatter (0.217 m on Hs, larger than the whole +0.047 m gain at
+   ≥ 3 m), while the baseline carries its Open-Meteo reading through uncorrected.
 
-   The same inversion is applied to every hour served, though the translations were fitted on
-   ≥ 3 m hours only (`fitted_on_hours: 4366`). Below 3 m the learned model is already the worse
-   of the two, and that is the band most days fall in.
+   `served_path.py` measures both, and the asymmetry cuts both ways:
+
+   | Held-out subset | Scored gain | Served gain | Served 5–95% |
+   |---|---|---|---|
+   | all hours | −0.011 | **+0.035** | +0.034 to +0.037 |
+   | Combined Sea ≥ 3 m | +0.047 | +0.014 | +0.010 to +0.017 |
+   | measured target under 2 m | −0.046 | **+0.074** | +0.071 to +0.076 |
+   | measured target 2–3 m | −0.012 | −0.032 | −0.034 to −0.030 |
+   | measured target 3–4 m | +0.030 | **−0.043** | −0.046 to −0.040 |
+   | measured target 4–5 m | +0.146 | +0.042 | +0.033 to +0.050 |
+   | measured target 5–6 m | +0.252 | +0.167 | +0.153 to +0.184 |
+   | measured target 6 m and above | +0.410 | +0.396 | +0.373 to +0.417 |
+
+   Positive means the learned model is closer to the buoy. Read it as three findings. The
+   translation step **costs real ground in the middle**: 3–4 m flips from +0.030 to −0.043, and
+   2–3 m gets worse. It **costs almost nothing at size**: 6 m and above holds +0.396, because
+   there the baseline's under-reading dwarfs the scatter. And the aggregate and sub-2 m rows
+   **reverse in the learned model's favour**, for a reason the scored table cannot show — the
+   baseline serves an Open-Meteo number against an IBI-fitted expectation and carries the full
+   offset, roughly +0.34 m at small seas, while the learned model corrects for it.
+
+   So the honest reading is not "the fit is better than reported" or "worse", but *differently*
+   better: worse than reported on ordinary days, and still decisively better on the big ones the
+   project exists for.
+
+   **This is a bound, not an observation.** Open-Meteo has no historical archive here, so what
+   it would have read is generated from the measured translation plus noise at its measured
+   residual RMSE, assuming that residual is independent of sea state. If it is correlated with
+   size instead, these numbers move, and only an operational archive settles it. The assumption
+   is conservative toward the learned model: independent noise is the worst case for a model
+   that must invert it, while the baseline's exposure is a fixed offset no noise assumption
+   changes.
+
+   Note also that the translations were fitted on ≥ 3 m hours only (`fitted_on_hours: 4366`) and
+   are applied to every hour served.
 
 ## Files
 
@@ -287,5 +315,7 @@ the regime `analysis/overlap/README.md` measured the relationship is *not* const
 | `output/candidates.csv` | Every feature set and weighting, scored on the tuning split. |
 | `output/held_out_scores.csv` | Baseline against learned on each held-out subset, with RMSE and bias. |
 | `output/feature_reliance.csv` | Standardised coefficients and ablation costs. |
+| `served_path.py` | Both models scored on the path `run_pipeline` takes, not the one the fit was scored on. `--check` reproduces the published scored table from its own feature construction. |
+| `output/served_path_scores.csv` | Scored against served, per subset, with a 5–95% interval. |
 | `output/inference_cost.csv` | Measured cost per prediction, through the shipped path. |
 | `backend/src/nazarenow/amplification.json` | The shipped parameters, with the provenance of the fit. |
