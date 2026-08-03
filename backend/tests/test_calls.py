@@ -20,10 +20,18 @@ from __future__ import annotations
 
 import pytest
 
-from helpers import GIANT, QUIET, forecast_provider, ingest, stub_hours
+from helpers import (
+    BONUS_HOUR,
+    GIANT,
+    QUIET,
+    forecast_provider,
+    ingest,
+    stub_hours,
+    swell_height_for,
+)
 from nazarenow.decision import decide
 from nazarenow.models.base import Condition, ConditionOutcome, Prediction
-from nazarenow.pipeline import DEFAULT_MODEL
+from nazarenow.pipeline import DEFAULT_MODEL, amplification_model
 
 # Literals, deliberately. Importing the constants and testing `CONSTANT - 0.1` looks
 # rigorous and pins nothing: change the constant and both sides of the assertion move
@@ -72,19 +80,6 @@ def status_for(store, client, conditions: dict, date: str = SOON, **kwargs) -> s
     return calls(client)[date]["status"]
 
 
-SWELL_HEIGHT_BONUS_M = 0.9
-"""What `forecast_provider` adds to swell height at 04:00, and why it now decides a tie.
-
-The fixture varies swell height independently of Significant Wave Height on one hour a day,
-so that a model reading the wrong variable is detectable. Until #13 nothing read it and the
-hour was inert. The learned model reads both, so 04:00 genuinely carries the day's largest
-predicted sea on an otherwise uniform day and wins the tie-break on merit.
-
-That is the fixture working as designed rather than a coincidence to route around, but it
-does mean a test naming the winning hour has to name this hour.
-"""
-
-
 def predicted_for(conditions: dict, swell_height: float | None = None) -> float:
     """What the active Amplification Model predicts for one hour of these conditions.
 
@@ -99,8 +94,6 @@ def predicted_for(conditions: dict, swell_height: float | None = None) -> float:
     reported the hour it claims to have judged. `test_learned.py` and
     `analysis/amplification_model/` own whether the number is any good.
     """
-    from nazarenow.pipeline import amplification_model
-
     hour = stub_hours(TODAY, conditions)[0]
     readings = {name: value["value"] for name, value in hour["readings"].items()}
     if swell_height is not None:
@@ -109,8 +102,12 @@ def predicted_for(conditions: dict, swell_height: float | None = None) -> float:
 
 
 def winning_hour_swell_height(conditions: dict) -> float:
-    """The 04:00 swell height `forecast_provider` generates for these conditions."""
-    return round(conditions["significant_wave_height"] * 0.8 + SWELL_HEIGHT_BONUS_M, 2)
+    """The swell height `forecast_provider` generates for these conditions on its bonus hour.
+
+    Delegated rather than re-derived: `helpers.swell_height_for` is the only place that
+    expression should exist, since the fixture and this expectation have to move together.
+    """
+    return swell_height_for(conditions["significant_wave_height"], BONUS_HOUR)
 
 
 class TestThresholdBoundaries:
@@ -431,6 +428,10 @@ class TestCallContent:
         and 1.16x across this range — the reanalysis reads a little under the buoy near the
         canyon head — so this band admits the measured correction and nothing resembling the
         threefold one.
+
+        The band is deliberately close to what was measured. An earlier 0.8-1.3 admitted a
+        20% *reduction* from a model documented as scaling up, which is a direction the fit
+        has never gone and would be a defect rather than drift.
         """
         ingest(
             store,
@@ -439,7 +440,7 @@ class TestCallContent:
 
         reported = calls(client)[SOON]["predicted_significant_wave_height"]["value"]
 
-        assert 0.8 * height <= reported <= 1.3 * height, (
+        assert 1.05 * height <= reported <= 1.25 * height, (
             f"the active model returned {reported}m for a {height}m sea, which is outside "
             "the range a Significant Wave Height correction can plausibly occupy"
         )

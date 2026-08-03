@@ -61,13 +61,21 @@ class ConditionOutcome:
 
 @dataclass(frozen=True)
 class Prediction:
-    """What an Amplification Model expects at Praia do Norte.
+    """What an Amplification Model expects the sea to do.
 
     The quantity is **Significant Wave Height**, the Proxy Target of ADR 0002 — not Face
     Height. CONTEXT.md holds those apart because the canyon's famous threefold
     amplification describes the wave a person sees, not the instrument's measure of the
     sea. A model that multiplied Hs by a face-height factor would emit a confident,
     plausible, wrong number, which is this project's characteristic failure.
+
+    The interface deliberately does not fix *where* the number stands, because no shipped
+    implementation stands at the beach: the Heuristic Baseline carries the offshore
+    forecast through unchanged, and #13's learned model predicts the Proxy Target at
+    Monican02, 15 km offshore. Each says so itself. This docstring named Praia do Norte
+    until #13, which was harmless only while every implementation returned its input —
+    once a model earned a number of its own, the same sentence became the place-conflation
+    the whole layer exists to prevent.
     """
 
     significant_wave_height: float
@@ -105,7 +113,11 @@ class Prediction:
 
 
 class AmplificationModel(Protocol):
-    """Offshore Conditions in, predicted conditions at Praia do Norte out."""
+    """Offshore Conditions in, a predicted Significant Wave Height out.
+
+    Not conditions at Praia do Norte — see `Prediction` for where the number actually
+    stands, which differs by implementation and is not yet the beach.
+    """
 
     name: str
     calibrated: bool

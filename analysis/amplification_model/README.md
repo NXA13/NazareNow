@@ -264,6 +264,21 @@ the regime `analysis/overlap/README.md` measured the relationship is *not* const
 6. **The 2010/11 season and the 2026 tail are still missing**, per #9's limitation 5. The fit
    inherits that gap; recovering it needs a Copernicus re-download.
 
+7. **The model scored here is not quite the model that ships.** Every score above is measured on
+   Copernicus IBI reanalysis rows, in reanalysis units. In a Pipeline Run the learned model first
+   inverts the translation on every Open-Meteo reading (`LearnedAmplification._restate`), while
+   the baseline receives its reading untouched — so the served comparison has a step in it that
+   the held-out comparison does not. That step is not free: the Hs translation carries a
+   `residual_rmse` of **0.217 m**, larger than the entire +0.047 m MAE gain at ≥ 3 m. It is a
+   scatter around a fitted line rather than a bias, so it should not move the average much — but
+   nothing here has measured that, and it cannot be measured without an operational archive to
+   score against. Read the held-out table as the fit's own quality, not as a promise about what
+   the site will show.
+
+   The same inversion is applied to every hour served, though the translations were fitted on
+   ≥ 3 m hours only (`fitted_on_hours: 4366`). Below 3 m the learned model is already the worse
+   of the two, and that is the band most days fall in.
+
 ## Files
 
 | File | What it is |

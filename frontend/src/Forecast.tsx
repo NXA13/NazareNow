@@ -149,10 +149,14 @@ function DaySummary({
 /** The model name the backend reports when a learned fit produced the call (#13). */
 const LEARNED_MODEL = 'learned-amplification';
 
+/** The model name the backend reports for ADR 0006's rule of thumb, kept runnable forever. */
+const BASELINE_MODEL = 'heuristic-baseline';
+
 /** Why a day got the call it did, and what the predicted number does and does not mean. */
 function CallDetail({ day, model }: { day: ForecastDay; model: string | null }) {
   const status = day.call?.status ?? UNJUDGED;
   const learned = model === LEARNED_MODEL;
+  const baseline = model === BASELINE_MODEL;
 
   return (
     <div className="call-detail" role="note" aria-label={`Why ${dayLabel(day.date)}`}>
@@ -185,15 +189,23 @@ function CallDetail({ day, model }: { day: ForecastDay; model: string | null }) 
               is the difference between the reanalysis and a buoy near the canyon head, and
               CONTEXT.md defines Amplification as the transformation onto the beach. Saying
               "the canyon has been modelled" would overclaim exactly the quantity this
-              project holds apart. */}
-          {learned ? (
+              project holds apart.
+
+              Both sentences are matched against a known name rather than one being the
+              else-branch, because the else-branch was a claim too: an unrecognised model —
+              or none reported at all — rendered "carried through unchanged", which is a
+              specific factual assertion about arithmetic nobody here has seen. A model this
+              build does not know about gets no provenance sentence, which is the only
+              honest thing left to say about it. */}
+          {learned && (
             <p className="provenance">
               That figure is a fitted correction, not the offshore forecast carried through: it is
               adjusted toward what the buoy near the canyon head has historically measured when the
               open ocean looked like this. It is still a measure of the sea offshore of the beach,
               and the transformation onto Praia do Norte itself is not modelled.
             </p>
-          ) : (
+          )}
+          {baseline && (
             <p className="provenance">
               The rule of thumb does not scale that height: it is the offshore forecast's own
               figure, carried through unchanged. Nothing here models what the canyon does to it yet.

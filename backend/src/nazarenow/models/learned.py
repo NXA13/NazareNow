@@ -119,6 +119,7 @@ class LearnedAmplification:
         self._coefficients = tuple(float(v) for v in self.parameters["coefficients"])
         self._intercept = float(self.parameters["intercept"])
         self._translations = self.parameters.get("translations", {})
+        self._inversions: dict[str, tuple[float, float]] = {}
         self._validate()
 
     def _validate(self) -> None:
@@ -141,6 +142,29 @@ class LearnedAmplification:
                 "in Copernicus IBI units and the Pipeline Run reads Open-Meteo; applying the "
                 "coefficients untranslated would be wrong by about the size of the offset and "
                 "entirely plausible (analysis/overlap/README.md)."
+            )
+
+        # Parsed here, not in `_restate`, so a translation that is present but unusable fails
+        # construction like a missing one. Checking only that the *keys* exist left a
+        # non-numeric or zero slope to raise mid-run, on the first hour of a Pipeline Run —
+        # which is precisely the failure this class's docstring promises to move up front.
+        unusable = []
+        for variable in TRANSLATED.values():
+            translation = self._translations[variable]
+            try:
+                slope = float(translation["slope"])
+                intercept = float(translation["intercept"])
+            except (KeyError, TypeError, ValueError):
+                unusable.append(f"{variable} (needs a numeric slope and intercept)")
+                continue
+            if slope == 0:
+                unusable.append(f"{variable} (slope 0 cannot be inverted)")
+                continue
+            self._inversions[variable] = (slope, intercept)
+        if unusable:
+            raise ValueError(
+                f"parameter file carries an unusable translation for: {', '.join(unusable)}. "
+                "The fit that produced it did not measure a relationship this code can invert."
             )
 
     @property
@@ -170,17 +194,14 @@ class LearnedAmplification:
         `Translation` is fitted as `operational = slope x reanalysis + intercept`, so the
         model's own units are reached by inverting it. Readings without a translation are
         carried through unchanged, which is the deliberate choice `TRANSLATED` documents.
+
+        Every inversion here was parsed and checked in `_validate`, so this arithmetic has
+        no failure of its own to report.
         """
         restated = dict(readings)
         for reading, variable in TRANSLATED.items():
-            translation = self._translations[variable]
-            slope = float(translation["slope"])
-            if slope == 0:
-                raise ValueError(
-                    f"translation for {variable} has slope 0 and cannot be inverted; the fit "
-                    "that produced it did not measure a usable relationship"
-                )
-            restated[reading] = (readings[reading] - float(translation["intercept"])) / slope
+            slope, intercept = self._inversions[variable]
+            restated[reading] = (readings[reading] - intercept) / slope
         return restated
 
     def predict(self, readings: dict[str, float]) -> Prediction:

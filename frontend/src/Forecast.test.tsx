@@ -143,6 +143,31 @@ describe('calls', () => {
     expect(await screen.findByRole('note')).toHaveTextContent(/not modelled/i);
   });
 
+  it.each([
+    ['an unrecognised model', 'some-future-model'],
+    ['no model at all', null],
+  ])('claims nothing about how the height was produced given %s', async (_label, model) => {
+    // Both provenance sentences are specific factual claims about arithmetic. While the
+    // baseline sentence was the else-branch, a name this build did not know about — or a
+    // backend holding no calls, which reports null — rendered "carried through unchanged"
+    // over a number nobody here had seen produced. Saying nothing is the only honest
+    // option left; the sentence above it, about Face Height, is true either way and stays.
+    server.use(
+      http.get('*/api/conditions/forecast', () =>
+        HttpResponse.json({ ...forecast, amplification_model: model }),
+      ),
+    );
+
+    render(<ForecastRange />);
+
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
+
+    const note = await screen.findByRole('note');
+    expect(note).not.toHaveTextContent(/carried through unchanged/i);
+    expect(note).not.toHaveTextContent(/fitted correction/i);
+    expect(note).toHaveTextContent(/not the height of the wave face/i);
+  });
+
   it('describes a Go Call as worth booking and a Watch as not yet', async () => {
     render(<ForecastRange />);
 

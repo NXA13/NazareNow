@@ -146,6 +146,32 @@ class TestItIsFedWhatItWasFittedOn:
         with pytest.raises(ValueError, match="significant_wave_height_m"):
             LearnedAmplification(parameters=broken).predict(GIANT)
 
+    @pytest.mark.parametrize(
+        "translation",
+        [
+            pytest.param({"slope": 0.0, "intercept": 1.0}, id="slope-0-cannot-be-inverted"),
+            pytest.param({"slope": "wide", "intercept": 1.0}, id="slope-is-not-a-number"),
+            pytest.param({"intercept": 1.0}, id="slope-is-absent"),
+        ],
+    )
+    def test_an_unusable_translation_is_refused_at_construction(self, translation) -> None:
+        """Present but unusable has to fail where missing fails: before the run starts.
+
+        Checking only that the translation *keys* existed left these three to raise from
+        `_restate`, on the first hour of a Pipeline Run — half a forecast in, and after the
+        constructor had promised to have validated the file. `run_pipeline` records a
+        construction failure with its cause; a mid-run one is a partial write.
+        """
+        broken = parameters(
+            translations={
+                "significant_wave_height_m": translation,
+                "swell_period_s": {"slope": 1.0, "intercept": 0.0},
+            }
+        )
+
+        with pytest.raises(ValueError, match="significant_wave_height_m"):
+            LearnedAmplification(parameters=broken)
+
 
 class TestTheFeatureVector:
     def test_an_unknown_feature_is_refused_rather_than_treated_as_zero(self) -> None:
