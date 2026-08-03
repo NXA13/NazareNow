@@ -221,7 +221,8 @@ bad fit is a wrong number beside a correct call, not a wrong call.
 #9's README warned that ADR 0004 covers only one train/serve skew, and that IBI's swell period
 reads systematically high against the operational feed — by enough that #39 had to refit the
 thresholds rather than carry them across. A Forecast Error Profile corrects forecast noise and
-cannot correct a fixed difference between two products.
+cannot correct a fixed difference between two products. ADR 0011 records this as a consequence
+of reading waves from one product and serving another.
 
 This is handled the way `backtest.py` already handles it: the fit stays in its native
 reanalysis units, and incoming Open-Meteo readings are restated into those units by

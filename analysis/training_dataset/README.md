@@ -4,9 +4,9 @@ Ticket [#9](https://github.com/NXA13/NazareNow/issues/9). The rows the Amplifica
 will be fitted on: the **Proxy Target** — Significant Wave Height measured at Monican02 —
 paired hour by hour with the **Hindcast Offshore Conditions** that produced it, per ADR 0004.
 
-The Hindcast here is **Copernicus IBI**, following #39, not the ERA5 that ADR 0004 names — ERA5
-supplies only wind. The ADR has not caught up with that change; [#48](https://github.com/NXA13/NazareNow/issues/48)
-tracks correcting the record.
+The Hindcast here is **Copernicus IBI**, following #39, not the ERA5 that ADR 0004's original
+text names — ERA5 supplies only wind. **ADR 0011** records that decision, and ADR 0004 carries
+an amendment pointing at it ([#48](https://github.com/NXA13/NazareNow/issues/48)).
 
 **73,601 rows, 2011-01-01 to 2026-02-20, spanning 15 season-years — 14 of which carry rows
 inside a Big-Wave Season.** Every number below comes out of `build.py`, and the file it
@@ -168,7 +168,8 @@ would be its own distortion, but a report calling the result "Amplification" wou
 overclaiming, and CONTEXT.md's definition is specific.
 
 **2. Training on a reanalysis and serving on a forecast is a second skew, and ADR 0004 only
-anticipated the first.** The ADR separates the physical relationship from forecast error and
+anticipated the first.** (Since recorded as a consequence in ADR 0011, and handled by #13.) The
+ADR separates the physical relationship from forecast error and
 handles the latter in #14. But `analysis/overlap/` measured that IBI's swell **period** reads
 systematically high against the operational feed the running system reads — by enough that #39
 had to refit the thresholds rather than carry them across. A model fitted on IBI periods and
