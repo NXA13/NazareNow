@@ -20,9 +20,18 @@ from __future__ import annotations
 
 import pytest
 
-from helpers import GIANT, QUIET, forecast_provider, ingest, stub_hours
+from helpers import (
+    BONUS_HOUR,
+    GIANT,
+    QUIET,
+    forecast_provider,
+    ingest,
+    stub_hours,
+    swell_height_for,
+)
 from nazarenow.decision import decide
 from nazarenow.models.base import Condition, ConditionOutcome, Prediction
+from nazarenow.pipeline import DEFAULT_MODEL, amplification_model
 
 # Literals, deliberately. Importing the constants and testing `CONSTANT - 0.1` looks
 # rigorous and pins nothing: change the constant and both sides of the assertion move
@@ -69,6 +78,36 @@ def calls(client) -> dict[str, dict]:
 def status_for(store, client, conditions: dict, date: str = SOON, **kwargs) -> str:
     ingest(store, forecast_provider({date: conditions}, today=TODAY, **kwargs))
     return calls(client)[date]["status"]
+
+
+def predicted_for(conditions: dict, swell_height: float | None = None) -> float:
+    """What the active Amplification Model predicts for one hour of these conditions.
+
+    Since ticket #13 the shipped model is a learned one, so the height a call reports is no
+    longer the height that went in. Several cases below are about *which hour* a day was
+    called on, and used to name that hour by its literal height — an assertion that reads as
+    a statement about hour selection and is in fact a statement about the model.
+
+    Asking the active model keeps those cases about their own subject and keeps them true
+    under either model, which is what ADR 0006's permanent swappability requires of them.
+    It is not circular: nothing here asserts the model is *right*, only that the call
+    reported the hour it claims to have judged. `test_learned.py` and
+    `analysis/amplification_model/` own whether the number is any good.
+    """
+    hour = stub_hours(TODAY, conditions)[0]
+    readings = {name: value["value"] for name, value in hour["readings"].items()}
+    if swell_height is not None:
+        readings["swell_height"] = swell_height
+    return amplification_model().predict(readings).significant_wave_height
+
+
+def winning_hour_swell_height(conditions: dict) -> float:
+    """The swell height `forecast_provider` generates for these conditions on its bonus hour.
+
+    Delegated rather than re-derived: `helpers.swell_height_for` is the only place that
+    expression should exist, since the fixture and this expectation have to move together.
+    """
+    return swell_height_for(conditions["significant_wave_height"], BONUS_HOUR)
 
 
 class TestThresholdBoundaries:
@@ -270,7 +309,9 @@ class TestCallContent:
         issued = calls(client)[SOON]
 
         assert issued["status"] == "go"
-        assert issued["predicted_significant_wave_height"]["value"] == 6.0
+        assert issued["predicted_significant_wave_height"]["value"] == pytest.approx(
+            predicted_for({**GIANT, "significant_wave_height": 6.0})
+        )
 
     def test_a_call_reports_the_hour_that_earned_it(self, store, client) -> None:
         """The reasons and the height are the winning hour's. Reporting some other hour's
@@ -290,7 +331,14 @@ class TestCallContent:
 
         issued = calls(client)[FAR]
 
-        assert issued["predicted_significant_wave_height"]["value"] == MODEST_M
+        # 04:00 falls inside the clean window and carries the fixture's swell-height bonus,
+        # so it is the clean hour with the largest predicted sea and the one reported.
+        assert issued["predicted_significant_wave_height"]["value"] == pytest.approx(
+            predicted_for(clean, swell_height=winning_hour_swell_height(clean))
+        )
+        assert issued["predicted_significant_wave_height"]["value"] != pytest.approx(
+            predicted_for(big_and_short)
+        ), "the call reported the big short-period hour it did not judge"
         assert any("swell period 16.5s" in reason for reason in issued["reasons"])
 
     def test_a_call_explains_itself(self, store, client) -> None:
@@ -337,37 +385,81 @@ class TestCallContent:
         assert not any("match every condition" in reason for reason in reasons)
 
     def test_a_call_reports_the_significant_wave_height_it_judged(self, store, client) -> None:
-        """The reported height must be the Significant Wave Height the rule was applied
-        to, not the swell height — CONTEXT.md lists those as different variables, and the
-        interface labels this one as the instrument's measure of the sea."""
+        """The reported height must derive from the Significant Wave Height, not the swell
+        height — CONTEXT.md lists those as different variables, and the interface labels
+        this one as the instrument's measure of the sea.
+
+        Since #13 the model transforms that input rather than returning it, so equality
+        with the input no longer states the property. The two readings differ in the
+        fixture (`stub_hours` sets swell height to 0.8x Hs), so feeding the wrong one
+        produces a different number — which is what the second assertion catches.
+        """
         ingest(store, forecast_provider({SOON: GIANT}, today=TODAY))
 
-        assert calls(client)[SOON]["predicted_significant_wave_height"] == {
-            "value": GIANT["significant_wave_height"],
-            "unit": "m",
+        reported = calls(client)[SOON]["predicted_significant_wave_height"]
+        as_swell_height = {
+            **GIANT,
+            "significant_wave_height": GIANT["significant_wave_height"] * 0.8,
         }
 
+        assert reported["unit"] == "m"
+        assert reported["value"] == pytest.approx(
+            predicted_for(GIANT, swell_height=winning_hour_swell_height(GIANT))
+        )
+        assert reported["value"] != pytest.approx(
+            predicted_for(as_swell_height, swell_height=winning_hour_swell_height(as_swell_height))
+        ), "the swell height was judged as though it were the Significant Wave Height"
+
     @pytest.mark.parametrize("height", [3.0, 4.2, 7.5])
-    def test_the_baseline_never_scales_the_height_it_was_given(self, store, client, height) -> None:
-        """The canyon's threefold amplification applies to Face Height, a different
-        quantity. Asserting merely that the number was "not enormous" let a 1.5x and even
-        a 1.9x multiple through; equality is the property that matters."""
+    def test_the_active_model_never_returns_a_face_height_multiple(
+        self, store, client, height
+    ) -> None:
+        """The canyon's threefold amplification applies to Face Height, a different quantity.
+
+        Until #13 the shipped model returned its input unchanged and this asserted equality,
+        because a model with nothing fitted had no business moving the number at all — and
+        asserting merely that it was "not enormous" had already let a 1.5x and even a 1.9x
+        multiple through.
+
+        #13 earns a correction, so equality is no longer the property. The danger it guarded
+        is unchanged, though, and is if anything closer now that the number does move: a
+        learned model drifting toward a Face-Height multiple would look like a better model
+        right up until someone flew to Portugal for it. The shipped fit lands between 1.10x
+        and 1.16x across this range — the reanalysis reads a little under the buoy near the
+        canyon head — so this band admits the measured correction and nothing resembling the
+        threefold one.
+
+        The band is deliberately close to what was measured. An earlier 0.8-1.3 admitted a
+        20% *reduction* from a model documented as scaling up, which is a direction the fit
+        has never gone and would be a defect rather than drift.
+        """
         ingest(
             store,
             forecast_provider({SOON: {**GIANT, "significant_wave_height": height}}, today=TODAY),
         )
 
-        assert calls(client)[SOON]["predicted_significant_wave_height"]["value"] == height
+        reported = calls(client)[SOON]["predicted_significant_wave_height"]["value"]
+
+        assert 1.05 * height <= reported <= 1.25 * height, (
+            f"the active model returned {reported}m for a {height}m sea, which is outside "
+            "the range a Significant Wave Height correction can plausibly occupy"
+        )
 
     def test_calls_declare_that_their_thresholds_are_calibrated(self, store, client) -> None:
         """Since #12 the thresholds are fitted, so the flag that drives the interface's
-        caveat flips — and the interface drops the warning that these are a rule of thumb."""
+        caveat flips — and the interface drops the warning that these are a rule of thumb.
+
+        The model name is asserted against `pipeline.DEFAULT_MODEL` rather than a literal.
+        What matters here is that the store records the model that actually decided, so a
+        deployment reading its own record is not misled; which model that is, is #13's
+        decision and is pinned in `test_pipeline_model_switch.py`.
+        """
         ingest(store, forecast_provider({SOON: GIANT}, today=TODAY))
 
         body = client.get("/api/conditions/forecast").json()
 
         assert body["calibrated"] is True
-        assert body["amplification_model"] == "heuristic-baseline"
+        assert body["amplification_model"] == DEFAULT_MODEL
 
     def test_the_forecast_states_what_the_calibration_rests_on(self, store, client) -> None:
         """#12 requires the interface to say how few Gold Days are behind these thresholds.

@@ -19,6 +19,27 @@ import httpx
 from nazarenow.pipeline import run_pipeline
 from nazarenow.sources.open_meteo import TIMEZONE
 
+SWELL_HEIGHT_BONUS_M = 0.9
+BONUS_HOUR = 4
+
+
+def swell_height_for(significant_wave_height: float, hour: int) -> float:
+    """The swell height this fixture generates for an hour of a given sea.
+
+    Swell height varies independently of Significant Wave Height, and on one hour a day it
+    varies *more*, so a model reading the wrong variable is detectable. Until #13 nothing
+    read it and 04:00 was inert; the learned model reads both, so that hour now genuinely
+    carries the day's largest predicted sea on an otherwise uniform day and wins the
+    tie-break on merit.
+
+    That makes this arithmetic something tests need to name, and it lives here — beside the
+    only code that generates it — because a test re-deriving the same expression would go on
+    agreeing with a changed fixture only by luck.
+    """
+    bonus = SWELL_HEIGHT_BONUS_M if hour == BONUS_HOUR else 0.0
+    return round(significant_wave_height * 0.8 + bonus, 2)
+
+
 # A flat, onshore, short-period day. Fails every condition of the rule.
 #
 # The wind speed has to sit **above** `light_wind_exemption_kmh` to fail. Since ADR 0009 a
@@ -126,7 +147,7 @@ def forecast_provider(
             # model reading the wrong one is detectable.
             marine["wave_height"].append(conditions["significant_wave_height"])
             marine["swell_wave_height"].append(
-                round(conditions["significant_wave_height"] * 0.8 + (0.9 if hour == 4 else 0.0), 2)
+                swell_height_for(conditions["significant_wave_height"], hour)
             )
             marine["swell_wave_period"].append(conditions["swell_period"])
             marine["swell_wave_direction"].append(conditions["swell_direction"])

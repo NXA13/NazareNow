@@ -43,8 +43,9 @@ weather services separate a *watch* from a *warning*.
 | | |
 |---|---|
 | **Inputs** | Open-Meteo Marine API — swell height, period, direction, wind. One model today. ADR 0003 calls for several independent wave models per date, using their disagreement as the uncertainty estimate; ticket #8 introduces that, so **no uncertainty estimate exists yet**. |
-| **Training target** | *Planned, not yet built.* Significant wave height from Monican02, the Instituto Hidrográfico mooring 15km off Nazaré near the canyon head. Hourly from 2010, via the Copernicus Marine In Situ TAC. Fourteen usable seasons — coverage is uneven and two winters are missing entirely. No buoy data reaches the running system: it is analysed in `analysis/buoy_coverage/` and becomes a dataset in ticket #9. |
+| **Training target** | *Built.* Significant wave height from Monican02, the Instituto Hidrográfico mooring 15km off Nazaré near the canyon head. Hourly from 2010, via the Copernicus Marine In Situ TAC. Coverage is uneven and two winters are missing entirely. No buoy data reaches the running system: it is analysed in `analysis/buoy_coverage/` and became a dataset in #9 — **73,601 hours paired with the Hindcast across 14 seasons**, in [`analysis/training_dataset/`](./analysis/training_dataset/). |
 | **Calibration** | *Applied.* A hand-verified set of days confirmed as genuinely giant — contest days, ratified records — establishing what a predicted height actually means. Thirty-eight are sourced in `analysis/gold_days/`, and since #36 verified and #39 ingested the Copernicus wave reanalysis, all thirty-eight carry a real Swell partition rather than only the 9 since 2022. [`analysis/calibration/`](./analysis/calibration/) fits the thresholds against them, split on Big-Wave Season boundaries: **25 to choose them, 13 held back to check them**. The interface states that number rather than implying a precision the record cannot support. |
+| **Learned model** | *Shipped, and it does not win everywhere.* A least-squares fit on the training dataset, active since #13 and selected by `NAZARENOW_MODEL`. Held out on 2020/21–2025/26 it is **worse across all hours** (0.207m against 0.196m of mean absolute error) and **better in every band above 3m**, reaching 0.621m against 1.031m above 6m and 0.564m against 0.885m on Gold Day hours. It corrects a systematic under-read rather than adding scale: the Hindcast sits about 0.86m below the buoy on the biggest held-out days. It changes the predicted height only — every Watch and Go Call is still the rule's — and what it learned is the difference between a reanalysis and a buoy, **not** the canyon's Amplification. [`analysis/amplification_model/`](./analysis/amplification_model/). |
 | **Baseline** | The surf community's rule of thumb, implemented first and retained permanently as the benchmark any learned model must beat. Scored in [`analysis/backtest/`](./analysis/backtest/). Over the whole 2011–2025 record it catches **33 of 38** Gold Days at Watch or better and 16 at Go Call, on 574 Watch days and 128 Go Calls — about 36 and 8 a season. Read those two together: the Watch tier used to catch 37 of 38 on 1050 days, and #43 halved its cost for four Gold Days that the held-out split says were never worth anything (12 of 13 either way). The honest figures are the held-out ones in [`analysis/calibration/`](./analysis/calibration/). |
 
 ## Running it locally
@@ -157,7 +158,7 @@ downloaded data, so CI checks them statically:
 .venv/Scripts/python.exe -m ruff format --check analysis/
 ```
 
-Five exceptions, all fully runnable because they need no credentials:
+Six exceptions, all fully runnable because they need no credentials:
 
 ```bash
 .venv/Scripts/python.exe analysis/gold_days/build.py --check
@@ -165,6 +166,7 @@ Five exceptions, all fully runnable because they need no credentials:
 .venv/Scripts/python.exe analysis/calibration/calibrate.py --check
 .venv/Scripts/python.exe analysis/model_spread/probe.py --check
 .venv/Scripts/python.exe analysis/training_dataset/build.py --check
+.venv/Scripts/python.exe analysis/amplification_model/train.py --check
 ```
 
 The Gold Day list is hand-written in `analysis/gold_days/README.md` and built from it into
@@ -197,6 +199,15 @@ boundary is read on the Nazaré local day rather than the UTC instant, and that 
 written twice are byte-identical. See
 [`analysis/training_dataset/`](./analysis/training_dataset/).
 
+The sixth self-tests the learned model's fit: that least squares recovers a relationship it
+was handed, that a weighting applied to one side only would show up, that the fitting and
+held-out seasons cannot overlap, and — the check no test on either side of the seam could
+make — that the feature vector `train.py` fits on is the one
+`backend/src/nazarenow/models/learned.py` builds at serving time. Those two encodings
+diverging would land every coefficient on the wrong column while the model went on returning
+entirely plausible numbers. See
+[`analysis/amplification_model/`](./analysis/amplification_model/).
+
 **The backtest and the calibration** read only free Open-Meteo data, so they run too, though
 the first downloads about 10 MB the first time:
 
@@ -225,18 +236,29 @@ reading and all nine forecast days render, the page never scrolls horizontally, 
 hourly table scrolls inside its own box rather than the page. The CSS uses only fluid
 units, but nothing stops a regression; a browser-driven test would close this.
 
-**No conditions at Praia do Norte are predicted yet — only offshore ones are shown.**
-Ticket #6 asks for "predicted conditions at Praia do Norte … not only Offshore
-Conditions", and that criterion is *not* met. The Heuristic Baseline passes the offshore
-Significant Wave Height through unchanged, so the number labelled as predicted is the
-offshore figure. The interface says so on every call, but disclosure is not the same as
-satisfying the requirement, and this is recorded as unmet rather than ticked.
+**Conditions at Praia do Norte are still not predicted — the number moved 15km closer,
+not all the way.** Ticket #6 asks for "predicted conditions at Praia do Norte … not only
+Offshore Conditions". Ticket #13 changed what is shown but did **not** finish closing
+this, and it is recorded as still unmet rather than ticked.
 
-It is deliberately not fixed here. Predicting what the canyon does to a swell is what the
-learned model in #13 earns; the only way to produce a different number today would be to
-multiply by an invented amplification factor, which is precisely the confident, plausible,
-wrong number ADR 0006 and `CONTEXT.md` exist to prevent. Slice 1 therefore ships real
-advice built on a real rule of thumb, and no prediction of the break itself.
+What changed: the shipped Amplification Model is now a learned fit (#13), so the height
+on every call is a fitted correction rather than the offshore forecast carried through
+unchanged. It is a genuinely different number, measurably better where the system makes
+calls — 0.564m of mean absolute error against the baseline's 0.885m on held-out Gold Day
+hours — and the interface describes it as a correction rather than as a pass-through.
+
+What did not: **the target it was fitted on is Monican02, the mooring 15km offshore near
+the canyon head, not the beach.** That is ADR 0002's Proxy Target, adopted because Face
+Height at Praia do Norte has no historical archive to fit against. So the model learned
+the difference between a reanalysis and a buoy, and the canyon's transformation onto the
+beach — which is what `CONTEXT.md` defines Amplification as — remains unmodelled and
+unmeasured. Calling this criterion met would mean relabelling a prediction of one place
+as a prediction of another, which is the same class of error as inventing an amplification
+factor: it would produce a confident, plausible, wrong claim rather than a wrong number.
+
+Closing it properly needs a historical record of conditions at the break itself. Nothing
+in this repository has one, and `analysis/training_dataset/README.md` (limitation 1) sets
+out why.
 
 **The site shows more than ticket #4 asked for.** The ticket enumerates seven readings;
 ten are displayed, adding significant wave height, wave period and wave direction under

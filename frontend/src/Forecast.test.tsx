@@ -96,11 +96,76 @@ describe('calls', () => {
   it('says the predicted height is the offshore figure carried through unchanged', async () => {
     // The Heuristic Baseline applies no amplification, so "predicted" without that
     // sentence invites a reader to think the canyon has been modelled. It has not been.
+    //
+    // ADR 0006 keeps that model runnable permanently, so this sentence has to stay correct
+    // even though #13 made the learned model the default — the fixture reports the baseline.
     render(<ForecastRange />);
 
     await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
 
     expect(await screen.findByRole('note')).toHaveTextContent(/carried through unchanged/i);
+  });
+
+  it('says the height is a fitted correction when a learned model produced the call', async () => {
+    // #13's half of the same obligation. The two models owe the reader different sentences,
+    // and a page that kept saying "carried through unchanged" over a fitted number would be
+    // describing a system that no longer exists.
+    server.use(
+      http.get('*/api/conditions/forecast', () =>
+        HttpResponse.json({ ...forecast, amplification_model: 'learned-amplification' }),
+      ),
+    );
+
+    render(<ForecastRange />);
+
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
+
+    const note = await screen.findByRole('note');
+    expect(note).toHaveTextContent(/fitted correction/i);
+    expect(note).not.toHaveTextContent(/carried through unchanged/i);
+  });
+
+  it('does not claim the canyon itself has been modelled', async () => {
+    // The fit is the difference between a reanalysis and a buoy near the canyon head.
+    // CONTEXT.md defines Amplification as the transformation onto Praia do Norte, which
+    // is a different quantity with no historical archive — so the page must keep saying
+    // that transformation is not modelled, however good the fitted number gets.
+    server.use(
+      http.get('*/api/conditions/forecast', () =>
+        HttpResponse.json({ ...forecast, amplification_model: 'learned-amplification' }),
+      ),
+    );
+
+    render(<ForecastRange />);
+
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
+
+    expect(await screen.findByRole('note')).toHaveTextContent(/not modelled/i);
+  });
+
+  it.each([
+    ['an unrecognised model', 'some-future-model'],
+    ['no model at all', null],
+  ])('claims nothing about how the height was produced given %s', async (_label, model) => {
+    // Both provenance sentences are specific factual claims about arithmetic. While the
+    // baseline sentence was the else-branch, a name this build did not know about — or a
+    // backend holding no calls, which reports null — rendered "carried through unchanged"
+    // over a number nobody here had seen produced. Saying nothing is the only honest
+    // option left; the sentence above it, about Face Height, is true either way and stays.
+    server.use(
+      http.get('*/api/conditions/forecast', () =>
+        HttpResponse.json({ ...forecast, amplification_model: model }),
+      ),
+    );
+
+    render(<ForecastRange />);
+
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
+
+    const note = await screen.findByRole('note');
+    expect(note).not.toHaveTextContent(/carried through unchanged/i);
+    expect(note).not.toHaveTextContent(/fitted correction/i);
+    expect(note).toHaveTextContent(/not the height of the wave face/i);
   });
 
   it('describes a Go Call as worth booking and a Watch as not yet', async () => {

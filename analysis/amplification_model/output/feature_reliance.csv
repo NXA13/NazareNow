@@ -1,0 +1,10 @@
+feature,coefficient,standardised_coefficient,held_out_big_swell_mae_without,ablation_cost_m
+combined_sea_m,1.0968,1.0893,0.3864,0.0307
+swell_period_s,0.0259,0.0569,0.3600,0.0043
+wind_speed_kmh,-0.0070,-0.0569,0.3586,0.0029
+swell_direction_cos,0.3137,0.0897,0.3585,0.0028
+wind_direction_sin,0.0852,0.0497,0.3583,0.0026
+wind_direction_cos,0.0470,0.0334,0.3575,0.0018
+swell_height_m,0.0425,0.0409,0.3551,-0.0006
+swell_direction_sin,-0.2836,-0.0586,0.3562,0.0005
+"(every feature except combined_sea_m, as a group)",,,0.3797,0.0240

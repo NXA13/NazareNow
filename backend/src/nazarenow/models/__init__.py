@@ -7,11 +7,13 @@ changing. The baseline is not deleted when that happens — it stays as the benc
 
 from .base import AmplificationModel, Condition, ConditionOutcome, Prediction
 from .heuristic import HeuristicBaseline
+from .learned import LearnedAmplification
 
 __all__ = [
     "AmplificationModel",
     "Condition",
     "ConditionOutcome",
     "HeuristicBaseline",
+    "LearnedAmplification",
     "Prediction",
 ]
