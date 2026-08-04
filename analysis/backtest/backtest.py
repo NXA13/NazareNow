@@ -52,7 +52,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend" / "src"))
 
 import measure  # noqa: E402
 from nazarenow.days import group_by_date  # noqa: E402
-from nazarenow.decision import Status, decide, strength  # noqa: E402
+from nazarenow.decision import Agreement, Status, decide, strength  # noqa: E402
 from nazarenow.models.heuristic import HeuristicBaseline  # noqa: E402
 from nazarenow.thresholds import Thresholds  # noqa: E402
 from nazarenow.thresholds import load as load_thresholds
@@ -69,6 +69,23 @@ reachable, within `GO_CALL_THROUGH` so a Go Call is too — which lets a single 
 both tiers from the same conditions. Nothing else in the score depends on it: the Hindcast
 carries no Lead Time of its own, and the Heuristic Baseline's conditions do not vary with
 one. Only the tier names do.
+"""
+
+MODELS_ASSUMED_TO_AGREE = Agreement.AGREED
+"""What every `decide` below is told the independent wave models said, and why it is a lie
+this report is entitled to tell.
+
+Since #8's second half a Go Call also requires the wave models to agree that the deciding
+hour clears the Go Call bar. **A Hindcast contains no forecast**, so there is nothing here to
+disagree: these hours are what the ocean actually did, reconstructed after the fact. Asserting
+agreement is therefore the same assumption this report already makes everywhere else — it
+scores the rule *given perfect knowledge of Offshore Conditions*, which is its ceiling.
+
+The consequence is that **the Go Call figures below are an upper bound that live Go Calls
+will not reach**, by an amount nothing in this file can measure. `analysis/model_spread/`
+measures it separately, on archived per-model forecasts, and the README states the figure
+beside these tables. Passing `Agreement.UNMEASURED` instead would be the other kind of wrong:
+it would empty the Go tier entirely and report the gate's cost as if it were the rule's.
 """
 
 # The Big-Wave Season runs October through March and is named for the year it opens in
@@ -138,7 +155,7 @@ def call_days(
         for hour in day_hours:
             readings = {k: v for k, v in hour.items() if k != "at"}
             prediction = model.predict(readings)
-            call = decide(prediction, LEAD_TIME_DAYS)
+            call = decide(prediction, LEAD_TIME_DAYS, MODELS_ASSUMED_TO_AGREE)
             if strength(call.status) > strength(best):
                 best = call.status
             peak = max(peak, float(readings["significant_wave_height"]))

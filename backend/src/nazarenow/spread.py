@@ -248,11 +248,16 @@ def for_day(variable: str, hours: list[dict[str, float | None]]) -> DaySpread:
     direction everything else here errs in: an overstated spread makes the system quieter, and
     a quiet system never issues a Go Call it should not have.
 
-    ADR 0003 judges a *day* on its best matching hour, which is not this. That hour is the one
-    a call rests on, and quoting its spread would be the tighter link — but identifying it
-    means running the Amplification Model, which belongs to the Decision Model's half of #8.
-    Per-model readings are stored per hour precisely so that half can compute it without a
-    refetch or a migration.
+    ADR 0003 judges a *day* on its best matching hour, which is not this. **That is the hour
+    the Go Call gate reads, and this is the hour the interface shows** — they are different
+    hours on purpose. Identifying the first means running the Amplification Model, which is why
+    per-model readings are stored per hour; `pipeline.agreement_at` computes it there, with no
+    refetch and no migration. This one needs no model to find, so a reader is shown a figure
+    the system can state plainly rather than one that presupposes its own prediction.
+
+    The consequence is that a call and the spread displayed beside it describe different
+    moments, and neither is recoverable from the other — which is why `day_call` records what
+    the models said about its own hour rather than leaving a reader to infer it from this.
     """
     measured = [found for hour in hours if (found := derive(variable, hour)) is not None]
     if not measured:

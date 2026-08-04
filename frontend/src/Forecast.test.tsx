@@ -505,6 +505,73 @@ describe('the day card says how much was checked', () => {
     expect(await screen.findByTestId(`day-agreement-${BIG.date}`)).toHaveTextContent(/unchecked/i);
   });
 
+  it('marks a Go Call the wave models refused, so it does not read as a plain Watch', async () => {
+    // The card would otherwise say "Watch" and nothing else, and this is a swell the system
+    // believes in that the forecasters have not settled on — a different day from one that
+    // was never big enough, and the difference is why somebody keeps checking back.
+    serveDays([
+      {
+        ...BIG,
+        call: {
+          ...BIG_CALL,
+          status: 'watch' as const,
+          model_agreement: 'divided' as const,
+          go_call_withheld: true,
+        },
+      },
+    ]);
+
+    render(<ForecastRange />);
+
+    expect(await screen.findByTestId(`day-agreement-${BIG.date}`)).toHaveTextContent(
+      /models divided/i,
+    );
+  });
+
+  it('does not call the models divided when they were simply unreachable', async () => {
+    // Both withhold a Go Call and they are not the same fact. "The forecasters disagree"
+    // said about an endpoint that never answered is an invented finding.
+    serveDays([
+      {
+        ...BIG,
+        call: {
+          ...BIG_CALL,
+          status: 'watch' as const,
+          model_agreement: 'unmeasured' as const,
+          go_call_withheld: true,
+        },
+      },
+    ]);
+
+    render(<ForecastRange />);
+
+    const marker = await screen.findByTestId(`day-agreement-${BIG.date}`);
+    expect(marker).toHaveTextContent(/unchecked/i);
+    expect(marker).not.toHaveTextContent(/divided/i);
+  });
+
+  it('says nothing on a Watch the models never had a Go Call to withhold', async () => {
+    // A day under the Go Call bar reports `divided` as a matter of arithmetic — every
+    // forecaster is under a bar the day itself misses. Marking that would put a caveat on
+    // most of the quiet days in the range and teach the eye to skip the row.
+    serveDays([
+      {
+        ...BIG,
+        call: {
+          ...BIG_CALL,
+          status: 'watch' as const,
+          model_agreement: 'divided' as const,
+          go_call_withheld: false,
+        },
+      },
+    ]);
+
+    render(<ForecastRange />);
+    await screen.findByTestId(`day-peak-${BIG.date}`);
+
+    expect(screen.queryByTestId(`day-agreement-${BIG.date}`)).not.toBeInTheDocument();
+  });
+
   it('says nothing on a day that got a full read', async () => {
     // Silence is the honest default. A "fully checked" badge on every ordinary card would
     // train the eye to skip the row, which is where the two that matter live.

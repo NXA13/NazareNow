@@ -390,10 +390,15 @@ def compare(runs: Ensemble, exponent: float) -> list[Comparison]:
 def spread_on_both() -> dict[str, float]:
     """Provider spread on Combined Sea and on Swell, at one instant, for the same hours.
 
-    The archive carries no Swell per model, so self-movement cannot be measured on the
-    partition Model Spread is actually defined on. This does not fix that. What it does is
-    show how far apart the two partitions' spreads are *right now*, so a reader can see the
-    size of the leap the conclusion makes rather than take it on trust.
+    The archive carries no `_previous_dayN` for Swell, so self-*movement* cannot be measured on
+    the partition Model Spread is defined on. This does not fix that. What it does is show how
+    far apart the two partitions' spreads are *right now*, so a reader can see the size of the
+    leap the conclusion makes rather than take it on trust.
+
+    Narrowed from "the archive carries no Swell per model", which was the true statement about
+    previous runs overstated into a false one about the archive. It does carry Swell per model
+    for the run it settled on, back to 2024 for the whole roster, and `agreement.py` measures
+    the gate over two Big-Wave Seasons of it. Only the movement between runs is missing.
     """
     body = _get(
         MARINE_URL,

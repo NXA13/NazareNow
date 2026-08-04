@@ -21,7 +21,7 @@ from pydantic import BaseModel
 
 from nazarenow.cycle import STALE_AFTER_HOURS, STALE_AFTER_SECONDS
 from nazarenow.days import group_by_date
-from nazarenow.decision import Status
+from nazarenow.decision import Agreement, Status
 from nazarenow.spread import BEARINGS, ORGANISATIONS, is_degraded
 from nazarenow.store import Store, StoreUnavailable
 
@@ -181,6 +181,29 @@ class DayCall(BaseModel):
 
     reasons: list[str]
     predicted_significant_wave_height: Reading
+
+    go_call_withheld: bool | None
+    """Whether the models refused a Go Call this day's conditions otherwise supported (#8).
+
+    The interface cannot work this out for itself, and the reason is the point of sending it:
+    a day whose own swell period sits below the Go Call bar has every organisation below it
+    too, so it reports `divided` while the models decided nothing. Two Watch days that look
+    identical here are a swell the forecasters have not settled on and a swell that was never
+    big enough — and only the Decision Model saw the conditions beside the verdict.
+
+    Null for a call issued before the gate existed."""
+
+    model_agreement: Agreement | None
+    """What the independent wave models said about the hour this call rests on (#8).
+
+    A property of the call rather than of the date, and it cannot be read off `model_spread`
+    below: that is the date's *median* hour and a call is decided on its best matching hour.
+    Sent so the interface can say why a Watch is a Watch without re-deriving a rule it does
+    not own — which is the same reason `providers_expected` and `bearing` are sent.
+
+    Null only for a call issued before the Decision Model consulted the models at all. Those
+    calls were decided on this system's own forecast alone, and the interface must not present
+    them as agreed."""
 
 
 class DaySpread(BaseModel):
@@ -403,6 +426,10 @@ def summarise(
             predicted_significant_wave_height=Reading(
                 value=call["predicted_significant_wave_height"], unit=call["unit"]
             ),
+            model_agreement=(
+                None if call["model_agreement"] is None else Agreement(call["model_agreement"])
+            ),
+            go_call_withheld=call["go_call_withheld"],
         ),
         peak_swell_height=Reading(**peak["readings"]["swell_height"]),
         swell_period_at_peak=Reading(**peak["readings"]["swell_period"]),

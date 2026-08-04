@@ -84,30 +84,56 @@ the 6-to-12-hour figures are extrapolated from a 24-hour measurement by a fitted
 exponent of 0.83; the exponent is measured across six intervals rather than assumed, but the
 extrapolation still runs below the measured range.
 
-**Model Spread now exists, and the tiers are still decided by Lead Time alone.** #8 ships it
-in two parts, and the first is the whole mechanism except the part that changes a call: the
-five wave models are fetched in one request, stored per model per forecast hour rather than
-averaged on arrival, differenced per date, and displayed. What it does not yet do is reach
-`decide`. That was split off deliberately — changing what earns a Watch or a Go Call alters
-the tier rule this ADR governs and #12 and #43 calibrated, and the cost of that change is not
-knowable without re-running the backtest.
+**Model Spread now drives the Go Call tier, which is the mechanism this ADR opens with.** #8
+shipped in two parts. The first was the whole measurement and none of its consequence: five
+wave models fetched in one request, stored per model per forecast hour rather than averaged on
+arrival, differenced per date, and displayed. The second reaches `decide`.
 
-So until the second part lands, the system measures forecast agreement and reports it, and
-**no part of it may claim a forecast has "converged"** in the sense this ADR means: the
-calls a user reads were not judged against agreement. A Watch is kept genuinely looser than
-a Go Call in the meantime by dropping the wind condition, which carries little information
-at range; without that the two tiers were one rule with two names, which is what this ADR
-exists to prevent.
+**The rule is agreement about the decision, not a threshold on the width.** A Go Call requires
+the *lowest organisation's* swell period at the deciding hour to still clear the calibrated Go
+Call bar. Two models a second apart and both well above the bar do not disagree about anything
+a traveller would act on; two models straddling it disagree about the only thing being asked.
+A day the models divide over falls to a Watch — the swell is still worth watching, it is
+simply not yet worth a flight.
 
-Two properties of the shipped measurement bear on how the second part may use it. A date's
-spread is taken from its **median hour** — a real hour's real disagreement, chosen so that
-half the day's hours disagree more and half less — while this ADR judges a day on its best
-*matching* hour. Those are different hours, and identifying the second means running the
-Amplification Model, which is why per-model readings are stored per hour: the deciding hour's
-spread can be computed from the store without refetching or a migration. And swell direction
-is differenced as a **compass arc**, not a subtraction; two models agreeing on a north swell
-at 355° and 5° are 10° apart, and the plain range calls them 350° apart, which would put
-maximum doubt on a day of near-perfect agreement in the direction the canyon focuses best.
+The obvious alternative, a bar on the spread itself in seconds, was rejected because **nothing
+in the record can supply that number**. Per-model Swell readings have been collected by this
+system only since #8's first half, `analysis/model_spread/` measured its one live sample on a
+0.4 m summer sea and says in terms that it must not be believed, and a threshold chosen anyway
+would be a guess wearing a calibration's clothes. The rule as shipped introduces no new
+constant: it reuses the bar #12 and #43 fitted to the Gold Days.
+
+**What it costs was measured, because this ADR's own tier rule is what changed.** Not by the
+backtest — a Hindcast is what the ocean did, holds no forecast and therefore no disagreement,
+so it reproduces identical tables either side of this and states that assumption in its own
+source. `analysis/model_spread/agreement.py` measures the gate directly on 18,264 archived
+hours from 2024-07 to 2026-07, the span where all three organisations carry a real Swell
+partition: **the gate withholds 4 of 25 Go Call days, 16%**, all four in one season, and
+**neither of the two Gold Days in the span loses its Go Call**. That figure is a lower bound,
+because archived per-model readings are near-analyses while a Go Call is issued two to seven
+days out, where the same measurement shows spread growing.
+
+**A Confirmed statement is deliberately not gated.** It is issued a day out to somebody already
+travelling and recommends no booking, so there is no flight for disagreement to protect; and
+because a Watch requires a Lead Time beyond the Confirmed band, gating it would drop those days
+to silence rather than to a weaker call.
+
+Two properties of the measurement bear on how the gate reads it. A date's *displayed* spread is
+taken from its **median hour** — a real hour's real disagreement, chosen so that half the day's
+hours disagree more and half less — while this ADR judges a day on its best *matching* hour.
+Those are different hours, and the gate uses the second: every hour is decided carrying its own
+ensemble verdict, so whichever hour wins the day brings the right spread with it, computed from
+the per-hour store without refetching or a migration. The call records which it was, because
+that cannot be recovered from the median the record displays beside it. And swell direction is
+differenced as a **compass arc**, not a subtraction; two models agreeing on a north swell at
+355° and 5° are 10° apart, and the plain range calls them 350° apart, which would put maximum
+doubt on a day of near-perfect agreement in the direction the canyon focuses best.
+
+**Direction and height are measured and do not gate anything**, which is a choice rather than
+an omission. Period is the condition #11 found decides tiers, it is the one the Go Call bar is
+written in, and the direction spread this project has observed was 60.5° against a 75° arc on a
+0.4 m sea — a figure the same README refuses to generalise from. Adding a second gated variable
+on that evidence would spend a cost nobody has measured. The Big-Wave Season is what settles it.
 
 Which conditions gate which tier is decided on **condition identity**, and every tier names
 the conditions it requires. Neither half of that is incidental. An early implementation

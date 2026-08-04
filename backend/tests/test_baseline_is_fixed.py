@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import pytest
 
-from nazarenow.decision import Status, decide
+from nazarenow.decision import Agreement, Status, decide
 from nazarenow.models.base import Prediction
 from nazarenow.models.heuristic import HeuristicBaseline
 from nazarenow.thresholds import load
@@ -31,6 +31,18 @@ RERUN = (
     "the committed reports in analysis/backtest/ and analysis/calibration/ now describe a "
     "rule that no longer exists — re-run them"
 )
+
+MODELS_AGREE = Agreement.AGREED
+"""What every `decide` below assumes the wave models said, and it is not incidental.
+
+Since #8's second half a Go Call also requires the independent wave models to agree, and
+these tests exist to mirror what `analysis/backtest/` and `analysis/calibration/` score. Both
+score the rule against a Hindcast — what the ocean actually did — which contains no forecast
+and therefore no disagreement, so both state the same assumption in their own source. Pinning
+the thresholds under a different assumption from the reports would pin a rule the reports do
+not describe, which is the one thing this file exists to prevent.
+
+`test_calls.py` owns the gate itself, against providers stubbed to agree and to divide."""
 
 SHIPPED = load()
 
@@ -232,15 +244,19 @@ def test_the_calibrated_period_decides_the_tier(period: float, expected: Status)
     calibration's own resolution supports, so a comparison silently written as `>` rather
     than `>=` fails here rather than in a season's worth of forecasts.
     """
-    call = decide(HeuristicBaseline().predict(GIANT | {"swell_period": period}), lead_time_days=3)
+    call = decide(
+        HeuristicBaseline().predict(GIANT | {"swell_period": period}),
+        lead_time_days=3,
+        agreement=MODELS_AGREE,
+    )
 
     assert call.status is expected
 
 
 def test_a_giant_day_earns_a_go_call_and_a_flat_day_earns_nothing() -> None:
     """The pairing ticket #12's criteria ask for, at the Lead Time the backtest uses."""
-    giant = decide(HeuristicBaseline().predict(GIANT), lead_time_days=3)
-    flat = decide(HeuristicBaseline().predict(GIANT | {"swell_period": 8.0}), lead_time_days=3)
+    giant = decide(HeuristicBaseline().predict(GIANT), 3, MODELS_AGREE)
+    flat = decide(HeuristicBaseline().predict(GIANT | {"swell_period": 8.0}), 3, MODELS_AGREE)
 
     assert giant.status is Status.GO
     assert flat.status is Status.NONE
@@ -257,6 +273,10 @@ def test_the_tiers_cannot_collapse_into_one_rule() -> None:
     assert SHIPPED.go_call_minimum_swell_period_s > SHIPPED.watch_minimum_swell_period_s
 
     between = (SHIPPED.watch_minimum_swell_period_s + SHIPPED.go_call_minimum_swell_period_s) / 2
-    call = decide(HeuristicBaseline().predict(GIANT | {"swell_period": between}), lead_time_days=3)
+    call = decide(
+        HeuristicBaseline().predict(GIANT | {"swell_period": between}),
+        lead_time_days=3,
+        agreement=MODELS_AGREE,
+    )
 
     assert call.status is Status.WATCH

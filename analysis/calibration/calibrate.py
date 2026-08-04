@@ -78,6 +78,14 @@ from nazarenow.models.heuristic import HeuristicBaseline, _within  # noqa: E402
 from nazarenow.thresholds import DEFAULT_PATH, Thresholds, parse  # noqa: E402
 
 LEAD_TIME_DAYS = backtest.LEAD_TIME_DAYS
+
+MODELS_ASSUMED_TO_AGREE = backtest.MODELS_ASSUMED_TO_AGREE
+"""Taken from the backtest rather than restated, because the two must assume the same thing.
+
+A calibration that fitted the bars under one assumption about the wave models while the
+report scored them under another would produce numbers that disagree for a reason neither
+document names. `backtest.MODELS_ASSUMED_TO_AGREE` carries the argument for the assumption:
+a Hindcast is what the ocean did, and contains no forecast to disagree."""
 GO_TIERS = backtest.GO_TIERS
 WATCH_OR_BETTER = backtest.WATCH_OR_BETTER
 
@@ -251,7 +259,7 @@ def call_days(hours: list[dict[str, float | str]], model: HeuristicBaseline) -> 
         best = Status.NONE
         for hour in day_hours:
             readings = {k: v for k, v in hour.items() if k != "at"}
-            call = decide(model.predict(readings), LEAD_TIME_DAYS)
+            call = decide(model.predict(readings), LEAD_TIME_DAYS, MODELS_ASSUMED_TO_AGREE)
             if strength(call.status) > strength(best):
                 best = call.status
         calls[day] = best
