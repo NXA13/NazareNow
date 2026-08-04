@@ -126,15 +126,24 @@ discontinuity, not IBI's** — #36 read IBI's catalogue entry, product page and 
 its QUID, so whether IBI carries the same break is unknown. The two share the MFWAM family,
 which makes it worth suspecting and does not make it a fact.
 
-**Whether wind carries the same skew.** `thresholds.json` states that the light-wind exemption
-needs no translation because wind reaches the fit and the Pipeline Run alike from ERA5. The
-first half is right — training wind is the ERA5 archive. The second is not: `open_meteo.py`
-reads wind at serving time from the **forecast** API, not the archive. So wind has a
-product-to-product gap of exactly the kind this ADR records for waves, and unlike the wave one
-it has never been measured. It is plausibly small — 10 m wind speed is far less model-dependent
-than a partitioned swell period — but the exemption is fitted rather than verified, and it sits
-0.2 km/h above the windiest Gold Day it has to admit. **Filed as #51**, which is where it gets
-settled; four other files still state the premise as fact until it is.
+**Whether wind carries the same skew — settled by #51, and the guess above was wrong.** This
+ADR expected the gap to be small, on the reasoning that 10 m wind speed is far less
+model-dependent than a partitioned swell period. Measured over three Big-Wave Seasons at the
+Proxy Target (`analysis/wind_products/README.md`), the forecast product reads **1.5 km/h**
+lighter than ERA5 in the band the exemption decides in, and 2.1 km/h lighter in the window
+straddling the bar. Against a bar with 0.2 km/h of margin, that is not small: it is roughly ten
+times the margin and four times the 0.5 km/h step the bar is rounded to.
+
+The exemption is therefore translated like the wave bars, and ships at **14.5 km/h** rather
+than the fitted 16.5. Untranslated it was admitting hours the fit would have refused at nearly
+four times the rate it refused hours the fit would have admitted; translated, the two errors
+are balanced. The wind *feature* of the Amplification Model crosses the same boundary and stays
+untranslated, because there the same gap moves a prediction by about 0.01 m against an error of
+0.356 m — the measured reason, not the old premise.
+
+What the measurement does **not** remove is the scatter. The residual is 3.45 km/h, so even the
+correctly placed bar disagrees with the fit's intent on about 13% of hours. Translating fixes
+where the bar sits, not how noisy the reading it is applied to is.
 
 **Whether the training set should be extended to IBI's real reach.** It could go back to 1980;
 it stops at 2011-01-01 for a reason that belonged to a different module. Extending it means a

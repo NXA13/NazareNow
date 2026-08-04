@@ -48,8 +48,10 @@ import swell
 from swell import BearingOffset, QuantileMap
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "analysis" / "overlap"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "analysis" / "wind_products"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend" / "src"))
 
+import gap  # noqa: E402
 import measure  # noqa: E402
 from nazarenow.days import group_by_date  # noqa: E402
 from nazarenow.decision import Agreement, Status, decide, strength  # noqa: E402
@@ -456,7 +458,7 @@ PERIOD_SWEEP = (10.0, 11.0, 12.0, 13.0, 14.0, 15.0)
 
 
 def period_sensitivity(
-    hours: list[dict[str, float | str]], gold: dict[str, GoldDay]
+    hours: list[dict[str, float | str]], gold: dict[str, GoldDay], base: Thresholds
 ) -> list[tuple[float, int, int, int]]:
     """Gold Days called and Go Calls issued, as the Go Call swell period bar varies.
 
@@ -473,11 +475,14 @@ def period_sensitivity(
     reason the rest of this file imports the baseline instead of copying it — and, unlike the
     module-constant reassignment this replaced, it leaves no global state for a concurrent
     reader to observe mid-sweep.
+
+    `base` is the shipped set with the exemption already restated for the wind series these
+    hours carry. Taken as an argument rather than loaded here, so this sweep cannot end up
+    applying the exemption in different units from the panel it is a diagnostic for.
     """
-    shipped = load_thresholds()
     rows = []
     for threshold in PERIOD_SWEEP:
-        calls = call_days(hours, _at_go_bar(shipped, threshold))
+        calls = call_days(hours, _at_go_bar(base, threshold))
         in_span = [d for d in gold if d in calls]
         called = sum(1 for d in in_span if calls[d].status in GO_TIERS)
         issued = sum(1 for c in calls.values() if c.status in GO_TIERS)
@@ -634,8 +639,26 @@ def main() -> int:
     translations = measure.fit_translations()
     period = translations["swell_period_s"]
     height = translations["significant_wave_height_m"]
+    # The wind hours here are ERA5, and since #51 the shipped exemption is not: it is fitted
+    # against ERA5 and translated into the forecast product's units on the way out. Leaving
+    # it alone would apply a bar about 2 km/h light to the series the fit itself read, which
+    # is the mirror of the unit mismatch this whole block exists to prevent.
+    wind = gap.fit_translation()
     shipped = load_thresholds()
-    in_reanalysis_units = shipped.replacing(
+
+    # **Every panel below reads ERA5 wind**, because no reanalysis here carries any and all
+    # three take it from `hindcast.wind()`. Only the *wave* bars distinguish the panels. So
+    # the exemption is restated once, for all of them, while the wave bars are restated only
+    # for the reanalysis panel.
+    #
+    # This is what #51 changed. While the exemption shipped untranslated the two units were
+    # the same number and the distinction did not exist; now `operational` is a hybrid — live
+    # waves, archive wind — and scoring it with the shipped exemption would apply a bar about
+    # 2 km/h light to a series that never saw a forecast.
+    with_era5_wind = shipped.replacing(
+        light_wind_exemption_kmh=wind.invert(shipped.light_wind_exemption_kmh),
+    )
+    in_reanalysis_units = with_era5_wind.replacing(
         minimum_significant_wave_height_m=height.invert(shipped.minimum_significant_wave_height_m),
         watch_minimum_swell_period_s=period.invert(shipped.watch_minimum_swell_period_s),
         go_call_minimum_swell_period_s=period.invert(shipped.go_call_minimum_swell_period_s),
@@ -643,10 +666,12 @@ def main() -> int:
     print(
         f"  shipped bars {shipped.minimum_significant_wave_height_m:g} m / "
         f"{shipped.watch_minimum_swell_period_s:g} s / "
-        f"{shipped.go_call_minimum_swell_period_s:g} s restated in reanalysis units as "
+        f"{shipped.go_call_minimum_swell_period_s:g} s / "
+        f"{shipped.light_wind_exemption_kmh:g} km/h restated in reanalysis units as "
         f"{in_reanalysis_units.minimum_significant_wave_height_m:.2f} m / "
         f"{in_reanalysis_units.watch_minimum_swell_period_s:.2f} s / "
-        f"{in_reanalysis_units.go_call_minimum_swell_period_s:.2f} s"
+        f"{in_reanalysis_units.go_call_minimum_swell_period_s:.2f} s / "
+        f"{in_reanalysis_units.light_wind_exemption_kmh:.2f} km/h"
     )
     reanalysis_panel = Panel(
         name="reanalysis",
@@ -661,13 +686,13 @@ def main() -> int:
     operational = Panel(
         name="operational (diagnostic)",
         span=f"{hindcast.OPERATIONAL_START[:4]}-{hindcast.END[:4]}",
-        calls=call_days(op_hours),
+        calls=call_days(op_hours, with_era5_wind),
         gold=gold,
     )
     reconstructed = Panel(
         name="reconstructed (superseded)",
         span=f"{hindcast.START[:4]}-2021",
-        calls=call_days(rec_hours),
+        calls=call_days(rec_hours, with_era5_wind),
         gold=gold,
     )
     panels = [reanalysis_panel, operational, reconstructed]
@@ -698,7 +723,7 @@ def main() -> int:
 
     print("\n  swell period sensitivity, operational panel (diagnostic for #12):")
     print(f"    {'threshold':>9s}  {'Gold Days called':>16s}  {'Go Calls issued':>15s}")
-    sweep = period_sensitivity(op_hours, gold)
+    sweep = period_sensitivity(op_hours, gold, with_era5_wind)
     for threshold, called, total, issued in sweep:
         print(f"    {threshold:8.0f}s  {f'{called}/{total}':>16s}  {issued:>15d}")
     write_sensitivity_csv(sweep)

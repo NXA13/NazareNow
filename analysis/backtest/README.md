@@ -62,7 +62,14 @@ Ticket #11. The benchmark every later Amplification Model must beat, per ADR 000
 > |---|---|---|---|---|---|
 > | **reanalysis** (headline) | 2011–2025 | **38** | **33/38** *(was 37/38)* | 16/38 | 128, of which 16 Gold |
 > | operational (diagnostic) | 2022–2025 | 9 | 9/9 | 7/9 | 40, of which 7 Gold |
-> | reconstructed (superseded) | 2011–2021 | 29 | 26/29 *(was 27/29)* | 11/29 | 107, of which 11 Gold |
+> | reconstructed (superseded) | 2011–2021 | 29 | 26/29 *(was 27/29)* | 11/29 | 108, of which 11 Gold |
+>
+> The reconstructed panel issued 107 until #51. Every panel here reads ERA5 wind, and once the
+> light-wind exemption began shipping translated, the shipped bar had to be restated back into
+> ERA5 units before any of them could apply it. Restating a bar that was rounded on the way out
+> does not land back on the value the fit chose — 14.5 km/h inverts to 16.85 against a fitted
+> 16.5, the same round-trip artefact that puts the 12.9 s Go bar back at 13.55 s. It admits one
+> more non-Gold day. No Gold Day recall moves, in any panel.
 >
 > **Read the recall beside what it cost.** Against #12's thresholds this same panel caught 16 of
 > 38 at Watch; the refit took it to 37 of 38 by lowering the Watch bar from 12.5 s to 10.1 s,

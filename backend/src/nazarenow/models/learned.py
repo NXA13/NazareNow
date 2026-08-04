@@ -54,8 +54,21 @@ TRANSLATED = {
 Only these two. `analysis/overlap/measure.py` fits a translation for exactly this pair and
 deliberately not for the bearings — the measured direction offset is 1-3 degrees, far below
 the resolution at which anything decides, and translating it would be arithmetic dressed up
-as precision. Wind is untranslated for a stronger reason: it reaches the fit and the Pipeline
-Run alike from ERA5, so it is already in the units it is applied in.
+as precision.
+
+**Wind is untranslated, but not for the reason this file used to give.** It said wind reached
+the fit and the Pipeline Run alike from ERA5. The fit does read ERA5; a Pipeline Run reads
+Open-Meteo's *forecast* product, so the wind feature crosses the same product boundary the two
+readings above do. #51 measured that boundary over three Big-Wave Seasons
+(`analysis/wind_products/README.md`): the forecast product reads about 1.8 km/h lighter. At
+this model's wind coefficient of about -0.007 m per km/h that moves a prediction by roughly
+**0.01 m** — against a measured Amplification error of 0.356 m and a served MAE near 0.29 m.
+
+So it stays untranslated because the correction is a hundredth of the error it would sit
+inside, which is a measurement rather than a premise. The exemption *threshold* crosses the
+same boundary and was translated, because there a 2 km/h shift lands on a bar with 0.2 km/h
+of margin — same gap, different consequence, because a threshold has an edge and a coefficient
+does not.
 """
 
 FEATURES: dict[str, Callable[[dict[str, float]], float]] = {

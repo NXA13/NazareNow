@@ -306,6 +306,16 @@ class Translation:
     intercept: float
     n: int
     residual_rmse: float
+    source: str = "reanalysis"
+    regime: str = f"hours >= {BIG_SWELL_HEIGHT_M:g} m"
+    """What the line maps *from*, and the subset it was fitted on.
+
+    Defaulted to this module's own pairing, which is the only one until #51. The light-wind
+    exemption is translated from a different pairing — ERA5 against the forecast product,
+    fitted in a band of wind speed rather than a band of wave height — and the shipped
+    `method` blurb quotes `describe()` verbatim, so a transform that could not say what it
+    was fitted on would put a sentence about 3 m seas next to a wind speed.
+    """
 
     def apply(self, value: float) -> float:
         return self.slope * value + self.intercept
@@ -322,9 +332,9 @@ class Translation:
 
     def describe(self) -> str:
         return (
-            f"{self.variable}: operational = {self.slope:.4f} x reanalysis "
-            f"{self.intercept:+.4f} (fitted on {self.n} hours >= "
-            f"{BIG_SWELL_HEIGHT_M:g} m, residual RMSE {self.residual_rmse:.3f})"
+            f"{self.variable}: operational = {self.slope:.4f} x {self.source} "
+            f"{self.intercept:+.4f} (fitted on {self.n} {self.regime}, "
+            f"residual RMSE {self.residual_rmse:.3f})"
         )
 
 

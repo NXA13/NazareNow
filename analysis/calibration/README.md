@@ -9,12 +9,16 @@ numbers, and writes them where the running system reads them.
 > Swell record reached at the time. It is kept as the record of where the numbers came from.
 > The shipped values are no longer these.
 >
-> | | #12 (9 Gold Days) | #39/#40 (38 Gold Days) | now (#43) |
+> | | #12 (9 Gold Days) | #39/#40 (38 Gold Days) | now (#43, #51) |
 > |---|---|---|---|
 > | `minimum_significant_wave_height_m` | 3.75 | 2.75 | **2.75** |
 > | `watch_minimum_swell_period_s` | 12.5 | 10.1 | **11.5** |
 > | `go_call_minimum_swell_period_s` | 13.0 | 12.9 | **12.9** |
-> | `light_wind_exemption_kmh` | — | 16.5 (new, ADR 0009) | **16.5** |
+> | `light_wind_exemption_kmh` | — | 16.5 (new, ADR 0009) | **14.5** |
+>
+> The exemption is the one row that moved without being refitted: #51 found it was shipping in
+> ERA5 units into a system that reads a forecast product, and translated it. The fitted value is
+> still 16.5 km/h.
 > | fitted on | 2021/22–2022/23, 6 Gold Days | 2011/12–2019/20, 25 | **25** |
 > | validated on | 2023/24–2025/26, 3 Gold Days | 2020/21–2025/26, 13 | **13** |
 >
@@ -54,8 +58,10 @@ numbers, and writes them where the running system reads them.
 >
 > **Fitted on the reanalysis, shipped in Open-Meteo units.** The fit runs on the Copernicus IBI
 > series, where the same sea reads about half a second longer than the live feed reports. The
-> three wave bars are translated on the way out; the wind exemption is not, because wind comes
-> from ERA5 on both sides. `analysis/overlap/README.md` measures the transform.
+> three wave bars are translated on the way out, and since #51 so is the wind exemption — it is
+> fitted against ERA5 and applied by a Pipeline Run to a forecast product that reads about
+> 1.5 km/h lighter, so 16.5 km/h ships as **14.5**. `analysis/overlap/README.md` measures the
+> wave transform and `analysis/wind_products/README.md` the wind one.
 >
 > **What it costs.** Recall went from 16 of 38 Gold Days at Watch to **37 of 38**, and Go Calls
 > from 9 of 38 to 16. The Watch tier is much noisier for it: 1050 Watch days over the record
