@@ -188,6 +188,8 @@ def test_a_call_cannot_name_a_run_that_does_not_exist(store) -> None:
                     "calibrated": False,
                 }
             ],
+            [],
+            [],
             run_id=9999,
         )
 
@@ -238,6 +240,8 @@ def test_a_run_whose_output_rolled_back_is_not_marked_succeeded(store) -> None:
             # Two readings for the same hour: `forecast_hour` is keyed on `valid_at`, so
             # the second insert fails and takes the whole transaction with it.
             [{"at": "2026-03-01T00:00", "readings": hour}] * 2,
+            [],
+            [],
             [],
             run_id=run_id,
         )
@@ -291,6 +295,7 @@ class TestTracingAPredictionToItsInputs:
         assert {response["source"] for response in inputs} == {
             "open-meteo-marine",
             "open-meteo-weather",
+            "open-meteo-ensemble",
         }, "a call must lead back to every response it was derived from"
 
     def test_a_later_run_s_call_leads_to_that_run_s_inputs_and_not_an_earlier_one_s(

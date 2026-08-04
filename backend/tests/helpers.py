@@ -92,6 +92,25 @@ def no_sleep(_seconds: float) -> None:
     people stop running it."""
 
 
+# How far each wave model sits from the day's base conditions, in metres of swell height.
+#
+# Chosen so the three *organisations* land at 0.00, 0.15 and 0.30 rather than the five models
+# landing anywhere convenient: DWD's two members straddle its vote and NCEP's two agree with
+# each other, so a fixture built this way fails if `by_provider` ever stops collapsing an
+# organisation to one opinion. The resulting swell-height spread is 0.30 m at every hour.
+ENSEMBLE_OFFSETS = {
+    "meteofrance_wave": 0.0,
+    "dwd_ewam": 0.1,
+    "dwd_gwam": 0.2,
+    "ncep_gfswave025": 0.3,
+    "ncep_gfswave016": 0.3,
+}
+
+ENSEMBLE_SPREAD_M = 0.3
+"""The swell-height Model Spread `forecast_provider` produces, named so tests do not
+re-derive it from `ENSEMBLE_OFFSETS` and go on agreeing with a changed fixture by luck."""
+
+
 def forecast_provider(
     by_date: dict[str, dict[str, float]] | None = None,
     today: str = "2026-02-09",
@@ -99,6 +118,9 @@ def forecast_provider(
     only_hours: dict[str, tuple[int, ...]] | None = None,
     peak_but_onshore: dict[str, tuple[int, ...]] | None = None,
     also_hours: dict[str, tuple[dict[str, float], tuple[int, ...]]] | None = None,
+    silent_models: tuple[str, ...] = (),
+    ensemble_status: int = 200,
+    ensemble_offsets: dict[str, float] | None = None,
 ) -> httpx.MockTransport:
     """A provider returning `days` days from `today`, quiet except where overridden.
 
@@ -110,6 +132,14 @@ def forecast_provider(
     date, as `{date: (conditions, hours)}`. A day needs two genuinely different windows to
     show which one a call was judged on — one clean but modest, one large but failing a
     different condition. With a single window every rule for choosing an hour agrees.
+
+    The same transport also answers the ensemble request Model Spread is measured from,
+    recognised by its `models` parameter. `silent_models` makes named members answer null
+    for every hour, which is how a provider is unavailable rather than absent; a non-200
+    `ensemble_status` makes the endpoint itself fail, which ADR 0003 requires to degrade the
+    estimate rather than the run. `ensemble_offsets` moves the members apart or together, so
+    agreement and disagreement can be driven from the transport rather than asserted on
+    `spread.derive` in isolation.
     """
     by_date = by_date or {}
     only_hours = only_hours or {}
@@ -179,11 +209,93 @@ def forecast_provider(
         "hourly": {"time": stamps, **weather},
     }
 
+    ensemble_body = ensemble_body_from(
+        marine_body, silent_models=silent_models, offsets=ensemble_offsets
+    )
+
     def handle(request: httpx.Request) -> httpx.Response:
+        if is_ensemble_request(request):
+            if ensemble_status != 200:
+                return httpx.Response(ensemble_status, json={"reason": "unavailable"})
+            return httpx.Response(200, json=ensemble_body)
         marine_request = "marine" in request.url.host
         return httpx.Response(200, json=marine_body if marine_request else weather_body)
 
     return httpx.MockTransport(handle)
+
+
+def is_ensemble_request(request: httpx.Request) -> bool:
+    """Whether this is the request Model Spread is measured from.
+
+    The ensemble goes to the same marine host as the single-model forecast, so the `models`
+    parameter is what tells the two apart rather than the URL. Every stubbed provider in the
+    suite needs to answer it: a Pipeline Run now makes three requests, and a transport that
+    hands the single-model body back for the ensemble is not simulating a degraded provider —
+    it is simulating a contract change, which fails the run for a reason the test never meant.
+    """
+    return "models" in request.url.params
+
+
+def ensemble_body_from(
+    marine_body: dict[str, Any],
+    *,
+    silent_models: tuple[str, ...] = (),
+    offsets: dict[str, float] | None = None,
+) -> dict[str, Any]:
+    """One series per model per variable, built from a marine body's own hourly arrays.
+
+    That is the shape Open-Meteo answers a comma-separated `models` list in, and deriving it
+    from the marine body rather than assembling it independently means a fixture cannot move
+    one of the two and leave the other describing a different sea.
+
+    `silent_models` answer null for every hour — present in the payload and carrying nothing,
+    which is what an unavailable member actually looks like and is why a 200 alone proves a
+    model agreed with nobody.
+
+    `offsets` replaces how far each member sits from the marine body, which is what makes
+    members agree or disagree. #8 requires a test that agreeing providers yield a narrow
+    spread and disagreeing ones a wide one; with a fixed set of offsets that can only be
+    asserted on `derive` directly, never on providers stubbed at the transport and read back
+    through the run.
+
+    A marine body deliberately broken to exercise a rejection path is copied as far as it
+    goes and no further. Those runs fail on the marine response, which is fetched first, so
+    the ensemble is never requested — but this is built when the transport is constructed,
+    and raising here would turn "the marine payload was rejected" into a fixture error.
+    """
+    hourly = marine_body.get("hourly") or {}
+    series: dict[str, list[Any]] = {"time": hourly.get("time", [])}
+    units: dict[str, str] = {"time": "iso8601"}
+
+    for model, offset in (offsets or ENSEMBLE_OFFSETS).items():
+        silent = model in silent_models
+        for variable, shift in (
+            ("swell_wave_height", offset),
+            ("swell_wave_period", offset * 2),
+            ("swell_wave_direction", offset * 10),
+        ):
+            if variable not in hourly:
+                continue
+            # Bearings wrap, as the provider's own do. Without this a base direction of
+            # 358° produces members at 360° and 361°, which no marine API would ever
+            # return — and a fixture that cannot cross north cannot exercise the case
+            # circular spread exists for.
+            wrap = 360 if variable.endswith("direction") else None
+            series[f"{variable}_{model}"] = [
+                None
+                if silent or value is None
+                else round((value + shift) % wrap if wrap else value + shift, 4)
+                for value in hourly[variable]
+            ]
+            units[f"{variable}_{model}"] = MARINE_UNITS[variable]
+
+    return {
+        "latitude": marine_body.get("latitude", 39.541664),
+        "longitude": marine_body.get("longitude", -9.208328),
+        "timezone": marine_body.get("timezone", TIMEZONE),
+        "hourly_units": units,
+        "hourly": series,
+    }
 
 
 def ingest(store, transport: httpx.MockTransport, sleep=no_sleep) -> None:

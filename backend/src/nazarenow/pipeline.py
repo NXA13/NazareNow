@@ -22,12 +22,18 @@ from typing import Any
 
 import httpx
 
+from nazarenow import spread
 from nazarenow.days import group_by_date
 from nazarenow.decision import Status, conditions_behind, decide, strength
 from nazarenow.models import AmplificationModel, HeuristicBaseline, LearnedAmplification
 from nazarenow.runs import FailureKind
 from nazarenow.sources import open_meteo
-from nazarenow.sources.open_meteo import MARINE_READINGS, WEATHER_READINGS
+from nazarenow.sources.open_meteo import (
+    EXPECTED_UNITS,
+    MARINE_READINGS,
+    SPREAD_READINGS,
+    WEATHER_READINGS,
+)
 from nazarenow.store import Store, StoreUnavailable
 
 # A real Pipeline Run returns days of hourly data. Anything less is a degraded provider
@@ -210,6 +216,105 @@ def merge_hourly(
     ]
 
 
+# The ensemble as `{forecast hour: {model: {reading: {value, unit}}}}` — every wave model's
+# own readings, kept apart. Named because the nesting is four deep and unreadable spelled out
+# at each of the four signatures that pass it around.
+Ensemble = dict[str, dict[str, dict[str, dict[str, Any]]]]
+
+
+def collect_ensemble(body: dict[str, Any], models: list[str]) -> Ensemble:
+    """Each model's own readings for each forecast hour: `{stamp: {model: {variable: …}}}`.
+
+    Nothing is combined here. Ticket #8's first requirement is that the members are stored
+    separately rather than averaged on arrival, and an average is the one transformation of
+    an ensemble that cannot be undone — collapse five opinions into one number and the
+    disagreement ADR 0003 uses as the system's uncertainty estimate is gone for good.
+
+    A member that answered null for an hour is simply absent from it, as is one that answered
+    for none of them. That is the same shape `spread.derive` already reads: a provider being
+    unavailable degrades the estimate rather than failing the run.
+
+    Indexing the series against the time axis is safe because `validate_ensemble` has
+    established that every series present runs the axis's full length — a short one would
+    attribute every reading past the gap to the wrong hour.
+
+    Readings come out under this system's own names rather than the provider's, matching what
+    `collect_hourly` stores beside them.
+    """
+    hourly = body["hourly"]
+    units = body["hourly_units"]
+    by_hour: Ensemble = {}
+
+    for index, stamp in enumerate(hourly["time"]):
+        for model in models:
+            readings = {
+                name: {"value": hourly[key][index], "unit": units[key]}
+                for name, variable in SPREAD_READINGS.items()
+                if (key := f"{variable}_{model}") in hourly and hourly[key][index] is not None
+            }
+            if readings:
+                by_hour.setdefault(stamp, {})[model] = readings
+
+    return by_hour
+
+
+def as_model_hours(ensemble: Ensemble) -> list[dict[str, Any]]:
+    """The ensemble flattened into one row per model per hour, ready for the store."""
+    return [
+        {"at": stamp, "model": model, "readings": readings}
+        for stamp in sorted(ensemble)
+        for model, readings in sorted(ensemble[stamp].items())
+    ]
+
+
+def derive_spreads(hours: list[dict[str, Any]], ensemble: Ensemble) -> list[dict[str, Any]]:
+    """One Model Spread row per date per variable, for every date the forecast covers.
+
+    Dates come from the *forecast*, not from the ensemble, so a date the members did not
+    reach still gets a row saying they did not. A date silently missing from this record
+    would be indistinguishable from a Pipeline Run that never happened, and the members stop
+    modelling swell before the forecast's own range ends — so the far end of every run is
+    exactly where that absence would be mistaken for agreement.
+
+    The unit is the provider's own declared unit for the variable, which `validate_ensemble`
+    has already established equals the one this system's thresholds are named in.
+    """
+    by_date = group_by_date(hours)
+    rows: list[dict[str, Any]] = []
+
+    for day in sorted(by_date):
+        stamps = [hour["at"] for hour in by_date[day]]
+        for name, variable in SPREAD_READINGS.items():
+            derived = spread.for_day(
+                name,
+                [
+                    {
+                        model: readings[name]["value"]
+                        for model, readings in ensemble.get(stamp, {}).items()
+                        if name in readings
+                    }
+                    for stamp in stamps
+                ],
+            )
+            measured = derived.spread
+            rows.append(
+                {
+                    "date": day,
+                    "variable": name,
+                    "value": None if measured is None else measured.value,
+                    "lowest": None if measured is None else measured.lowest,
+                    "highest": None if measured is None else measured.highest,
+                    "unit": EXPECTED_UNITS[variable],
+                    "providers": [] if measured is None else list(measured.providers),
+                    "models_reporting": 0 if measured is None else measured.models_reporting,
+                    "hours_measured": derived.hours_measured,
+                    "hours_total": derived.hours_total,
+                }
+            )
+
+    return rows
+
+
 def earliest(*timestamps: str) -> str:
     """The oldest of several observation times.
 
@@ -344,6 +449,27 @@ def failure_detail(error: BaseException) -> str:
     return f"{type(error).__name__}: {error}"
 
 
+ENSEMBLE_UNAVAILABLE = "open-meteo-ensemble-unavailable"
+"""The `raw_response` source naming a run that could not reach the ensemble at all.
+
+Its own source rather than a flag on `open-meteo-ensemble`, so "which runs lost their second
+opinion" is one query and no row under the real source is anything but a real response.
+"""
+
+
+def attempted_url(error: httpx.HTTPError, fallback: str) -> str:
+    """The URL a failed request was aimed at, as far as the exception knows it.
+
+    `httpx.HTTPError` splits here: a `RequestError` carries the request it failed on, while a
+    bare error raised before one was built does not. The endpoint is used as the fallback so
+    the record always names where we were looking — a blank URL beside a transport failure
+    would lose the one detail that distinguishes "the ensemble was unreachable" from a fault
+    somewhere else in the run.
+    """
+    request = getattr(error, "request", None)
+    return str(request.url) if request is not None else fallback
+
+
 def run_pipeline(store: Store, client: httpx.Client, sleep=time.sleep) -> None:
     """Execute one Pipeline Run against the given store, recording the run either way.
 
@@ -369,6 +495,8 @@ def _fetch_and_store(store: Store, client: httpx.Client, sleep, run_id: int) -> 
 
     weather_body, weather_url = open_meteo.fetch_weather(client, sleep)
     store.record_raw_response(run_id, "open-meteo-weather", weather_url, weather_body)
+
+    ensemble = fetch_spread_members(store, client, sleep, run_id)
 
     # Everything is computed and checked before anything is written. Writing the current
     # conditions first meant a rejected forecast still advanced them — a half-updated
@@ -399,5 +527,54 @@ def _fetch_and_store(store: Store, client: httpx.Client, sleep, run_id: int) -> 
         readings=readings,
         hours=hours,
         calls=derive_calls(hours),
+        model_hours=as_model_hours(ensemble),
+        spreads=derive_spreads(hours, ensemble),
         run_id=run_id,
     )
+
+
+def fetch_spread_members(store: Store, client: httpx.Client, sleep, run_id: int) -> Ensemble:
+    """The wave models Model Spread is measured across, or an empty ensemble if unreachable.
+
+    **A transport failure here degrades the estimate; it does not fail the run.** ADR 0003 is
+    explicit that a model being unavailable "degrades the uncertainty estimate rather than the
+    prediction", and the forecast a traveller reads does not depend on this endpoint at all —
+    losing the whole site's range because a second opinion timed out would be the wrong trade
+    in both directions.
+
+    A `ValueError` is deliberately *not* caught, and the distinction is `validate_ensemble`'s
+    own: a member answering nothing is an unavailable provider, while a response with no time
+    axis, the wrong timezone, unstated units or no series for any member at all is a payload
+    that has changed shape. This project's characteristic failure is data that arrives looking
+    plausible and is wrong, and a changed contract read as "everybody happens to be quiet
+    today" is precisely that.
+
+    **The degradation is recorded, not merely survived.** #8 requires an unavailable provider
+    to be *recorded*, and the all-null spread rows alone do not say what happened: a row with
+    no value is identical whether the endpoint was unreachable or answered cleanly with every
+    member quiet. Those are different facts — one is our sight of the models failing, the
+    other is the models having nothing to say — and #11 scores calls against the inputs that
+    were actually available when they were issued.
+
+    So the failure is written to `raw_response` under its own source name, carrying the same
+    `failure_kind`/`failure_detail` vocabulary a failed run would use. A separate source
+    rather than the real one because this is not a response: nothing was received, and a
+    synthesised body filed under `open-meteo-ensemble` would be a fabricated provider reply
+    sitting in the table that exists to hold genuine ones.
+
+    Alongside it, `derive_spreads` still writes a row for every date carrying no value and
+    `hours_measured` of zero, and `model_forecast_hour` holds nothing for the run.
+    """
+    models = list(spread.PROVIDERS)
+    try:
+        body, url = open_meteo.fetch_ensemble(client, models, sleep)
+    except httpx.HTTPError as error:
+        store.record_raw_response(
+            run_id,
+            ENSEMBLE_UNAVAILABLE,
+            attempted_url(error, open_meteo.MARINE_URL),
+            {"failure_kind": failure_kind(error).value, "failure_detail": failure_detail(error)},
+        )
+        return {}
+    store.record_raw_response(run_id, "open-meteo-ensemble", url, body)
+    return collect_ensemble(body, models)

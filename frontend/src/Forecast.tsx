@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
 
-import { fetchForecast, type CallStatus, type Forecast, type ForecastDay } from './api';
+import {
+  fetchForecast,
+  type CallStatus,
+  type DaySpread,
+  type Forecast,
+  type ForecastDay,
+} from './api';
 import { compassPoint, formatReading, formatTimestamp, formatValue } from './format';
 
 type LoadState =
@@ -87,6 +93,39 @@ function dayLabel(date: string): string {
   return parsed.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
+/** What a day card says about the agreement behind it, or null when there is nothing to flag.
+ *
+ * **A marker, never a measurement.** The panel below carries the range, the contributing
+ * organisations and the hour they belong to; none of that can come up here. A width on a card
+ * needs a narrow/wide threshold nobody has calibrated, and printing the range itself would put
+ * a *median-hour* pair beside the card's *peak-hour* height — two numbers a reader would
+ * reasonably expect to match, which never will.
+ *
+ * What does belong here is the thing a reader who never clicks would otherwise miss: that the
+ * agreement behind this call was measured against less than the full roster, or could not be
+ * measured at all. That is a fact about how much was checked, not a quantity, so it needs no
+ * threshold and cannot be misread as a margin on the height beside it.
+ *
+ * A day the backend sent no spread for gets nothing rather than "unchecked" — that is a date
+ * stored before Model Spread existed, and inventing a caveat for it would claim something
+ * about a measurement that was never attempted.
+ */
+function agreementFlag(day: ForecastDay): string | null {
+  const height = day.model_spread?.swell_height;
+  if (!height) return null;
+  if (height.spread === null) return 'unchecked';
+  return height.degraded ? 'partly checked' : null;
+}
+
+/** The same fact spelled out, for the label a screen reader hears instead of the card.
+ *
+ * `aria-label` overrides the card's content, so a marker that lived only in the markup would
+ * be silently dropped for exactly the readers least able to go looking for the panel (#25). */
+const FLAG_MEANINGS: Record<string, string> = {
+  unchecked: 'no second opinion — nothing was available to check this day against',
+  'partly checked': 'checked against fewer forecasters than usual',
+};
+
 function DaySummary({
   day,
   largest,
@@ -98,6 +137,8 @@ function DaySummary({
   selected: boolean;
   onSelect: () => void;
 }) {
+  const flag = agreementFlag(day);
+
   return (
     <button
       type="button"
@@ -117,7 +158,8 @@ function DaySummary({
         `${day.date} — peak swell ${formatReading(day.peak_swell_height)}, ` +
         `period ${formatReading(day.swell_period_at_peak)}, ` +
         `from ${compassPoint(day.swell_direction_at_peak.value)}, ` +
-        `longest period ${formatReading(day.longest_swell_period)}`
+        `longest period ${formatReading(day.longest_swell_period)}` +
+        (flag ? `, ${FLAG_MEANINGS[flag]}` : '')
       }
       onClick={onSelect}
     >
@@ -142,6 +184,11 @@ function DaySummary({
         <span className="unit">{day.swell_period_at_peak.unit}</span>
         <span className="bearing">{compassPoint(day.swell_direction_at_peak.value)}</span>
       </span>
+      {flag && (
+        <span className="day-agreement" data-testid={`day-agreement-${day.date}`}>
+          {flag}
+        </span>
+      )}
     </button>
   );
 }
@@ -214,6 +261,104 @@ function CallDetail({ day, model }: { day: ForecastDay; model: string | null }) 
         </>
       )}
     </div>
+  );
+}
+
+/** A spread rendered in the reading's own terms.
+ *
+ * Swell direction is a compass arc, not an interval: it runs clockwise from `lowest` to
+ * `highest`, and across north the second number is the smaller one. Printing "5 to 355"
+ * would name the wrong three-quarters of the compass on precisely the swells the canyon
+ * focuses best, so direction gets its own sentence rather than the shared one.
+ *
+ * Which readings are arcs is the backend's `bearing` flag, not a test on the unit string.
+ * The backend names its bearings for exactly this reason — the unit is the provider's own
+ * text, and it decides arithmetic here rather than only presentation. */
+function spreadRange(spread: DaySpread): string {
+  if (spread.lowest === null || spread.highest === null) return '';
+  if (spread.bearing) {
+    return (
+      `${compassPoint(spread.lowest)} to ${compassPoint(spread.highest)} ` +
+      `(${formatValue(spread.lowest)}° to ${formatValue(spread.highest)}°)`
+    );
+  }
+  return `${formatValue(spread.lowest)}${spread.unit} to ${formatValue(spread.highest)}${spread.unit}`;
+}
+
+/** What the independent wave models make of this day, and how much to lean on it.
+ *
+ * Deliberately worded as *models disagreeing*, never as a margin on the forecast. The
+ * backend's own docstrings are explicit that this is an upper bound on disagreement rather
+ * than a calibrated uncertainty — the members' run ages cannot be read from the provider, so
+ * some of the gap is our sampling of their publication schedules rather than genuine doubt.
+ * Rendering it as "8.1m ± 0.3m" would turn a bound into a confidence interval in one
+ * typographic stroke, which is the overclaim this project keeps having to undo.
+ *
+ * The numbers are the day's *middle* hour, and the copy says so. They are not the peak hour
+ * the card above summarises, so presenting them without that word would leave two swell
+ * heights on screen that a reader would reasonably expect to match and which never will. */
+function Agreement({ day }: { day: ForecastDay }) {
+  const height = day.model_spread?.swell_height;
+  const period = day.model_spread?.swell_period;
+  const direction = day.model_spread?.swell_direction;
+
+  if (!height) {
+    return null;
+  }
+
+  return (
+    /* A region rather than a note, so it does not compete with the call detail above it
+       for the note role. The two say different kinds of thing — that one explains the call,
+       this one says how much to lean on it — and a reader landing on "note" wants the call. */
+    <section
+      className="agreement"
+      aria-label={`How much the forecasters agree about ${dayLabel(day.date)}`}
+    >
+      <h4>How much the forecasters agree</h4>
+      {height.spread === null ? (
+        <p data-testid={`spread-${day.date}`}>
+          Fewer than two independent forecasters covered this day, so there is no agreement to
+          report. That is missing information, not a settled forecast — the day below is a single
+          model's opinion with nothing to check it against.
+        </p>
+      ) : (
+        <>
+          <p data-testid={`spread-${day.date}`}>
+            {height.providers.length} independent forecasters, and at this day's middle hour they
+            are{' '}
+            <strong>
+              {formatValue(height.spread)}
+              {height.unit}
+            </strong>{' '}
+            apart on the swell — {spreadRange(height)}.
+            {period?.spread !== null && period !== undefined && (
+              <>
+                {' '}
+                They differ by {formatValue(period.spread)}
+                {period.unit} on the period.
+              </>
+            )}
+            {direction?.spread !== null && direction !== undefined && (
+              <> On the direction they span {spreadRange(direction)}.</>
+            )}
+          </p>
+          <p className="provenance">
+            {height.providers.join(', ')} at that hour. A spread could be measured for{' '}
+            {height.hours_measured} of this day's {height.hours_total} hours. A narrow gap means
+            they are describing the same weather; a wide one means the forecast has not settled and
+            the day could still change. It is an upper bound on how far apart they are, not a margin
+            on the height above: the models publish on different schedules, which widens the gap
+            rather than narrowing it.
+          </p>
+        </>
+      )}
+      {height.degraded && (
+        <p role="status" className="alert" data-testid={`spread-degraded-${day.date}`}>
+          Only {height.providers.length} of {height.providers_expected} independent forecasters
+          answered for this day, so this rests on less than a full read.
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -309,6 +454,7 @@ export function ForecastRange() {
       {open ? (
         <>
           <CallDetail day={open} model={state.forecast.amplification_model} />
+          <Agreement day={open} />
           <HourTable day={open} />
         </>
       ) : (

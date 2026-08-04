@@ -67,6 +67,52 @@ export interface DayCall {
   predicted_significant_wave_height: Reading;
 }
 
+/**
+ * How far apart the independent wave models are on one reading for one date.
+ *
+ * The backend's uncertainty estimate. Several third-party wave models are asked about the
+ * same date and their disagreement is the doubt — narrow means confidence, wide means the
+ * forecast has not settled.
+ *
+ * **An upper bound on disagreement, not a calibrated uncertainty.** The models publish on
+ * different cycles and their run ages cannot be read from the provider, which inflates the
+ * measured gap by roughly 6% one day out and up to 29% at six. That error always runs toward
+ * caution — it can make models look more different than they are, never more alike — so this
+ * layer must describe it as models disagreeing, and never as a margin on the forecast.
+ */
+export interface DaySpread {
+  unit: string;
+  /** Null when fewer than two independent organisations answered. Null rather than zero: a
+   * zero is indistinguishable from perfect agreement and would read as certainty at exactly
+   * the moment the system knows least. */
+  spread: number | null;
+  /** The two opinions the spread was measured between; null exactly when `spread` is.
+   *
+   * For swell direction these run clockwise around the compass, so across north `highest` is
+   * the smaller number — 355 to 5 is the correct 10-degree arc, and rendering them as a
+   * minimum and a maximum would name the wrong 350-degree one. */
+  lowest: number | null;
+  highest: number | null;
+  /** The organisations that answered, not the models. Two of the five identifiers are DWD's
+   * and two are NCEP's, so five names are three independent opinions. */
+  providers: string[];
+  /** Whether fewer than the full roster of organisations answered. */
+  degraded: boolean;
+  /** How many organisations a full read would have heard from — the backend's roster size,
+   * sent rather than known here so "two of three" cannot go on saying three after a fourth
+   * organisation joins. */
+  providers_expected: number;
+  /** Whether `lowest` and `highest` are compass points rather than points on a line.
+   *
+   * Sent by the backend, which names its bearings explicitly, rather than inferred here from
+   * the unit string: this decides how the pair is read, and a provider respelling its degree
+   * sign would otherwise silently turn an arc into an interval. */
+  bearing: boolean;
+  /** How many of the date's forecast hours could be measured, out of how many it has. */
+  hours_measured: number;
+  hours_total: number;
+}
+
 export interface ForecastDay {
   date: string;
   /** Null when no pipeline run has made a call about this day — which is not the same as
@@ -82,6 +128,12 @@ export interface ForecastDay {
   /** The day's actual longest period, which can fall at a quieter hour and is the
    * groundswell signal a big-wave forecast lives on. */
   longest_swell_period: Reading;
+  /** Model Spread for this date, keyed by the reading it is measured on.
+   *
+   * The backend always sends every reading it measures spread on, with nulls where nothing
+   * could be measured, rather than omitting the failures — an absent key would be read as
+   * agreement. Empty only for a date stored before the backend derived any. */
+  model_spread: Record<string, DaySpread | undefined>;
   hours: ForecastHour[];
 }
 

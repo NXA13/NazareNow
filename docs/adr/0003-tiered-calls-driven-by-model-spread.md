@@ -63,12 +63,51 @@ naively measures our sampling of their publication schedules alongside genuine d
 and reports the sum as uncertainty. #8 must align model runs before differencing, or this
 ADR's central mechanism will be reading staleness as doubt.
 
-As of ticket #6 the tiers are decided by Lead Time alone. Model Spread does not exist
-yet — ticket #8 introduces it — so nothing in the system measures forecast agreement, and
-no part of it may claim a forecast has "converged". A Watch is kept genuinely looser than
+**#8 settled this, and the requirement above is met by measurement rather than by alignment.**
+Run age still cannot be read from the provider and the runs are still not aligned. What #8
+established (`analysis/model_spread/alignment.py`, finding 4) is how much that costs: staleness
+accounts for roughly **6% of the measured spread at one day** on the expected cadence gap,
+rising to **29% at six days** in the worst case, over 6,192 archived hours. The figure is real
+and it grows with Lead Time, so the concern above was well founded.
+
+It does not block the mechanism, because the contamination has a direction. Sampling two
+providers at different run ages can only make them look *more* different than they are; it
+cannot hide genuine agreement. So staleness inflates Model Spread, a wide spread reads as
+doubt, and doubt makes the system quieter — **the error is always toward caution, never toward
+a Go Call that should not have been issued.** Model Spread is therefore an upper bound on
+disagreement, loose at long range, and must not be quoted as a calibrated uncertainty.
+
+Two limits on that finding. It is measured on **Combined Sea**, because the archive carries no
+Swell partition per model, while Model Spread is defined on Swell — the leap is argued, not
+measured, and `alignment.py` reports both partitions' live spread so its size is visible. And
+the 6-to-12-hour figures are extrapolated from a 24-hour measurement by a fitted growth
+exponent of 0.83; the exponent is measured across six intervals rather than assumed, but the
+extrapolation still runs below the measured range.
+
+**Model Spread now exists, and the tiers are still decided by Lead Time alone.** #8 ships it
+in two parts, and the first is the whole mechanism except the part that changes a call: the
+five wave models are fetched in one request, stored per model per forecast hour rather than
+averaged on arrival, differenced per date, and displayed. What it does not yet do is reach
+`decide`. That was split off deliberately — changing what earns a Watch or a Go Call alters
+the tier rule this ADR governs and #12 and #43 calibrated, and the cost of that change is not
+knowable without re-running the backtest.
+
+So until the second part lands, the system measures forecast agreement and reports it, and
+**no part of it may claim a forecast has "converged"** in the sense this ADR means: the
+calls a user reads were not judged against agreement. A Watch is kept genuinely looser than
 a Go Call in the meantime by dropping the wind condition, which carries little information
 at range; without that the two tiers were one rule with two names, which is what this ADR
 exists to prevent.
+
+Two properties of the shipped measurement bear on how the second part may use it. A date's
+spread is taken from its **median hour** — a real hour's real disagreement, chosen so that
+half the day's hours disagree more and half less — while this ADR judges a day on its best
+*matching* hour. Those are different hours, and identifying the second means running the
+Amplification Model, which is why per-model readings are stored per hour: the deciding hour's
+spread can be computed from the store without refetching or a migration. And swell direction
+is differenced as a **compass arc**, not a subtraction; two models agreeing on a north swell
+at 355° and 5° are 10° apart, and the plain range calls them 350° apart, which would put
+maximum doubt on a day of near-perfect agreement in the direction the canyon focuses best.
 
 Which conditions gate which tier is decided on **condition identity**, and every tier names
 the conditions it requires. Neither half of that is incidental. An early implementation

@@ -25,7 +25,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from helpers import ingest
+from helpers import ensemble_body_from, ingest, is_ensemble_request
 from nazarenow.api import CurrentConditions, Reading
 from nazarenow.sources.open_meteo import (
     MARINE_READINGS,
@@ -123,7 +123,11 @@ WEATHER_BODY = {
 
 
 def provider(marine=MARINE_BODY, weather=WEATHER_BODY):
+    ensemble = ensemble_body_from(marine)
+
     def handle(request: httpx.Request) -> httpx.Response:
+        if is_ensemble_request(request):
+            return httpx.Response(200, json=ensemble)
         body = marine if "marine" in request.url.host else weather
         return httpx.Response(200, json=body)
 
@@ -221,7 +225,15 @@ def test_raw_provider_responses_are_retained(store) -> None:
 
     raw = store.raw_responses()
 
-    assert {entry["source"] for entry in raw} == {"open-meteo-marine", "open-meteo-weather"}
+    assert {entry["source"] for entry in raw} == {
+        "open-meteo-marine",
+        "open-meteo-weather",
+        # The ensemble is retained on the same terms as the other two. It is not a duplicate
+        # of the marine response: it carries the five wave models' own series, which is the
+        # only evidence for a stored Model Spread and the only way to re-derive one on a
+        # different rule without asking the provider again.
+        "open-meteo-ensemble",
+    }
     assert all(entry["body"] for entry in raw)
 
 
@@ -267,6 +279,8 @@ def test_every_request_pins_the_units_it_wants(store) -> None:
 
     def handle(request: httpx.Request) -> httpx.Response:
         seen.append(request)
+        if is_ensemble_request(request):
+            return httpx.Response(200, json=ensemble_body_from(MARINE_BODY))
         body = MARINE_BODY if "marine" in request.url.host else WEATHER_BODY
         return httpx.Response(200, json=body)
 
@@ -354,6 +368,8 @@ def test_a_failed_run_leaves_earlier_conditions_intact(store, client) -> None:
     ingest(store, provider())
 
     def half_broken(request: httpx.Request) -> httpx.Response:
+        if is_ensemble_request(request):
+            return httpx.Response(200, json=ensemble_body_from(MARINE_BODY))
         if "marine" in request.url.host:
             return httpx.Response(200, json=MARINE_BODY)
         return httpx.Response(500, json={"error": "weather is down"})
@@ -533,7 +549,7 @@ def test_the_serving_store_cannot_write(store) -> None:
         # A literal run id rather than `reader.begin_run()`: opening a run is itself a
         # write, so calling it here would prove the guard on the wrong method.
         with pytest.raises(sqlite3.OperationalError, match="readonly"):
-            reader.record_run("2026-02-13T09:00", 0.0, 0.0, {}, [], [], run_id=1)
+            reader.record_run("2026-02-13T09:00", 0.0, 0.0, {}, [], [], [], [], run_id=1)
     finally:
         reader.close()
 
@@ -609,7 +625,7 @@ def test_a_path_containing_uri_syntax_still_opens_read_only(tmp_path) -> None:
     target = awkward / "nazarenow.db"
 
     writer = Store(target)
-    writer.record_run("2026-02-13T09:00", 39.5, -9.2, {}, [], [], run_id=writer.begin_run())
+    writer.record_run("2026-02-13T09:00", 39.5, -9.2, {}, [], [], [], [], run_id=writer.begin_run())
     writer.close()
 
     reader = Store(target, create=False)

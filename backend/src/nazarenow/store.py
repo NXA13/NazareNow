@@ -127,11 +127,70 @@ CREATE TABLE IF NOT EXISTS day_call (
     calibration         TEXT
 );
 
+-- Every wave model's own reading for every forecast hour, kept apart (#8).
+--
+-- **Not averaged on arrival**, which is the first thing ticket #8 asks for. An average is
+-- the one transformation of an ensemble that cannot be undone: once five members become one
+-- number, the disagreement ADR 0003 uses as the system's uncertainty estimate is gone and no
+-- amount of later work recovers it. Storing the members means a spread can be re-derived on
+-- a different rule — the deciding hour rather than the median one, say — without refetching
+-- and without a migration.
+--
+-- Replaced wholesale each run, like `forecast_hour` and for the same reason: this is the
+-- current forecast, not a record of what was once said about a date. `day_spread` below is
+-- the part that accumulates.
+--
+-- A model that returned nothing for an hour has no row for that hour. Absence is the
+-- record: a row carrying null would need every reader to re-derive "did not answer" from
+-- it, and `spread.derive` already treats the two identically.
+CREATE TABLE IF NOT EXISTS model_forecast_hour (
+    valid_at   TEXT NOT NULL,
+    model      TEXT NOT NULL,
+    fetched_at TEXT NOT NULL,
+    readings   TEXT NOT NULL,
+    PRIMARY KEY (valid_at, model)
+);
+
+-- Model Spread per date per variable, appended run after run.
+--
+-- Append-only for the same reason `day_call` is, and it is the same record: the spread
+-- behind a call is an input to it, so scoring a Go Call after the fact (#11) needs the
+-- disagreement that was current when the call was issued, not whatever it became once the
+-- date drew closer and the models converged. Overwriting per date would destroy exactly the
+-- series that makes the record worth keeping.
+--
+-- `value` is nullable, and a row is written even when it is null. A date where fewer than
+-- two organisations reported has no measurable Model Spread (ADR 0003 degrades the estimate
+-- rather than failing the run) — and if that were recorded by writing no row, it would be
+-- indistinguishable from a Pipeline Run that never happened. `providers` still lists whoever
+-- did answer, so the degradation says how far it went.
+CREATE TABLE IF NOT EXISTS day_spread (
+    id               INTEGER PRIMARY KEY,
+    run_id           INTEGER REFERENCES pipeline_run (id),
+    date             TEXT NOT NULL,
+    derived_at       TEXT NOT NULL,
+    variable         TEXT NOT NULL,
+    value            REAL,
+    -- The two opinions the spread was measured between. For a bearing these are the arc's
+    -- start and end running clockwise, so across north `highest` is the smaller number --
+    -- see `spread.Spread`. Null exactly when `value` is.
+    lowest           REAL,
+    highest          REAL,
+    unit             TEXT NOT NULL,
+    providers        TEXT NOT NULL,
+    models_reporting INTEGER NOT NULL,
+    hours_measured   INTEGER NOT NULL,
+    hours_total      INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS offshore_conditions_observed_at
     ON offshore_conditions (observed_at DESC);
 
 CREATE INDEX IF NOT EXISTS day_call_date
     ON day_call (date, id DESC);
+
+CREATE INDEX IF NOT EXISTS day_spread_date
+    ON day_spread (date, variable, id DESC);
 """
 
 
@@ -145,6 +204,11 @@ CALL_COLUMNS = (
 )
 
 RUN_COLUMNS = "id, started_at, finished_at, outcome, failure_kind, failure_detail"
+
+SPREAD_COLUMNS = (
+    "date, derived_at, variable, value, lowest, highest, unit, providers, "
+    "models_reporting, hours_measured, hours_total"
+)
 
 
 def _optional_json(value: Any) -> str | None:
@@ -232,6 +296,12 @@ class Store:
         recorded genuinely have no run to point at, and inventing one would fabricate
         exactly the provenance this ticket exists to make trustworthy. A null here means
         "written before this system tracked runs", which is true and checkable.
+
+        Ticket #8 needed nothing here, and that is worth stating rather than leaving as an
+        apparent omission: it added two whole tables rather than columns, and
+        `CREATE TABLE IF NOT EXISTS` already creates those on an existing store. A database
+        predating #8 opens, gains both tables, and simply holds no Model Spread for the runs
+        that happened before there was one — which is true.
         """
         for table in ("raw_response", "day_call"):
             columns = {row["name"] for row in connection.execute(f"PRAGMA table_info({table})")}
@@ -264,7 +334,9 @@ class Store:
             "FROM offshore_conditions LIMIT 0",
             "SELECT run_id, source, url, fetched_at, body FROM raw_response LIMIT 0",
             "SELECT valid_at, fetched_at, readings FROM forecast_hour LIMIT 0",
+            "SELECT valid_at, model, fetched_at, readings FROM model_forecast_hour LIMIT 0",
             f"SELECT id, run_id, {CALL_COLUMNS} FROM day_call LIMIT 0",
+            f"SELECT id, run_id, {SPREAD_COLUMNS} FROM day_spread LIMIT 0",
             f"SELECT {RUN_COLUMNS} FROM pipeline_run LIMIT 0",
         )
         try:
@@ -406,10 +478,12 @@ class Store:
         readings: dict[str, dict[str, Any]],
         hours: list[dict[str, Any]],
         calls: list[dict[str, Any]],
+        model_hours: list[dict[str, Any]],
+        spreads: list[dict[str, Any]],
         *,
         run_id: int,
     ) -> None:
-        """Store a Pipeline Run's conditions, forecast and calls together, or not at all.
+        """Store a Pipeline Run's conditions, forecast, calls and Model Spread, or none of it.
 
         Two separate commits meant a fault between them advanced the current conditions
         while the forecast stayed behind — the half-updated picture the pipeline's own
@@ -420,6 +494,14 @@ class Store:
         construction", and a construction with an opt-out is a convention: as an optional
         argument, a caller that forgot it stored a forecast with no calls and reported
         success.
+
+        `model_hours` and `spreads` are required for the same reason, and they belong inside
+        this transaction rather than beside it. The forecast and the per-model readings the
+        ensemble gave for the same hours have to move together: a run that advanced one and
+        not the other would leave a Model Spread describing a forecast the store no longer
+        holds, which is the half-updated picture the pipeline's docstring promises never to
+        produce. An empty `spreads` is a legitimate value — a run whose ensemble was
+        unreachable — but it has to be passed deliberately.
 
         `run_id` is required for the same reason, and marking the run succeeded happens
         inside this transaction rather than after it. A run reported as succeeded whose
@@ -438,6 +520,17 @@ class Store:
             connection.executemany(
                 "INSERT INTO forecast_hour (valid_at, fetched_at, readings) VALUES (?, ?, ?)",
                 [(hour["at"], stamp, json.dumps(hour["readings"])) for hour in hours],
+            )
+            # Replaced alongside the forecast, never independently of it. These are the
+            # members the forecast's own hours were compared against.
+            connection.execute("DELETE FROM model_forecast_hour")
+            connection.executemany(
+                "INSERT INTO model_forecast_hour (valid_at, model, fetched_at, readings) "
+                "VALUES (?, ?, ?, ?)",
+                [
+                    (hour["at"], hour["model"], stamp, json.dumps(hour["readings"]))
+                    for hour in model_hours
+                ],
             )
             # Appended, never cleared. Each run adds this run's calls beside every call
             # the system has already made, which is what ADR 0005 promises and what
@@ -465,6 +558,31 @@ class Store:
                     for call in calls
                 ],
             )
+            # Appended beside the calls of the same run, never cleared, for the reason the
+            # table's own comment gives: the disagreement current when a call was issued is
+            # an input to that call, and #11 scores calls against their inputs.
+            connection.executemany(
+                "INSERT INTO day_spread (run_id, date, derived_at, variable, value, lowest, "
+                "highest, unit, providers, models_reporting, hours_measured, hours_total) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    (
+                        run_id,
+                        spread["date"],
+                        stamp,
+                        spread["variable"],
+                        spread["value"],
+                        spread["lowest"],
+                        spread["highest"],
+                        spread["unit"],
+                        json.dumps(spread["providers"]),
+                        spread["models_reporting"],
+                        spread["hours_measured"],
+                        spread["hours_total"],
+                    )
+                    for spread in spreads
+                ],
+            )
             connection.execute(
                 "INSERT INTO offshore_conditions "
                 "(observed_at, fetched_at, latitude, longitude, readings) "
@@ -489,6 +607,75 @@ class Store:
             }
             for row in rows
         ]
+
+    def model_forecast(self) -> list[dict[str, Any]]:
+        """Every wave model's own forecast hours, earliest first, then by model.
+
+        The ensemble as it arrived, before anything collapsed it into a spread. Nothing
+        serves this over HTTP yet: it exists so a later rule for choosing a date's
+        representative hour — the deciding hour rather than the median one, which is the
+        Decision Model's half of #8 — can be computed from the store rather than from a
+        second request to the provider.
+        """
+        rows = self._connect().execute(
+            "SELECT valid_at, model, fetched_at, readings FROM model_forecast_hour "
+            "ORDER BY valid_at, model"
+        )
+        return [
+            {
+                "at": row["valid_at"],
+                "model": row["model"],
+                "fetched_at": row["fetched_at"],
+                "readings": json.loads(row["readings"]),
+            }
+            for row in rows
+        ]
+
+    def spreads(self) -> dict[str, dict[str, dict[str, Any]]]:
+        """The most recent Model Spread for each date and variable: `{date: {variable: …}}`.
+
+        Latest per date by insertion order rather than by `derived_at`, for the reason
+        `calls` gives at length: a wall clock can be moved backwards and insertion order
+        cannot, and serving a superseded spread as current would understate or overstate
+        today's doubt with nothing to show for it.
+        """
+        rows = self._connect().execute(
+            f"SELECT {SPREAD_COLUMNS} FROM day_spread WHERE id IN "
+            "(SELECT MAX(id) FROM day_spread GROUP BY date, variable) ORDER BY date, variable"
+        )
+        by_date: dict[str, dict[str, dict[str, Any]]] = {}
+        for row in rows:
+            by_date.setdefault(row["date"], {})[row["variable"]] = self._spread(row)
+        return by_date
+
+    def spread_history(self) -> list[dict[str, Any]]:
+        """Every Model Spread ever derived, oldest first, including superseded ones.
+
+        The counterpart of `call_history`, and the same deliberate exception to the backend
+        seam: what a date's disagreement was at ten days and what it had become at three is
+        the series #11 needs to say whether narrowing spread actually preceded the swells
+        that arrived, and no HTTP surface exposes it yet.
+        """
+        rows = self._connect().execute(
+            f"SELECT run_id, {SPREAD_COLUMNS} FROM day_spread ORDER BY id"
+        )
+        return [self._spread(row) | {"run_id": row["run_id"]} for row in rows]
+
+    @staticmethod
+    def _spread(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "date": row["date"],
+            "derived_at": row["derived_at"],
+            "variable": row["variable"],
+            "value": row["value"],
+            "lowest": row["lowest"],
+            "highest": row["highest"],
+            "unit": row["unit"],
+            "providers": json.loads(row["providers"]),
+            "models_reporting": row["models_reporting"],
+            "hours_measured": row["hours_measured"],
+            "hours_total": row["hours_total"],
+        }
 
     def calls(self) -> dict[str, dict[str, Any]]:
         """The most recent call made about each date, keyed by that date.

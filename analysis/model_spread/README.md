@@ -148,12 +148,54 @@ caveat and then some — direction is the least meaningful of the three on a 0.4
 there is barely a swell whose bearing to disagree about. It is collected because the arc is one
 of the Heuristic Baseline's conditions, not because this figure means anything yet.
 
+## Finding 4 — staleness is real, grows with Lead Time, and errs toward caution
+
+Added by #8. Finding 2 established that run age cannot be *read* from the provider, and left
+open whether the cadence mismatch is large enough to matter. It is measurable after all, and
+not from accumulated Pipeline Runs: the marine archive carries `_previous_dayN` **per model**,
+so a model's own change of mind about a fixed hour can be measured directly.
+
+Two quantities over 6,192 archived hours, 2025-11-16 to 2026-07-31 — `alignment.py`:
+
+| Lead | Self-movement / 24 h | Provider spread | Staleness at 6 h | at 12 h | Share at 6 h | at 12 h |
+|---|---|---|---|---|---|---|
+| 1 d | 0.089 m | 0.446 m | 0.028 m | 0.050 m | **6.3%** | 11.2% |
+| 3 d | 0.142 m | 0.482 m | 0.045 m | 0.080 m | 9.3% | 16.5% |
+| 6 d | 0.333 m | 0.652 m | 0.105 m | 0.187 m | 16.1% | **28.7%** |
+
+The archive's finest interval is 24 hours and the gap that matters is 6 to 12, so the shorter
+figures are extrapolated — by a **fitted** exponent, not an assumed one. Self-movement grows as
+`gap^0.83`, measured across intervals from 24 to 144 hours. A random walk would have given 0.50
+and a steadily improving forecast 1.00, so neither of the two obvious assumptions would have
+been right, which is the reason to fit.
+
+**The answer to ADR 0003.** Staleness is not negligible — it is about 6% of the spread at one
+day on the expected gap and reaches 29% at six days in the worst case. ADR 0003 was right to
+demand this be settled before differencing.
+
+**It is not disqualifying, for a reason that matters more than the size.** Sampling two
+providers at different run ages can only make them look *more* different than they are; it
+cannot make genuine disagreement disappear. So the contamination inflates Model Spread, a wide
+spread reads as doubt, and doubt makes the system quieter. **The error is always toward
+caution and never toward a Go Call that should not have been issued.** That asymmetry is what
+makes it safe to ship the spread uncorrected while the size is documented.
+
+What this does *not* license is quoting Model Spread as a calibrated uncertainty. It is an
+upper bound on disagreement, and at long Lead Time a loose one.
+
+**One partition mismatch, stated rather than hidden.** The archive carries `_previous_dayN`
+only for Combined Sea — `analysis/forecast_error/README.md` records that every Swell variable
+comes back null at every Lead Time — while Model Spread is defined on the Swell the Heuristic
+Baseline decides on. Self-movement is therefore measured on Combined Sea and carried across by
+argument. `alignment.py` reports both partitions' live spread side by side so the size of that
+leap is visible: at the sampled instant, Combined Sea 0.15 m against Swell 0.44 m. The leap is
+real and it is the main reason finding 4 is a bound rather than a correction.
+
 ## What this does not settle
 
-- **Whether staleness matters.** Finding 2 says run age cannot be read. It does not say the
-  six-hour cadence difference is large enough to matter against the between-provider spread. That
-  comparison is measurable from the Pipeline Run's own stored responses once enough have
-  accumulated, and it is the same archive #14 needs for the Forecast Error Profile.
+- **Whether the Swell partition behaves like Combined Sea under staleness.** Finding 4 measures
+  Combined Sea because that is what the archive carries per model. Only an accumulated record
+  of the Pipeline Run's own responses settles the Swell case directly, and that needs #28.
 - **What the spread looks like on a real swell.** See the caveat above. The Big-Wave Season
   starts in October.
 - **How spread should reach the Decision Model.** ADR 0003 wants the tiers driven by it. Nothing
@@ -167,5 +209,7 @@ of the Heuristic Baseline's conditions, not because this figure means anything y
 | File | What it is |
 |---|---|
 | `probe.py` | The probe. `--check` self-tests the spread and provider-grouping arithmetic offline. |
+| `alignment.py` | Finding 4: staleness against disagreement, per Lead Time. `--check` self-tests the ratio, the downward scaling and the fit offline. |
+| `output/alignment.csv` | Self-movement, provider spread and the staleness share at both cadence gaps. |
 | `output/coverage.csv` | Each model's horizon, nulls and interior gaps. |
 | `output/spread_by_hour.csv` | Per hour and variable: the members reporting, and spread across models and across providers. |

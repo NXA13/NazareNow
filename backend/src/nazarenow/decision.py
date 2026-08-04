@@ -6,16 +6,23 @@ optimised for **precision** — acting on it costs the user a flight. They are d
 not one threshold with two names, because the two audiences have opposite tolerances for
 being wrong.
 
-Two gaps are open here and are surfaced rather than papered over:
+One gap is open here and is surfaced rather than papered over.
 
-*Model Spread does not yet exist.* ADR 0003 has the tiers driven by disagreement between
-independent wave models, which ticket #8 introduces. Until then tiers are decided by Lead
-Time alone, and nothing in this system may claim a forecast has "converged" — there is no
-measurement behind such a claim.
+*Model Spread exists, and nothing in this module reads it.* ADR 0003 has the tiers driven by
+disagreement between independent wave models. Ticket #8 built that measurement — fetched per
+model, stored per model per forecast hour, differenced per date, displayed — and deliberately
+stopped short of this file. Feeding it into `decide` changes what earns a Watch or a Go Call,
+which is the tier rule #12 and #43 calibrated against the Gold Days, and the cost of that
+change is not knowable without re-running the backtest.
 
-*Model Spread is still the gap.* Thresholds are no longer the other one: ticket #12 fitted
-them to the Gold Days, they load from data rather than code (`thresholds.py`), and the API
-reports `calibrated` from the fit's own provenance rather than from an assertion.
+So the tiers here are still decided by Lead Time alone, and **no call this module produces may
+be described as resting on forecast agreement** — a user reading a Go Call is reading a
+judgement that never consulted `spread.py`. The measurement is presented beside the call
+rather than inside it, which is honest as long as nothing here starts implying otherwise.
+
+Thresholds are no longer a gap: ticket #12 fitted them to the Gold Days, they load from data
+rather than code (`thresholds.py`), and the API reports `calibrated` from the fit's own
+provenance rather than from an assertion.
 """
 
 from __future__ import annotations

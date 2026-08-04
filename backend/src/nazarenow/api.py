@@ -22,6 +22,7 @@ from pydantic import BaseModel
 from nazarenow.cycle import STALE_AFTER_HOURS, STALE_AFTER_SECONDS
 from nazarenow.days import group_by_date
 from nazarenow.decision import Status
+from nazarenow.spread import BEARINGS, ORGANISATIONS, is_degraded
 from nazarenow.store import Store, StoreUnavailable
 
 app = FastAPI(
@@ -182,6 +183,70 @@ class DayCall(BaseModel):
     predicted_significant_wave_height: Reading
 
 
+class DaySpread(BaseModel):
+    """How far apart the independent wave models are on one variable for one date.
+
+    ADR 0003 makes this the system's uncertainty estimate, and #8 asks for it in terms a
+    reader can interpret rather than as a bare number — so the two opinions it was measured
+    between travel with the gap. "The models put Thursday between 3.1 m and 4.5 m" is
+    actionable in a way that "1.4" is not.
+
+    **An upper bound on disagreement, not a calibrated uncertainty.** The members publish on
+    different cycles and their run ages cannot be read from the provider; #8 measured that
+    this accounts for roughly 6% of the spread at one day of Lead Time and up to 29% at six.
+    It is left uncorrected because it has a direction — sampling two models at different run
+    ages can make them look more different than they are but cannot hide genuine agreement —
+    so the error always runs toward caution. The interface must not present it as a
+    calibrated figure, and this docstring is the reason the wording downstream is careful.
+    """
+
+    unit: str
+
+    spread: float | None
+    """The distance between the furthest-apart organisations, or None when fewer than two
+    reported. Null rather than zero: a zero here is indistinguishable from perfect agreement
+    and would read as certainty at exactly the moment the system knows least."""
+
+    lowest: float | None
+    highest: float | None
+    """The two opinions the spread was measured between. Null exactly when `spread` is.
+
+    For swell direction these are the arc's start and end running clockwise, so across north
+    `highest` is the smaller number — 355° to 5° names the correct 10° arc, and reading them
+    as a plain minimum and maximum would name the wrong 350° one."""
+
+    providers: list[str]
+    """The organisations that contributed, not the models. EWAM and GWAM are both DWD and
+    the two GFS Wave resolutions are both NCEP; counting five would make the ensemble look
+    nearly twice as corroborated as it is."""
+
+    degraded: bool
+    """Whether fewer than the full roster of organisations answered. A spread from two is not
+    comparable with one from three, and ADR 0003 requires that degradation to be visible."""
+
+    providers_expected: int
+    """How many organisations a full read would have heard from.
+
+    Sent rather than left for the interface to know, so "two of three" is the backend's roster
+    said once. A second copy over there is a number that stays at three the day a fourth
+    organisation joins, and it would be wrong in the one direction that matters: printing
+    "3 of 3" beside a degraded flag reads as a full read that is somehow still degraded."""
+
+    bearing: bool
+    """Whether `lowest` and `highest` are compass points rather than points on a line.
+
+    Named here for the same reason `spread.BEARINGS` names them rather than inferring from the
+    unit: this decides arithmetic, and the unit is the provider's own string. An interface
+    sniffing for a degree sign is one provider spelling change away from rendering an arc as
+    an interval, which across north names the wrong three-quarters of the compass."""
+
+    hours_measured: int
+    hours_total: int
+    """How many of the date's forecast hours carried a measurable spread, out of how many it
+    has. A date resting on two of its twenty-four hours is a weaker claim than one measured
+    throughout, and the figure alone cannot say which."""
+
+
 class ForecastDay(BaseModel):
     date: str
 
@@ -216,6 +281,16 @@ class ForecastDay(BaseModel):
     longest_swell_period: Reading
     """The day's actual maximum period, which is the groundswell signal a big-wave
     forecast lives on and can fall at a different hour from the peak height."""
+
+    model_spread: dict[str, DaySpread]
+    """Model Spread for this date, keyed by the reading it is measured on.
+
+    Always carries every variable Model Spread is defined on, with nulls where nothing could
+    be measured, rather than omitting the ones that failed. An absent key would be read as
+    agreement by anything scanning it — which is the inversion this whole measurement exists
+    to prevent — and the far end of every forecast is exactly where members stop answering.
+
+    Empty only for a date stored before #8, which genuinely has no Model Spread behind it."""
 
     hours: list[ForecastHour]
 
@@ -266,7 +341,47 @@ class Forecast(BaseModel):
     days: list[ForecastDay]
 
 
-def summarise(date: str, hours: list[dict[str, Any]], call: dict[str, Any] | None) -> ForecastDay:
+def summarise_spread(stored: dict[str, dict[str, Any]]) -> dict[str, DaySpread]:
+    """A date's stored Model Spread rows, keyed by the reading each is measured on.
+
+    The keys are the store's own, which are the names every other reading on this endpoint
+    already uses — the Pipeline Run translates the provider's spelling once, on arrival, so
+    nothing on the read path has to.
+
+    `degraded` is derived here rather than stored, from the organisations the row records.
+    Storing it would let the flag and the list it describes disagree after a roster change —
+    and a row saying "not degraded" beside two organisations out of three is worse than no
+    flag at all.
+
+    `providers_expected` and `bearing` are sent for the same reason in the other direction:
+    both are facts about the roster and the variable that this layer already knows, and an
+    interface re-deriving either — by counting to three itself, or by sniffing the unit for a
+    degree sign — is a second copy that drifts silently when the roster or the provider's
+    spelling changes.
+    """
+    return {
+        variable: DaySpread(
+            unit=row["unit"],
+            spread=row["value"],
+            lowest=row["lowest"],
+            highest=row["highest"],
+            providers=row["providers"],
+            degraded=is_degraded(row["providers"]),
+            providers_expected=len(ORGANISATIONS),
+            bearing=variable in BEARINGS,
+            hours_measured=row["hours_measured"],
+            hours_total=row["hours_total"],
+        )
+        for variable, row in stored.items()
+    }
+
+
+def summarise(
+    date: str,
+    hours: list[dict[str, Any]],
+    call: dict[str, Any] | None,
+    spread: dict[str, dict[str, Any]],
+) -> ForecastDay:
     """Reduce a day's hours to the figures a user scans the overview for, plus its call.
 
     The call is read from the store, never computed. ADR 0005 makes this layer a reader,
@@ -293,6 +408,7 @@ def summarise(date: str, hours: list[dict[str, Any]], call: dict[str, Any] | Non
         swell_period_at_peak=Reading(**peak["readings"]["swell_period"]),
         swell_direction_at_peak=Reading(**peak["readings"]["swell_direction"]),
         longest_swell_period=Reading(**longest["readings"]["swell_period"]),
+        model_spread=summarise_spread(spread),
         hours=[ForecastHour(at=hour["at"], **hour["readings"]) for hour in hours],
     )
 
@@ -314,6 +430,7 @@ def forecast(store: Annotated[Store, Depends(get_store)]) -> Forecast:
 
     by_date = group_by_date(hours)
     stored = store.calls()
+    disagreement = store.spreads()
 
     # A forecast with no calls behind it is still served. ADR 0005 asks that the site stay
     # up and honest, and the days, their hours and their heights are all real; failing the
@@ -335,7 +452,10 @@ def forecast(store: Annotated[Store, Depends(get_store)]) -> Forecast:
         calibration=None
         if newest is None or newest.get("calibration") is None
         else Calibration(**newest["calibration"]),
-        days=[summarise(day, by_date[day], stored.get(day)) for day in sorted(by_date)],
+        days=[
+            summarise(day, by_date[day], stored.get(day), disagreement.get(day, {}))
+            for day in sorted(by_date)
+        ],
     )
 
 
