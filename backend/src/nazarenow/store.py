@@ -124,7 +124,29 @@ CREATE TABLE IF NOT EXISTS day_call (
     -- untraceable prediction #30 added run records to prevent.
     --
     -- Null for calls written before #12, which genuinely had no calibration.
-    calibration         TEXT
+    calibration         TEXT,
+    -- What the independent wave models said about the hour this call rests on (#8).
+    --
+    -- Stored rather than derived, because it genuinely cannot be derived from the rest of
+    -- the record: `day_spread` below holds the date's *median* hour, and a call is decided
+    -- on its best matching hour. Those are different hours. Without this column the record
+    -- would carry a call and a spread describing two different moments of one day, and
+    -- nothing in it would say so — which is the kind of plausible mismatch #11 would score
+    -- straight past.
+    --
+    -- Null for calls written before the Decision Model read Model Spread at all. Those
+    -- calls were issued without consulting the models, and labelling them "agreed" would
+    -- claim an agreement nobody ever checked.
+    model_agreement     TEXT,
+    -- Whether the models refused a Go Call this day's conditions otherwise supported (#8).
+    --
+    -- Stored rather than derived, because it cannot be derived from the two columns beside
+    -- it. A day whose own swell period sits below the Go Call bar has every organisation
+    -- below it too and records `divided` while the ensemble decided nothing; only the
+    -- Decision Model saw the conditions next to the verdict and can say which happened.
+    --
+    -- Null, like `model_agreement`, for calls issued before any of this existed.
+    go_call_withheld    INTEGER
 );
 
 -- Every wave model's own reading for every forecast hour, kept apart (#8).
@@ -200,7 +222,8 @@ CREATE INDEX IF NOT EXISTS day_spread_date
 # eager verification exists to prevent.
 CALL_COLUMNS = (
     "date, issued_at, issued_for_date, status, lead_time_days, reasons, "
-    "predicted_significant_wave_height, unit, amplification_model, calibrated, calibration"
+    "predicted_significant_wave_height, unit, amplification_model, calibrated, calibration, "
+    "model_agreement, go_call_withheld"
 )
 
 RUN_COLUMNS = "id, started_at, finished_at, outcome, failure_kind, failure_detail"
@@ -317,6 +340,16 @@ class Store:
         columns = {row["name"] for row in connection.execute("PRAGMA table_info(day_call)")}
         if "calibration" not in columns:
             connection.execute("ALTER TABLE day_call ADD COLUMN calibration TEXT")
+
+        # #8's second half, nullable and not backfilled for the third time and the same
+        # reason. A call issued before the Decision Model read Model Spread was decided
+        # without consulting the other wave models; writing "agreed" onto it would assert an
+        # agreement that was never established, on exactly the calls a reader would most want
+        # to tell apart from the ones that were.
+        if "model_agreement" not in columns:
+            connection.execute("ALTER TABLE day_call ADD COLUMN model_agreement TEXT")
+        if "go_call_withheld" not in columns:
+            connection.execute("ALTER TABLE day_call ADD COLUMN go_call_withheld INTEGER")
 
         connection.commit()
 
@@ -538,8 +571,9 @@ class Store:
             connection.executemany(
                 "INSERT INTO day_call (run_id, date, issued_at, issued_for_date, status, "
                 "lead_time_days, reasons, predicted_significant_wave_height, unit, "
-                "amplification_model, calibrated, calibration) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "amplification_model, calibrated, calibration, model_agreement, "
+                "go_call_withheld) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [
                     (
                         run_id,
@@ -554,6 +588,8 @@ class Store:
                         call["amplification_model"],
                         int(call["calibrated"]),
                         _optional_json(call.get("calibration")),
+                        call["model_agreement"],
+                        int(call["go_call_withheld"]),
                     )
                     for call in calls
                 ],
@@ -745,6 +781,13 @@ class Store:
             "amplification_model": row["amplification_model"],
             "calibrated": bool(row["calibrated"]),
             "calibration": None if row["calibration"] is None else json.loads(row["calibration"]),
+            "model_agreement": row["model_agreement"],
+            # None-preserving, like `calibration` and `model_agreement` above. A null
+            # here means the call predates the gate; collapsing it to False would report
+            # "the models did not withhold this" about a call that never asked them.
+            "go_call_withheld": (
+                None if row["go_call_withheld"] is None else bool(row["go_call_withheld"])
+            ),
         }
 
     def latest_conditions(self) -> dict[str, Any] | None:

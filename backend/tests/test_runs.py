@@ -186,6 +186,8 @@ def test_a_call_cannot_name_a_run_that_does_not_exist(store) -> None:
                     "unit": "m",
                     "amplification_model": "heuristic-baseline",
                     "calibrated": False,
+                    "model_agreement": "agreed",
+                    "go_call_withheld": False,
                 }
             ],
             [],

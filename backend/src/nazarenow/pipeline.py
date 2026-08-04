@@ -24,7 +24,14 @@ import httpx
 
 from nazarenow import spread
 from nazarenow.days import group_by_date
-from nazarenow.decision import Status, conditions_behind, decide, strength
+from nazarenow.decision import (
+    Agreement,
+    Status,
+    agreement_of,
+    conditions_behind,
+    decide,
+    strength,
+)
 from nazarenow.models import AmplificationModel, HeuristicBaseline, LearnedAmplification
 from nazarenow.runs import FailureKind
 from nazarenow.sources import open_meteo
@@ -326,7 +333,52 @@ def earliest(*timestamps: str) -> str:
     return min(timestamps)
 
 
-def derive_calls(hours: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def lowest_opinion_of_period(ensemble: Ensemble, stamp: str) -> float | None:
+    """The gloomiest organisation's swell period for one forecast hour, or None if too few
+    reported.
+
+    **One forecast hour, not the date's.** `derive_spreads` takes a date's spread from its
+    median hour, which is a real hour's real disagreement and needs no model to find. A call
+    rests on a different hour — the best *matching* one, which only the Amplification Model
+    can identify — so a gate reading the stored median would judge a call against a moment
+    that did not produce it. Per-model readings are held per hour (#8's first half) precisely
+    so this can ask about the right one, with no refetch and no migration.
+
+    `spread.derive` supplies the None, and it means fewer than two organisations rather than
+    perfect agreement. `agreement_of` is where that becomes a decision.
+    """
+    measured = spread.derive(
+        "swell_period",
+        {
+            model: readings["swell_period"]["value"]
+            for model, readings in ensemble.get(stamp, {}).items()
+            if "swell_period" in readings
+        },
+    )
+    return None if measured is None else measured.lowest
+
+
+def agreement_at(
+    model: AmplificationModel,
+    readings: dict[str, float],
+    ensemble: Ensemble,
+    stamp: str,
+) -> Agreement:
+    """What the wave models said about one forecast hour of this forecast.
+
+    Asked by running the active Amplification Model a second time over the same hour with the
+    lowest organisation's swell period substituted for our own: *if the gloomiest forecaster
+    is right, does this hour still earn a Go Call?* Answering it this way rather than
+    comparing against a bar here means the gate uses whatever thresholds actually judged the
+    call, so a recalibration cannot move the tiers and leave the gate behind.
+    """
+    lowest = lowest_opinion_of_period(ensemble, stamp)
+    if lowest is None:
+        return agreement_of(None)
+    return agreement_of(model.predict(readings | {"swell_period": lowest}))
+
+
+def derive_calls(hours: list[dict[str, Any]], ensemble: Ensemble) -> list[dict[str, Any]]:
     """Group hours into days and decide a call for each.
 
     Per ADR 0005 this belongs to the Pipeline Run, not the request path: the API is
@@ -336,7 +388,8 @@ def derive_calls(hours: list[dict[str, Any]]) -> list[dict[str, Any]]:
     record at all.
 
     **A day is called at the best call any of its hours supports.** Every hour is decided on
-    its own and the strongest resulting call wins, the largest sea breaking a tie.
+    its own and the strongest resulting call wins; within one status a Go Call the wave models
+    refused outranks an hour that never earned one, and the largest sea breaks what is left.
 
     Choosing a representative hour *before* deciding cannot work, and two attempts at it
     failed the same way. Ranking hours by how many conditions they failed is tier-blind: a
@@ -367,18 +420,38 @@ def derive_calls(hours: list[dict[str, Any]]) -> list[dict[str, Any]]:
     provenance = calibration_of(model)
 
     for day in sorted(by_date):
-        predictions = [
-            model.predict({name: value["value"] for name, value in hour["readings"].items()})
+        readings = [
+            {name: value["value"] for name, value in hour["readings"].items()}
             for hour in by_date[day]
         ]
+        predictions = [model.predict(hour) for hour in readings]
         lead_time = (date.fromisoformat(day) - date.fromisoformat(issued_for)).days
         # Decide every hour, then take the strongest call. The reasons and the height
         # reported are the winning hour's, so what a user reads is the hour that earned
         # the call rather than whichever hour some earlier heuristic preferred.
+        #
+        # Model Spread is consulted per hour for the same reason, and it is what makes the
+        # deciding hour's spread the one that gates the call: whichever hour wins brings its
+        # own ensemble verdict with it, so no separate pass has to go back and find it.
+        issued = [
+            decide(prediction, lead_time, agreement_at(model, hour, ensemble, stamp["at"]))
+            for stamp, hour, prediction in zip(by_date[day], readings, predictions, strict=True)
+        ]
+        # Within one status, a *refused* Go Call outranks a taller hour that never earned one,
+        # and only then does size break the tie.
+        #
+        # Both are Watches, so height alone decides between them — and on the ordinary shape of
+        # a real swell, a clean window under a bigger onshore peak, height hands the day to the
+        # onshore hour. The day then records `agreed`, carries no explanation of the refusal and
+        # shows no marker: the one case `go_call_withheld` exists for, dropped by a tie-break.
+        # A day whose conditions supported a Go Call the forecasters would not confirm is a
+        # different day from one that failed a condition outright, and it is the more useful of
+        # the two to explain.
         call = max(
-            (decide(prediction, lead_time) for prediction in predictions),
+            issued,
             key=lambda issued: (
                 strength(issued.status),
+                issued.go_call_withheld,
                 issued.predicted_significant_wave_height,
             ),
         )
@@ -401,6 +474,8 @@ def derive_calls(hours: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "reasons": [*call.reasons, hours_matched],
                 "predicted_significant_wave_height": call.predicted_significant_wave_height,
                 "unit": call.unit,
+                "model_agreement": call.model_agreement.value,
+                "go_call_withheld": call.go_call_withheld,
                 "amplification_model": model.name,
                 "calibrated": model.calibrated,
                 "calibration": provenance,
@@ -526,7 +601,7 @@ def _fetch_and_store(store: Store, client: httpx.Client, sleep, run_id: int) -> 
         longitude=marine_body["longitude"],
         readings=readings,
         hours=hours,
-        calls=derive_calls(hours),
+        calls=derive_calls(hours, ensemble),
         model_hours=as_model_hours(ensemble),
         spreads=derive_spreads(hours, ensemble),
         run_id=run_id,

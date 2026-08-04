@@ -2,6 +2,20 @@
 
 Ticket #11. The benchmark every later Amplification Model must beat, per ADR 0006.
 
+> ## Re-run after #8's second half: unchanged, and that is the finding
+>
+> A Go Call now also requires the independent wave models to agree that the deciding hour
+> clears the Go Call bar. **Every table below is identical either side of that change**, and
+> the reason is worth stating rather than leaving as an apparent non-event: a Hindcast is what
+> the ocean did, so it contains no forecast and nothing to disagree. `backtest.py` says so in
+> its own source (`MODELS_ASSUMED_TO_AGREE`) and passes agreement explicitly.
+>
+> So **the Go Call rows here are now a ceiling in one more respect**: they score the rule as if
+> the wave models always agreed. `analysis/model_spread/` measures what they actually do — over
+> the two complete Big-Wave Seasons where all three organisations carry a real Swell partition,
+> the gate withholds **4 of 23 Go Call days**, and takes neither of the two Gold Days in that
+> span. Read the 16 of 38 below with that beside it.
+>
 > **Re-run after #12.** This report scores whatever thresholds the system currently ships, and
 > #12 replaced them with values fitted to the Gold Days. The numbers below are therefore the
 > *calibrated* rule's, not the rule of thumb's. Where the pre-#12 figure is worth keeping — the
@@ -266,6 +280,11 @@ Requiring it alongside the other variables silently dropped two Gold Days — 20
 A Hindcast is what the ocean did, not what a forecast said it would do. These numbers score
 the *rule* given perfect knowledge of Offshore Conditions — its ceiling. A real Go Call is
 issued days ahead from a forecast wrong by an amount #14 measures, and will do worse.
+
+Since #8's second half that cuts one layer deeper. Perfect knowledge means no forecast to
+disagree with, so the agreement gate on the Go Call tier can never fire here — these tables
+score a rule with one of its conditions permanently satisfied. `analysis/model_spread/`
+measures that condition on archived per-model forecasts, which is the only place it exists.
 
 The scores are also not a Lead Time study. Every hour is scored at a Lead Time of 3 days,
 chosen only because it falls inside both the Watch and the Go Call band so one pass yields

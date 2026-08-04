@@ -29,7 +29,7 @@ from helpers import (
     stub_hours,
     swell_height_for,
 )
-from nazarenow.decision import decide
+from nazarenow.decision import Agreement, decide
 from nazarenow.models.base import Condition, ConditionOutcome, Prediction
 from nazarenow.pipeline import DEFAULT_MODEL, amplification_model
 
@@ -209,6 +209,189 @@ class TestWatchIsLooserThanGo:
     def test_a_swell_failing_only_direction_raises_nothing(self, store, client) -> None:
         """Direction is a swell condition, so unlike wind it does gate the Watch."""
         assert status_for(store, client, {**GIANT, "swell_direction": 200}, date=FAR) == "none"
+
+
+class TestAGoCallRestsOnTheModelsAgreeing:
+    """ADR 0003's central mechanism, and the last of #8's criteria.
+
+    Until this, Model Spread was fetched, stored, derived and displayed while `decide` never
+    read it: a user reading a Go Call was reading a judgement that had not consulted the
+    other wave models at all. CONTEXT.md has always described a Go Call as issued only once
+    Model Spread has narrowed, and this is what makes that true.
+
+    **The rule is about the decision, not the width.** A Go Call needs the *lowest*
+    organisation's swell period to still clear the Go Call bar. Disagreement withholds a call
+    exactly where it reaches across the bar and nowhere else, which is why these fixtures move
+    the members relative to the bar rather than merely far apart.
+    """
+
+    # Per-model offsets in metres of swell height; `helpers.ensemble_body_from` moves swell
+    # period by twice that, which is the reading this rule is written in.
+    #
+    # Every organisation clears the 12.9 s bar here. Deliberately not identical: members that
+    # agreed exactly would also satisfy a rule that had stopped looking past the first one.
+    AGREEING = {
+        "meteofrance_wave": 0.0,
+        "dwd_ewam": -0.02,
+        "dwd_gwam": -0.03,
+        "ncep_gfswave025": 0.03,
+        "ncep_gfswave016": 0.03,
+    }
+    # The same sea with DWD reading its period four seconds shorter — 12.5 s, under the bar.
+    # Two organisations say book the flight and one says the day misses.
+    DIVIDED = {**AGREEING, "dwd_ewam": -2.0, "dwd_gwam": -2.0}
+
+    def test_a_day_the_models_divide_over_is_watched_rather_than_booked_on(
+        self, store, client
+    ) -> None:
+        assert status_for(store, client, GIANT, ensemble_offsets=self.DIVIDED) == "watch"
+
+    def test_the_same_day_earns_a_go_call_when_every_organisation_clears_the_bar(
+        self, store, client
+    ) -> None:
+        assert status_for(store, client, GIANT, ensemble_offsets=self.AGREEING) == "go"
+
+    def test_how_far_apart_the_models_sit_does_not_decide_on_its_own(self, store, client) -> None:
+        """The two runs carry the same four seconds of disagreement and differ only in where
+        the bar falls inside it.
+
+        This is the rule's shape, and it is the reason a width threshold was rejected: on a
+        long enough swell the models can be four seconds apart and still unanimous about the
+        only question a traveller is asking. A gate on the width alone would refuse that day
+        and would need a number the record cannot supply — see `analysis/model_spread/`,
+        which measured its one sample on a 0.4 m summer sea.
+        """
+        under = status_for(store, client, GIANT, ensemble_offsets=self.DIVIDED)
+        # The same members, four seconds apart as before, but around a 20 s swell: the
+        # gloomiest of them still reads 16 s.
+        over = status_for(
+            store,
+            client,
+            {**GIANT, "swell_period": 20.0},
+            ensemble_offsets=self.DIVIDED,
+        )
+
+        assert (under, over) == ("watch", "go")
+
+    def test_the_confirmed_statement_is_not_withheld_when_the_models_divide(
+        self, store, client
+    ) -> None:
+        """Confirmed is issued a day out, to somebody already travelling, and recommends no
+        booking — so there is no flight for disagreement to protect. It also has nowhere to
+        fall: a Watch requires a Lead Time beyond the Confirmed band, so gating this tier
+        would leave a user standing at Praia do Norte told nothing at all."""
+        assert (
+            status_for(store, client, GIANT, date=TODAY, ensemble_offsets=self.DIVIDED)
+            == "confirmed"
+        )
+
+    def test_a_day_the_ensemble_could_not_be_reached_for_is_not_treated_as_agreement(
+        self, store, client
+    ) -> None:
+        """ADR 0003 has an unavailable provider degrade the estimate rather than the run, and
+        the run still succeeds here. What it must not do is *earn* anything: absent is not
+        narrow, and a rule reading it as narrow would issue the system's most confident calls
+        exactly where it knows least."""
+        assert status_for(store, client, GIANT, ensemble_status=503) == "watch"
+
+    def test_one_organisation_left_is_not_an_ensemble_agreeing_with_itself(
+        self, store, client
+    ) -> None:
+        """Below two organisations `spread.derive` reports no spread rather than a spread of
+        zero, and this is the deciding half of that: one opinion cannot corroborate itself."""
+        silent = ("dwd_ewam", "dwd_gwam", "ncep_gfswave025", "ncep_gfswave016")
+
+        assert status_for(store, client, GIANT, silent_models=silent) == "watch"
+
+    def test_a_withheld_go_call_says_which_of_the_two_reasons_withheld_it(
+        self, store, client
+    ) -> None:
+        """ "The models disagree" and "we could not reach enough models" are different facts
+        about a call, and a reader deciding whether to keep watching a swell is owed which."""
+        ingest(store, forecast_provider({SOON: GIANT}, today=TODAY, ensemble_offsets=self.DIVIDED))
+        divided = " ".join(calls(client)[SOON]["reasons"])
+
+        ingest(store, forecast_provider({SOON: GIANT}, today=TODAY, ensemble_status=503))
+        unreachable = " ".join(calls(client)[SOON]["reasons"])
+
+        assert "do not agree" in divided
+        assert "too few" in unreachable
+
+    def test_a_call_records_what_the_models_said_about_its_own_deciding_hour(
+        self, store, client
+    ) -> None:
+        """Carried on the call rather than left to be read off `model_spread`, which is the
+        date's median hour — a different hour from the one that earned the call."""
+        ingest(store, forecast_provider({SOON: GIANT}, today=TODAY, ensemble_offsets=self.DIVIDED))
+
+        assert calls(client)[SOON]["model_agreement"] == "divided"
+
+    def test_a_withheld_go_call_is_distinguishable_from_a_watch_that_never_earned_one(
+        self, store, client
+    ) -> None:
+        """Two Watch days that read identically from status alone, and are not the same day.
+
+        Nothing else in the response separates them. `model_agreement` cannot: a day whose own
+        swell period sits under the Go Call bar has every organisation under it too, so it
+        reports `divided` while the models decided nothing — the disagreement is an arithmetic
+        consequence of the day being small, not a finding about it.
+        """
+        ingest(store, forecast_provider({SOON: GIANT}, today=TODAY, ensemble_offsets=self.DIVIDED))
+        refused = calls(client)[SOON]
+
+        ingest(
+            store,
+            forecast_provider(
+                {SOON: {**GIANT, "swell_period": WATCH_PERIOD_S}},
+                today=TODAY,
+                ensemble_offsets=self.AGREEING,
+            ),
+        )
+        never_earned = calls(client)[SOON]
+
+        assert (refused["status"], never_earned["status"]) == ("watch", "watch")
+        assert refused["go_call_withheld"] is True
+        assert never_earned["go_call_withheld"] is False
+
+    def test_a_refused_go_call_is_not_lost_to_a_bigger_hour_that_never_earned_one(
+        self, store, client
+    ) -> None:
+        """A day with both kinds of hour, which is the ordinary shape of a real swell.
+
+        Most of this day is a clean window the models divide over — a refused Go Call. One hour
+        is three metres bigger and blowing onshore, so it fails wind and earns a plain Watch.
+        Both hours are Watches, and ranking them by predicted height alone hands the day to the
+        onshore one: the day would then record `agreed`, carry no explanation of the refusal,
+        and show no marker — the exact case the field exists for, dropped by a tie-break.
+
+        A refused Go Call is the stronger fact about a day than a taller hour that failed a
+        condition outright, so it wins.
+        """
+        ingest(
+            store,
+            forecast_provider(
+                {SOON: GIANT},
+                today=TODAY,
+                peak_but_onshore={SOON: (12,)},
+                ensemble_offsets=self.DIVIDED,
+            ),
+        )
+
+        call = calls(client)[SOON]
+
+        assert call["status"] == "watch"
+        assert call["go_call_withheld"] is True
+        assert any("do not agree" in reason for reason in call["reasons"])
+
+    def test_a_quiet_day_is_not_annotated_with_a_verdict_that_decided_nothing(
+        self, store, client
+    ) -> None:
+        """A flat summer Tuesday earns no call for reasons that have nothing to do with the
+        ensemble, and burying its real reasons under one that never applied would make the
+        explanation worse."""
+        ingest(store, forecast_provider({SOON: QUIET}, today=TODAY, ensemble_offsets=self.DIVIDED))
+
+        assert not any("wave models" in reason for reason in calls(client)[SOON]["reasons"])
 
 
 class TestCallContent:
@@ -559,6 +742,8 @@ class TestCallsArePersisted:
                     "unit": "m",
                     "amplification_model": "heuristic-baseline",
                     "calibrated": False,
+                    "model_agreement": "agreed",
+                    "go_call_withheld": False,
                 }
             ],
             model_hours=[],
@@ -646,6 +831,8 @@ class TestCallsSurviveTheNextRun:
                         "unit": "m",
                         "amplification_model": name,
                         "calibrated": calibrated,
+                        "model_agreement": "agreed",
+                        "go_call_withheld": False,
                     }
                 ],
                 model_hours=[],
@@ -690,7 +877,7 @@ class TestTheInterfaceIsRealDecides:
         )
 
         # Direction is a swell condition, so it gates the Watch as surely as height does.
-        assert decide(prediction, 11).status == "none"
+        assert decide(prediction, 11, Agreement.AGREED).status == "none"
 
     def test_a_model_that_never_judges_wind_cannot_earn_a_go_call(self) -> None:
         """The same collapse as above, one branch lower and found a pass later.
@@ -712,13 +899,13 @@ class TestTheInterfaceIsRealDecides:
 
         # The swell conditions all hold, so a Watch is right at range — but wind was never
         # judged, and a Go Call may not be handed out on a condition nobody checked.
-        assert decide(prediction, 4).status == "watch"
-        assert decide(prediction, 0).status == "none"
+        assert decide(prediction, 4, Agreement.AGREED).status == "watch"
+        assert decide(prediction, 0, Agreement.AGREED).status == "none"
 
     def test_a_model_that_judges_nothing_earns_no_call(self) -> None:
         """`matches_rule` once read as "no failures", so a prediction carrying no
         conditions at all satisfied every tier — advice to book a flight, from silence."""
-        assert decide(Prediction(significant_wave_height=9.0), 4).status == "none"
+        assert decide(Prediction(significant_wave_height=9.0), 4, Agreement.AGREED).status == "none"
 
     def test_a_call_cannot_be_issued_for_a_date_before_its_forecast(self) -> None:
         """A negative Lead Time is a caller fault, not a case to fall through. The branch
@@ -726,4 +913,4 @@ class TestTheInterfaceIsRealDecides:
         the forecast's own first day — while its comment claimed it protected users from
         a stale forecast presenting an elapsed Go Call as fresh advice."""
         with pytest.raises(ValueError, match="negative"):
-            decide(Prediction(significant_wave_height=9.0), -1)
+            decide(Prediction(significant_wave_height=9.0), -1, Agreement.AGREED)

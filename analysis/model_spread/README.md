@@ -191,16 +191,74 @@ argument. `alignment.py` reports both partitions' live spread side by side so th
 leap is visible: at the sampled instant, Combined Sea 0.15 m against Swell 0.44 m. The leap is
 real and it is the main reason finding 4 is a bound rather than a correction.
 
+## Finding 5 — what the agreement gate costs: 4 of 25 Go Call days, and neither Gold Day
+
+Added by #8's second half, which is the part that lets Model Spread change a call. A Go Call
+now requires the **lowest organisation's swell period to still clear the Go Call bar** — the
+models must agree about the decision, not merely be close to each other. `agreement.py`.
+
+The obvious place to measure that is `analysis/backtest/`, and it cannot: a Hindcast is what
+the ocean did, so it holds no forecast and nothing to disagree. Run either side of the change
+the backtest produces identical tables, which is right and is not a measurement.
+
+What *can* be measured is the archive, which carries a **real Swell partition per model**. All
+three organisations report it from **2024-07** — NCEP is the constraint, null through 2024-01
+and partial to 2024-06 — so the gate can be scored over **18,264 hours** to 2026-07, using the
+same thresholds, the same `spread.derive` and the same `agreement_at` the Pipeline Run uses:
+
+| Rows | Days scored | Go Call days | With the gate | Withheld |
+|---|---|---|---|---|
+| 2023/24 *(from July)* | 92 | 0 | 0 | 0 |
+| 2024/25 | 365 | 8 | 8 | 0 |
+| 2025/26 *(to July)* | 304 | 17 | 13 | 4 (23.5%) |
+| All | 761 | 25 | 21 | 4 (16.0%) |
+| **Big-Wave Season only** | **364** | **23** | **19** | **4 (17.4%)** |
+
+**Read the last row.** The first four are `season_of` blocks, which run October to the
+following October and therefore carry summer days CONTEXT.md says cannot produce an XXL Day —
+the same overcount ADR 0010 records in the Watch budget. The restricted row is exactly two
+complete Big-Wave Seasons, 364 days of the 761, and it holds 23 of the 25 Go Call days and all
+four of the refusals. **4 of 23 is the figure to quote.**
+
+**Both Gold Days inside the span keep their Go Call** — 2025-02-18 and 2025-12-13, each a Go
+Call before the gate and after it. Two is not a recall figure and is not offered as one; it is
+a check that the gate does not bite hardest on the days the system exists for.
+
+**Four days, and closer to two swells.** The refusals are 2026-02-25, then 2026-03-28, 03-29
+and 03-31 — one day and one run of three. ADR 0010 makes the same point about the Watch budget:
+days are not episodes, and a rule refusing four days is not refusing four separate times. On
+this record the gate is not a steady tax; it is something that happens to a particular kind of
+swell, and every instance of it so far falls in one season.
+
+**This is a lower bound, and the direction is known.** The archive's per-model value for a past
+hour is that model's settled reading of it, near enough an analysis. A real Go Call is issued
+two to seven days out, and finding 4 above measures provider spread *growing* with Lead Time —
+0.446 m at one day against 0.652 m at six. The models divide more when a call is actually
+issued than they do here, so production withholds more than 16%.
+
+**It also confirms finding 4's central property over two years rather than one forecast.** The
+member count moves — five models on 5,627 hours, four on 10,404, three on 2,233 — and the
+**organisation count is three on all 18,264 of them**. That is what finding 4 predicted from a
+single sampled forecast and what the whole roster argument rests on: the model that drops out
+belongs to the one organisation that runs two, so the ensemble means the same thing throughout.
+Measured here on the Swell partition, which is the one Model Spread is defined on.
+
+One limit on the surrounding figures rather than on the gate: the wind deciding which hours
+would have earned a Go Call at all is ERA5's, 9.6 km inshore — the same series and the same
+caveat `analysis/backtest/README.md` records. It never touches the gate, which reads period.
+
 ## What this does not settle
 
 - **Whether the Swell partition behaves like Combined Sea under staleness.** Finding 4 measures
-  Combined Sea because that is what the archive carries per model. Only an accumulated record
-  of the Pipeline Run's own responses settles the Swell case directly, and that needs #28.
+  self-movement on Combined Sea, because the archive carries `_previous_dayN` for that
+  partition only. Only an accumulated record of the Pipeline Run's own responses settles the
+  Swell case directly, and that needs #28.
+- **What the gate costs at the Lead Time a Go Call is issued at.** Finding 5 measures it at
+  roughly zero, because that is what the archive can express per model on the Swell partition,
+  and bounds the direction of the error rather than its size.
 - **What the spread looks like on a real swell.** See the caveat above. The Big-Wave Season
-  starts in October.
-- **How spread should reach the Decision Model.** ADR 0003 wants the tiers driven by it. Nothing
-  here proposes the rule, and on the evidence above that rule needs the seasonal measurement
-  first.
+  starts in October. Finding 5 is measured on two real seasons and is the first figure here
+  that is not from a flat summer sea.
 - **Whether the roster should keep both NCEP resolutions.** They contribute one vote between
   them under `by_provider`, so the second buys robustness if one fails and nothing else.
 
@@ -210,6 +268,8 @@ real and it is the main reason finding 4 is a bound rather than a correction.
 |---|---|
 | `probe.py` | The probe. `--check` self-tests the spread and provider-grouping arithmetic offline. |
 | `alignment.py` | Finding 4: staleness against disagreement, per Lead Time. `--check` self-tests the ratio, the downward scaling and the fit offline. |
+| `agreement.py` | Finding 5: what the Decision Model's agreement gate withholds, over two Big-Wave Seasons of archived per-model Swell. `--check` self-tests the gate and the day reduction offline. |
 | `output/alignment.csv` | Self-movement, provider spread and the staleness share at both cadence gaps. |
+| `output/agreement.csv` | Go Call days with and without the gate, per Big-Wave Season. |
 | `output/coverage.csv` | Each model's horizon, nulls and interior gaps. |
 | `output/spread_by_hour.csv` | Per hour and variable: the members reporting, and spread across models and across providers. |

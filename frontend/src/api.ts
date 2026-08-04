@@ -65,7 +65,29 @@ export interface DayCall {
   lead_time_days: number;
   reasons: string[];
   predicted_significant_wave_height: Reading;
+  /** Whether the wave models refused a Go Call this day's conditions otherwise supported.
+   *
+   * The interface cannot derive this, and that is why the backend sends it. A day whose own
+   * swell period sits below the Go Call bar has every forecaster below it too, so it reports
+   * `divided` while the models decided nothing. Two Watch days that look identical from
+   * status alone are a swell the forecasters have not settled on and a swell that was never
+   * big enough.
+   *
+   * Null for a call issued before the backend consulted the models at all. */
+  go_call_withheld: boolean | null;
+  /** What the wave models said about the hour this call rests on.
+   *
+   * Not readable off `model_spread`: that is the date's median hour and a call is decided on
+   * its best matching hour. Null for a call issued before any of this existed. */
+  model_agreement: ModelAgreement | null;
 }
+
+/** The three things the wave models can have said about a call's own hour.
+ *
+ * `unmeasured` is never agreement. Fewer than two organisations reporting produces no Model
+ * Spread rather than a spread of zero, and treating that as agreement would put the system's
+ * most confident calls exactly where it knows least. */
+export type ModelAgreement = 'agreed' | 'divided' | 'unmeasured';
 
 /**
  * How far apart the independent wave models are on one reading for one date.

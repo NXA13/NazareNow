@@ -158,7 +158,7 @@ downloaded data, so CI checks them statically:
 .venv/Scripts/python.exe -m ruff format --check analysis/
 ```
 
-Nine exceptions, all fully runnable because they need no credentials:
+Ten exceptions, all fully runnable because they need no credentials:
 
 ```bash
 .venv/Scripts/python.exe analysis/gold_days/build.py --check
@@ -170,6 +170,7 @@ Nine exceptions, all fully runnable because they need no credentials:
 .venv/Scripts/python.exe analysis/amplification_model/served_path.py --check
 .venv/Scripts/python.exe analysis/forecast_error/profile.py --check
 .venv/Scripts/python.exe analysis/model_spread/alignment.py --check
+.venv/Scripts/python.exe analysis/model_spread/agreement.py --check
 ```
 
 The Gold Day list is hand-written in `analysis/gold_days/README.md` and built from it into

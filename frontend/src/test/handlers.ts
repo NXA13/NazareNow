@@ -167,6 +167,11 @@ export function dayFrom(
               value: Number((peakHour.swell_height.value + 0.4).toFixed(2)),
               unit: 'm',
             },
+            // Agreed and not withheld, so a fixture day is an ordinary day. The cases where
+            // the models refused a Go Call are built by spreading over this in the test that
+            // is about them, which keeps the unusual shape beside the assertion it explains.
+            model_agreement: 'agreed' as const,
+            go_call_withheld: false,
           },
     peak_swell_height: peakHour.swell_height,
     swell_period_at_peak: peakHour.swell_period,

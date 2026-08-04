@@ -109,8 +109,19 @@ function dayLabel(date: string): string {
  * A day the backend sent no spread for gets nothing rather than "unchecked" — that is a date
  * stored before Model Spread existed, and inventing a caveat for it would claim something
  * about a measurement that was never attempted.
+ *
+ * A **refused Go Call outranks both**, because it is the only one of these that changed what
+ * the card says. Read from `go_call_withheld` rather than from `model_agreement`, which cannot
+ * carry it — `DayCall` in `api.ts` says why.
  */
 function agreementFlag(day: ForecastDay): string | null {
+  if (day.call?.go_call_withheld) {
+    // Which of the two withheld it. "The forecasters disagree" said about an endpoint that
+    // never answered would be an invented finding, so an unmeasured hour keeps the marker the
+    // unreachable case already has.
+    return day.call.model_agreement === 'divided' ? 'models divided' : 'unchecked';
+  }
+
   const height = day.model_spread?.swell_height;
   if (!height) return null;
   if (height.spread === null) return 'unchecked';
@@ -124,6 +135,7 @@ function agreementFlag(day: ForecastDay): string | null {
 const FLAG_MEANINGS: Record<string, string> = {
   unchecked: 'no second opinion — nothing was available to check this day against',
   'partly checked': 'checked against fewer forecasters than usual',
+  'models divided': 'the forecasters have not settled on this day, so no Go Call was issued',
 };
 
 function DaySummary({
