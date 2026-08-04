@@ -111,10 +111,8 @@ function dayLabel(date: string): string {
  * about a measurement that was never attempted.
  *
  * A **refused Go Call outranks both**, because it is the only one of these that changed what
- * the card says. Read from `go_call_withheld` rather than from the verdict, which cannot carry
- * it: a day under the Go Call bar reports `divided` as a matter of arithmetic — every
- * forecaster sits under a bar the day itself misses — so marking on the verdict alone would
- * caveat most of the quiet days in the range.
+ * the card says. Read from `go_call_withheld` rather than from `model_agreement`, which cannot
+ * carry it — `DayCall` in `api.ts` says why.
  */
 function agreementFlag(day: ForecastDay): string | null {
   if (day.call?.go_call_withheld) {

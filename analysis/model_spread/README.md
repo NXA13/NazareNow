@@ -206,18 +206,29 @@ three organisations report it from **2024-07** — NCEP is the constraint, null 
 and partial to 2024-06 — so the gate can be scored over **18,264 hours** to 2026-07, using the
 same thresholds, the same `spread.derive` and the same `agreement_at` the Pipeline Run uses:
 
-| Season | Days scored | Go Call days | With the gate | Withheld |
+| Rows | Days scored | Go Call days | With the gate | Withheld |
 |---|---|---|---|---|
+| 2023/24 *(from July)* | 92 | 0 | 0 | 0 |
 | 2024/25 | 365 | 8 | 8 | 0 |
-| 2025/26 | 304 | 17 | 13 | **4 (23.5%)** |
-| **All** | **761** | **25** | **21** | **4 (16.0%)** |
+| 2025/26 *(to July)* | 304 | 17 | 13 | 4 (23.5%) |
+| All | 761 | 25 | 21 | 4 (16.0%) |
+| **Big-Wave Season only** | **364** | **23** | **19** | **4 (17.4%)** |
+
+**Read the last row.** The first four are `season_of` blocks, which run October to the
+following October and therefore carry summer days CONTEXT.md says cannot produce an XXL Day —
+the same overcount ADR 0010 records in the Watch budget. The restricted row is exactly two
+complete Big-Wave Seasons, 364 days of the 761, and it holds 23 of the 25 Go Call days and all
+four of the refusals. **4 of 23 is the figure to quote.**
 
 **Both Gold Days inside the span keep their Go Call** — 2025-02-18 and 2025-12-13, each a Go
 Call before the gate and after it. Two is not a recall figure and is not offered as one; it is
 a check that the gate does not bite hardest on the days the system exists for.
 
-The withheld days are all in one season, which is worth stating rather than smoothing: on this
-record the gate is not a steady tax but something that happens to a particular kind of day.
+**Four days, and closer to two swells.** The refusals are 2026-02-25, then 2026-03-28, 03-29
+and 03-31 — one day and one run of three. ADR 0010 makes the same point about the Watch budget:
+days are not episodes, and a rule refusing four days is not refusing four separate times. On
+this record the gate is not a steady tax; it is something that happens to a particular kind of
+swell, and every instance of it so far falls in one season.
 
 **This is a lower bound, and the direction is known.** The archive's per-model value for a past
 hour is that model's settled reading of it, near enough an analysis. A real Go Call is issued

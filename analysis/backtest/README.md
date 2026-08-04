@@ -11,9 +11,9 @@ Ticket #11. The benchmark every later Amplification Model must beat, per ADR 000
 > its own source (`MODELS_ASSUMED_TO_AGREE`) and passes agreement explicitly.
 >
 > So **the Go Call rows here are now a ceiling in one more respect**: they score the rule as if
-> the wave models always agreed. `analysis/model_spread/` measures what they actually do — the
-> gate withholds **4 of 25 Go Call days** over the two Big-Wave Seasons where all three
-> organisations carry a real Swell partition, and takes neither of the two Gold Days in that
+> the wave models always agreed. `analysis/model_spread/` measures what they actually do — over
+> the two complete Big-Wave Seasons where all three organisations carry a real Swell partition,
+> the gate withholds **4 of 23 Go Call days**, and takes neither of the two Gold Days in that
 > span. Read the 16 of 38 below with that beside it.
 >
 > **Re-run after #12.** This report scores whatever thresholds the system currently ships, and

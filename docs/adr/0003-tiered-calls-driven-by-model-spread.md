@@ -108,10 +108,13 @@ backtest — a Hindcast is what the ocean did, holds no forecast and therefore n
 so it reproduces identical tables either side of this and states that assumption in its own
 source. `analysis/model_spread/agreement.py` measures the gate directly on 18,264 archived
 hours from 2024-07 to 2026-07, the span where all three organisations carry a real Swell
-partition: **the gate withholds 4 of 25 Go Call days, 16%**, all four in one season, and
-**neither of the two Gold Days in the span loses its Go Call**. That figure is a lower bound,
-because archived per-model readings are near-analyses while a Go Call is issued two to seven
-days out, where the same measurement shows spread growing.
+partition. Restricted to the two complete Big-Wave Seasons inside it — 364 days, the
+denominator this ADR's tiers are budgeted in — **the gate withholds 4 of 23 Go Call days,
+17%**, and **neither of the two Gold Days in the span loses its Go Call**. The four fall on one
+day in February and a run of three in late March, so they are closer to two swells than to four
+refusals. That figure is a lower bound, because archived per-model readings are near-analyses
+while a Go Call is issued two to seven days out, where the same measurement shows spread
+growing.
 
 **A Confirmed statement is deliberately not gated.** It is issued a day out to somebody already
 travelling and recommends no booking, so there is no flight for disagreement to protect; and

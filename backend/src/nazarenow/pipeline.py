@@ -388,7 +388,8 @@ def derive_calls(hours: list[dict[str, Any]], ensemble: Ensemble) -> list[dict[s
     record at all.
 
     **A day is called at the best call any of its hours supports.** Every hour is decided on
-    its own and the strongest resulting call wins, the largest sea breaking a tie.
+    its own and the strongest resulting call wins; within one status a Go Call the wave models
+    refused outranks an hour that never earned one, and the largest sea breaks what is left.
 
     Choosing a representative hour *before* deciding cannot work, and two attempts at it
     failed the same way. Ranking hours by how many conditions they failed is tier-blind: a
@@ -436,10 +437,21 @@ def derive_calls(hours: list[dict[str, Any]], ensemble: Ensemble) -> list[dict[s
             decide(prediction, lead_time, agreement_at(model, hour, ensemble, stamp["at"]))
             for stamp, hour, prediction in zip(by_date[day], readings, predictions, strict=True)
         ]
+        # Within one status, a *refused* Go Call outranks a taller hour that never earned one,
+        # and only then does size break the tie.
+        #
+        # Both are Watches, so height alone decides between them — and on the ordinary shape of
+        # a real swell, a clean window under a bigger onshore peak, height hands the day to the
+        # onshore hour. The day then records `agreed`, carries no explanation of the refusal and
+        # shows no marker: the one case `go_call_withheld` exists for, dropped by a tie-break.
+        # A day whose conditions supported a Go Call the forecasters would not confirm is a
+        # different day from one that failed a condition outright, and it is the more useful of
+        # the two to explain.
         call = max(
             issued,
             key=lambda issued: (
                 strength(issued.status),
+                issued.go_call_withheld,
                 issued.predicted_significant_wave_height,
             ),
         )
@@ -462,7 +474,7 @@ def derive_calls(hours: list[dict[str, Any]], ensemble: Ensemble) -> list[dict[s
                 "reasons": [*call.reasons, hours_matched],
                 "predicted_significant_wave_height": call.predicted_significant_wave_height,
                 "unit": call.unit,
-                "model_agreement": call.agreement.value,
+                "model_agreement": call.model_agreement.value,
                 "go_call_withheld": call.go_call_withheld,
                 "amplification_model": model.name,
                 "calibrated": model.calibrated,

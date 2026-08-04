@@ -62,6 +62,7 @@ from alignment import _get, _months  # noqa: E402
 from backtest import (  # noqa: E402
     LEAD_TIME_DAYS,
     MODELS_ASSUMED_TO_AGREE,
+    in_big_wave_season,
     load_gold_days,
     season_of,
 )
@@ -265,17 +266,26 @@ class SeasonCost:
 
 
 def cost_per_season(verdicts: list[DayVerdict]) -> list[SeasonCost]:
-    """The gate's price, split by Big-Wave Season and reported over the whole span.
+    """The gate's price, split by season block, over the whole span, and inside the season.
 
-    Split because a season is the unit both budgets in `analysis/calibration/` are stated in,
-    and because a gate that bites in one season and not the next is a different finding from
-    one that bites evenly.
+    Split by block because a season is the unit both budgets in `analysis/calibration/` are
+    stated in, and because a gate that bites in one season and not the next is a different
+    finding from one that bites evenly.
+
+    **A `season_of` block is not the Big-Wave Season**, and the last row exists because the
+    difference is easy to read past. `season_of` names the twelve months from one October to
+    the next, so the blocks below carry summer days that CONTEXT.md says cannot produce an XXL
+    Day at all — the same denominator ADR 0010 flags in the Watch budget, and the reason its
+    rate reads 18% of season days against a budget nominally allowing 22%. Reporting a rate
+    over 761 days while calling them "two Big-Wave Seasons" would be that overcount stated as
+    a fact rather than acknowledged as one, so the restricted row is reported beside it.
     """
     seasons = sorted({season_of(verdict.date) for verdict in verdicts})
     rows = [
         _cost(season, [v for v in verdicts if season_of(v.date) == season]) for season in seasons
     ]
-    return [*rows, _cost("all", verdicts)]
+    in_season = [verdict for verdict in verdicts if in_big_wave_season(verdict.date)]
+    return [*rows, _cost("all", verdicts), _cost("Oct-Mar only", in_season)]
 
 
 def _cost(season: str, verdicts: list[DayVerdict]) -> SeasonCost:
@@ -402,6 +412,12 @@ def main() -> int:
             f"  {row.season:8s} {row.days:5d} {row.go_ungated:9d} "
             f"{row.go_gated:15d} {row.withheld:10d}  ({row.share_withheld:.1%})"
         )
+
+    # Named, not just counted. Four is a small enough number that the dates are the more
+    # useful form — and they show the withheld days falling into two swell episodes rather
+    # than four independent refusals, which ADR 0010 warns is the distinction a day count
+    # loses.
+    print(f"\n  withheld: {', '.join(v.date for v in verdicts if v.withheld)}")
 
     print("\n  Gold Days inside the span:")
     for day, ungated, gated in gold_day_effect(verdicts):

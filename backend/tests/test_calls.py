@@ -353,6 +353,36 @@ class TestAGoCallRestsOnTheModelsAgreeing:
         assert refused["go_call_withheld"] is True
         assert never_earned["go_call_withheld"] is False
 
+    def test_a_refused_go_call_is_not_lost_to_a_bigger_hour_that_never_earned_one(
+        self, store, client
+    ) -> None:
+        """A day with both kinds of hour, which is the ordinary shape of a real swell.
+
+        Most of this day is a clean window the models divide over — a refused Go Call. One hour
+        is three metres bigger and blowing onshore, so it fails wind and earns a plain Watch.
+        Both hours are Watches, and ranking them by predicted height alone hands the day to the
+        onshore one: the day would then record `agreed`, carry no explanation of the refusal,
+        and show no marker — the exact case the field exists for, dropped by a tie-break.
+
+        A refused Go Call is the stronger fact about a day than a taller hour that failed a
+        condition outright, so it wins.
+        """
+        ingest(
+            store,
+            forecast_provider(
+                {SOON: GIANT},
+                today=TODAY,
+                peak_but_onshore={SOON: (12,)},
+                ensemble_offsets=self.DIVIDED,
+            ),
+        )
+
+        call = calls(client)[SOON]
+
+        assert call["status"] == "watch"
+        assert call["go_call_withheld"] is True
+        assert any("do not agree" in reason for reason in call["reasons"])
+
     def test_a_quiet_day_is_not_annotated_with_a_verdict_that_decided_nothing(
         self, store, client
     ) -> None:

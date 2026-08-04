@@ -124,15 +124,15 @@ class Agreement(StrEnum):
 # keep in step.
 AGREEMENT_REASONS = {
     Agreement.AGREED: (
-        "the independent wave models agree this day's swell period clears the Go Call bar"
+        "the independent wave models agree the hour behind this call clears the Go Call bar"
     ),
     Agreement.DIVIDED: (
-        "the independent wave models do not agree this day's swell period clears the Go Call "
-        "bar, so this is a Watch rather than a Go Call"
+        "the independent wave models do not agree the hour behind this call clears the Go "
+        "Call bar, so this is a Watch rather than a Go Call"
     ),
     Agreement.UNMEASURED: (
-        "too few independent wave models reported this day to establish whether they agree, "
-        "so a Go Call is withheld"
+        "too few independent wave models reported the hour behind this call to establish "
+        "whether they agree, so a Go Call is withheld"
     ),
 }
 
@@ -177,7 +177,7 @@ class Call:
     lead_time_days: int
     reasons: tuple[str, ...]
     predicted_significant_wave_height: float
-    agreement: Agreement
+    model_agreement: Agreement
     """What the models said about the hour this call rests on, carried with the call.
 
     Recorded rather than re-derived, and it genuinely cannot be re-derived: `day_spread`
@@ -283,5 +283,5 @@ def decide(prediction: Prediction, lead_time_days: int, agreement: Agreement) ->
         reasons=reasons,
         predicted_significant_wave_height=prediction.significant_wave_height,
         go_call_withheld=withheld,
-        agreement=agreement,
+        model_agreement=agreement,
     )
