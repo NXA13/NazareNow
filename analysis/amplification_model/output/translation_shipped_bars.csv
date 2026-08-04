@@ -1,0 +1,6 @@
+candidate,shippable_as_translation,minimum_significant_wave_height_m,watch_minimum_swell_period_s,go_call_minimum_swell_period_s,moved_minimum_significant_wave_height_m,moved_watch_minimum_swell_period_s,moved_go_call_minimum_swell_period_s
+shipped,yes,2.75,11.5,12.9,0.0,0.0,0.0
+all-hours,yes,2.75,11.2,12.6,0.0,-0.3,-0.3
+combined-sea-3m,yes,2.75,11.4,12.9,0.0,-0.1,0.0
+band-fitted,yes,2.75,11.4,12.8,0.0,-0.1,-0.1
+regime-aware,no,2.75,11.2,12.6,0.0,-0.3,-0.3

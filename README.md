@@ -158,7 +158,7 @@ downloaded data, so CI checks them statically:
 .venv/Scripts/python.exe -m ruff format --check analysis/
 ```
 
-Eleven exceptions, all fully runnable because they need no credentials:
+Thirteen exceptions, all fully runnable because they need no credentials:
 
 ```bash
 .venv/Scripts/python.exe analysis/gold_days/build.py --check
@@ -168,9 +168,11 @@ Eleven exceptions, all fully runnable because they need no credentials:
 .venv/Scripts/python.exe analysis/training_dataset/build.py --check
 .venv/Scripts/python.exe analysis/amplification_model/train.py --check
 .venv/Scripts/python.exe analysis/amplification_model/served_path.py --check
+.venv/Scripts/python.exe analysis/amplification_model/translation_shape.py --check
 .venv/Scripts/python.exe analysis/forecast_error/profile.py --check
 .venv/Scripts/python.exe analysis/model_spread/alignment.py --check
 .venv/Scripts/python.exe analysis/model_spread/agreement.py --check
+.venv/Scripts/python.exe analysis/overlap/measure.py --check
 .venv/Scripts/python.exe analysis/wind_products/gap.py --check
 ```
 
