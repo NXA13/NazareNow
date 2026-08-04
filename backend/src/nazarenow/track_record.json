@@ -1,0 +1,1373 @@
+{
+  "published_at": "2026-08-04",
+  "source": "analysis/track_record/publish.py",
+  "call_record": {
+    "held_out": {
+      "span": "2020/21-2025/26",
+      "basis": "Hindcast",
+      "gold_days": 13,
+      "big_wave_seasons": 6.0,
+      "tiers": {
+        "watch_or_better": {
+          "gold_days_called": 12,
+          "days_flagged": 193
+        },
+        "go_call": {
+          "gold_days_called": 9,
+          "days_flagged": 43
+        }
+      }
+    },
+    "full_record": {
+      "span": "2011-2025",
+      "basis": "Hindcast",
+      "gold_days": 38,
+      "big_wave_seasons": 16.0,
+      "tiers": {
+        "watch_or_better": {
+          "gold_days_called": 33,
+          "days_flagged": 574
+        },
+        "go_call": {
+          "gold_days_called": 16,
+          "days_flagged": 128
+        }
+      }
+    }
+  },
+  "height_record": {
+    "scored": {
+      "bands": [
+        {
+          "name": "all hours",
+          "hours": 28426,
+          "baseline_mae_m": 0.1964,
+          "learned_mae_m": 0.207,
+          "caveat": null
+        },
+        {
+          "name": "Combined Sea 3 m and above",
+          "hours": 4473,
+          "baseline_mae_m": 0.4026,
+          "learned_mae_m": 0.3557,
+          "caveat": null
+        },
+        {
+          "name": "Gold Day hours",
+          "hours": 120,
+          "baseline_mae_m": 0.8851,
+          "learned_mae_m": 0.5636,
+          "caveat": "120 hours across only 5 Gold Days \u2014 the held-out seasons hold 13, but training also requires the buoy to have been reporting and the wind to be present, and only 5 survive both."
+        },
+        {
+          "name": "under 2 m",
+          "hours": 15665,
+          "baseline_mae_m": 0.1193,
+          "learned_mae_m": 0.1648,
+          "caveat": null
+        },
+        {
+          "name": "2-3 m",
+          "hours": 7511,
+          "baseline_mae_m": 0.2025,
+          "learned_mae_m": 0.2145,
+          "caveat": null
+        },
+        {
+          "name": "3-4 m",
+          "hours": 3383,
+          "baseline_mae_m": 0.3076,
+          "learned_mae_m": 0.2779,
+          "caveat": null
+        },
+        {
+          "name": "4-5 m",
+          "hours": 1127,
+          "baseline_mae_m": 0.4667,
+          "learned_mae_m": 0.3209,
+          "caveat": null
+        },
+        {
+          "name": "5-6 m",
+          "hours": 415,
+          "baseline_mae_m": 0.7006,
+          "learned_mae_m": 0.4487,
+          "caveat": null
+        },
+        {
+          "name": "6 m and above",
+          "hours": 325,
+          "baseline_mae_m": 1.0313,
+          "learned_mae_m": 0.621,
+          "caveat": null
+        }
+      ]
+    },
+    "served": {
+      "bands": [
+        {
+          "name": "all hours",
+          "hours": 28426,
+          "baseline_mae_m": 0.2197,
+          "learned_mae_m": 0.2971,
+          "caveat": null
+        },
+        {
+          "name": "Combined Sea 3 m and above",
+          "hours": 4473,
+          "baseline_mae_m": 0.4278,
+          "learned_mae_m": 0.4005,
+          "caveat": "Not robust to the reconstruction assumption: under a residual that grows with the sea this aggregate falls from +0.027 to -0.004. The per-band rows below it hold their sign under all three assumptions; this one does not."
+        },
+        {
+          "name": "under 2 m",
+          "hours": 15665,
+          "baseline_mae_m": 0.1562,
+          "learned_mae_m": 0.282,
+          "caveat": null
+        },
+        {
+          "name": "2-3 m",
+          "hours": 7511,
+          "baseline_mae_m": 0.2116,
+          "learned_mae_m": 0.2651,
+          "caveat": null
+        },
+        {
+          "name": "3-4 m",
+          "hours": 3383,
+          "baseline_mae_m": 0.3215,
+          "learned_mae_m": 0.3433,
+          "caveat": null
+        },
+        {
+          "name": "4-5 m",
+          "hours": 1127,
+          "baseline_mae_m": 0.4553,
+          "learned_mae_m": 0.3984,
+          "caveat": null
+        },
+        {
+          "name": "5-6 m",
+          "hours": 415,
+          "baseline_mae_m": 0.6765,
+          "learned_mae_m": 0.5153,
+          "caveat": null
+        },
+        {
+          "name": "6 m and above",
+          "hours": 325,
+          "baseline_mae_m": 1.0109,
+          "learned_mae_m": 0.6554,
+          "caveat": null
+        }
+      ]
+    }
+  },
+  "gold_days": {
+    "fitted": 25,
+    "validated": 13
+  },
+  "days": [
+    {
+      "date": "2011-02-06",
+      "season": "2010/11",
+      "call": "go",
+      "peak_significant_wave_height_m": 2.99,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2011-02-07",
+      "season": "2010/11",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.03,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2011-02-09",
+      "season": "2010/11",
+      "call": "go",
+      "peak_significant_wave_height_m": 2.61,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2011-02-10",
+      "season": "2010/11",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.42,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2011-02-11",
+      "season": "2010/11",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.02,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2011-02-12",
+      "season": "2010/11",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.81,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2011-09-22",
+      "season": "2010/11",
+      "call": "go",
+      "peak_significant_wave_height_m": 2.73,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2011-10-17",
+      "season": "2011/12",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.04,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2011-10-29",
+      "season": "2011/12",
+      "call": "go",
+      "peak_significant_wave_height_m": 2.77,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2011-10-30",
+      "season": "2011/12",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.77,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2011-11-01",
+      "season": "2011/12",
+      "call": "watch",
+      "peak_significant_wave_height_m": 3.4,
+      "gold_day": true,
+      "gold_tier": "ratified"
+    },
+    {
+      "date": "2011-11-13",
+      "season": "2011/12",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.2,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2011-12-12",
+      "season": "2011/12",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.48,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2011-12-15",
+      "season": "2011/12",
+      "call": "go",
+      "peak_significant_wave_height_m": 5.56,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2012-02-24",
+      "season": "2011/12",
+      "call": "go",
+      "peak_significant_wave_height_m": 2.63,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2012-03-08",
+      "season": "2011/12",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.35,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2012-03-09",
+      "season": "2011/12",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.62,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2012-10-21",
+      "season": "2012/13",
+      "call": "go",
+      "peak_significant_wave_height_m": 2.82,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2012-11-15",
+      "season": "2012/13",
+      "call": "go",
+      "peak_significant_wave_height_m": 2.61,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2013-01-11",
+      "season": "2012/13",
+      "call": "go",
+      "peak_significant_wave_height_m": 2.81,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2013-01-28",
+      "season": "2012/13",
+      "call": "watch",
+      "peak_significant_wave_height_m": 4.91,
+      "gold_day": true,
+      "gold_tier": "documented"
+    },
+    {
+      "date": "2013-04-15",
+      "season": "2012/13",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.89,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2013-10-27",
+      "season": "2013/14",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.86,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2013-10-28",
+      "season": "2013/14",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.2,
+      "gold_day": true,
+      "gold_tier": "documented"
+    },
+    {
+      "date": "2013-11-01",
+      "season": "2013/14",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.4,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2013-12-14",
+      "season": "2013/14",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.39,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2013-12-15",
+      "season": "2013/14",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.51,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2013-12-22",
+      "season": "2013/14",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.42,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2014-01-06",
+      "season": "2013/14",
+      "call": "go",
+      "peak_significant_wave_height_m": 5.91,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2014-01-07",
+      "season": "2013/14",
+      "call": "go",
+      "peak_significant_wave_height_m": 5.72,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2014-01-26",
+      "season": "2013/14",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.34,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2014-02-02",
+      "season": "2013/14",
+      "call": "go",
+      "peak_significant_wave_height_m": 6.38,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2014-03-10",
+      "season": "2013/14",
+      "call": "go",
+      "peak_significant_wave_height_m": 2.89,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2014-09-17",
+      "season": "2013/14",
+      "call": "go",
+      "peak_significant_wave_height_m": 2.74,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2014-11-19",
+      "season": "2014/15",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.87,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2014-11-20",
+      "season": "2014/15",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.58,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2014-11-26",
+      "season": "2014/15",
+      "call": "go",
+      "peak_significant_wave_height_m": 2.78,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2014-12-11",
+      "season": "2014/15",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.18,
+      "gold_day": true,
+      "gold_tier": "ratified"
+    },
+    {
+      "date": "2014-12-12",
+      "season": "2014/15",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.12,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2014-12-20",
+      "season": "2014/15",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.51,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2015-01-09",
+      "season": "2014/15",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.58,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2015-01-12",
+      "season": "2014/15",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.12,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2015-02-20",
+      "season": "2014/15",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.23,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2015-10-27",
+      "season": "2015/16",
+      "call": "watch",
+      "peak_significant_wave_height_m": 4.74,
+      "gold_day": true,
+      "gold_tier": "reported"
+    },
+    {
+      "date": "2015-10-30",
+      "season": "2015/16",
+      "call": "go",
+      "peak_significant_wave_height_m": 2.88,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2015-11-01",
+      "season": "2015/16",
+      "call": "none",
+      "peak_significant_wave_height_m": 3.64,
+      "gold_day": true,
+      "gold_tier": "reported"
+    },
+    {
+      "date": "2016-02-08",
+      "season": "2015/16",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.99,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2016-02-09",
+      "season": "2015/16",
+      "call": "go",
+      "peak_significant_wave_height_m": 5.51,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2016-02-19",
+      "season": "2015/16",
+      "call": "watch",
+      "peak_significant_wave_height_m": 3.91,
+      "gold_day": true,
+      "gold_tier": "reported"
+    },
+    {
+      "date": "2016-10-24",
+      "season": "2016/17",
+      "call": "watch",
+      "peak_significant_wave_height_m": 4.49,
+      "gold_day": true,
+      "gold_tier": "reported"
+    },
+    {
+      "date": "2016-12-17",
+      "season": "2016/17",
+      "call": "none",
+      "peak_significant_wave_height_m": 4.94,
+      "gold_day": true,
+      "gold_tier": "reported"
+    },
+    {
+      "date": "2016-12-19",
+      "season": "2016/17",
+      "call": "go",
+      "peak_significant_wave_height_m": 2.7,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2016-12-20",
+      "season": "2016/17",
+      "call": "go",
+      "peak_significant_wave_height_m": 2.98,
+      "gold_day": true,
+      "gold_tier": "ratified"
+    },
+    {
+      "date": "2016-12-21",
+      "season": "2016/17",
+      "call": "go",
+      "peak_significant_wave_height_m": 2.97,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2016-12-22",
+      "season": "2016/17",
+      "call": "watch",
+      "peak_significant_wave_height_m": 3.32,
+      "gold_day": true,
+      "gold_tier": "reported"
+    },
+    {
+      "date": "2016-12-23",
+      "season": "2016/17",
+      "call": "watch",
+      "peak_significant_wave_height_m": 3.31,
+      "gold_day": true,
+      "gold_tier": "reported"
+    },
+    {
+      "date": "2017-02-28",
+      "season": "2016/17",
+      "call": "watch",
+      "peak_significant_wave_height_m": 5.56,
+      "gold_day": true,
+      "gold_tier": "ratified"
+    },
+    {
+      "date": "2017-03-29",
+      "season": "2016/17",
+      "call": "go",
+      "peak_significant_wave_height_m": 2.76,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2017-11-08",
+      "season": "2017/18",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.25,
+      "gold_day": true,
+      "gold_tier": "ratified"
+    },
+    {
+      "date": "2018-01-04",
+      "season": "2017/18",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.22,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2018-01-18",
+      "season": "2017/18",
+      "call": "go",
+      "peak_significant_wave_height_m": 5.9,
+      "gold_day": true,
+      "gold_tier": "ratified"
+    },
+    {
+      "date": "2018-02-10",
+      "season": "2017/18",
+      "call": "watch",
+      "peak_significant_wave_height_m": 3.81,
+      "gold_day": true,
+      "gold_tier": "ratified"
+    },
+    {
+      "date": "2018-02-11",
+      "season": "2017/18",
+      "call": "none",
+      "peak_significant_wave_height_m": 3.04,
+      "gold_day": true,
+      "gold_tier": "ratified"
+    },
+    {
+      "date": "2018-02-25",
+      "season": "2017/18",
+      "call": "go",
+      "peak_significant_wave_height_m": 2.56,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2018-04-17",
+      "season": "2017/18",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.27,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2018-04-18",
+      "season": "2017/18",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.14,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2018-10-13",
+      "season": "2018/19",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.34,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2018-11-09",
+      "season": "2018/19",
+      "call": "none",
+      "peak_significant_wave_height_m": 4.68,
+      "gold_day": true,
+      "gold_tier": "reported"
+    },
+    {
+      "date": "2018-11-16",
+      "season": "2018/19",
+      "call": "watch",
+      "peak_significant_wave_height_m": 2.98,
+      "gold_day": true,
+      "gold_tier": "ratified"
+    },
+    {
+      "date": "2018-11-17",
+      "season": "2018/19",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.93,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2018-11-18",
+      "season": "2018/19",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.39,
+      "gold_day": true,
+      "gold_tier": "ratified"
+    },
+    {
+      "date": "2018-11-28",
+      "season": "2018/19",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.8,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2018-11-29",
+      "season": "2018/19",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.14,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2018-12-09",
+      "season": "2018/19",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.18,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2018-12-12",
+      "season": "2018/19",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.41,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2018-12-14",
+      "season": "2018/19",
+      "call": "watch",
+      "peak_significant_wave_height_m": 5.02,
+      "gold_day": true,
+      "gold_tier": "reported"
+    },
+    {
+      "date": "2019-02-06",
+      "season": "2018/19",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.27,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2019-02-07",
+      "season": "2018/19",
+      "call": "watch",
+      "peak_significant_wave_height_m": 3.99,
+      "gold_day": true,
+      "gold_tier": "reported"
+    },
+    {
+      "date": "2019-02-18",
+      "season": "2018/19",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.29,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2019-02-21",
+      "season": "2018/19",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.3,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2019-02-22",
+      "season": "2018/19",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.55,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2019-02-25",
+      "season": "2018/19",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.13,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2019-10-03",
+      "season": "2019/20",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.03,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2019-10-04",
+      "season": "2019/20",
+      "call": "go",
+      "peak_significant_wave_height_m": 2.9,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2019-11-13",
+      "season": "2019/20",
+      "call": "watch",
+      "peak_significant_wave_height_m": 4.33,
+      "gold_day": true,
+      "gold_tier": "reported"
+    },
+    {
+      "date": "2019-11-20",
+      "season": "2019/20",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.21,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2019-12-16",
+      "season": "2019/20",
+      "call": "go",
+      "peak_significant_wave_height_m": 5.33,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2019-12-29",
+      "season": "2019/20",
+      "call": "go",
+      "peak_significant_wave_height_m": 2.65,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2020-01-07",
+      "season": "2019/20",
+      "call": "go",
+      "peak_significant_wave_height_m": 2.69,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2020-01-08",
+      "season": "2019/20",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.0,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2020-01-09",
+      "season": "2019/20",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.46,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2020-01-14",
+      "season": "2019/20",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.29,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2020-01-16",
+      "season": "2019/20",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.7,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2020-02-11",
+      "season": "2019/20",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.66,
+      "gold_day": true,
+      "gold_tier": "ratified"
+    },
+    {
+      "date": "2020-02-12",
+      "season": "2019/20",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.59,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2020-02-15",
+      "season": "2019/20",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.81,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2020-02-16",
+      "season": "2019/20",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.89,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2020-02-17",
+      "season": "2019/20",
+      "call": "watch",
+      "peak_significant_wave_height_m": 4.98,
+      "gold_day": true,
+      "gold_tier": "reported"
+    },
+    {
+      "date": "2020-10-29",
+      "season": "2020/21",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.79,
+      "gold_day": true,
+      "gold_tier": "ratified"
+    },
+    {
+      "date": "2020-11-13",
+      "season": "2020/21",
+      "call": "go",
+      "peak_significant_wave_height_m": 2.66,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2020-11-14",
+      "season": "2020/21",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.35,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2020-11-29",
+      "season": "2020/21",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.04,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2020-12-12",
+      "season": "2020/21",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.33,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2020-12-14",
+      "season": "2020/21",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.4,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2021-02-14",
+      "season": "2020/21",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.89,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2021-02-24",
+      "season": "2020/21",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.76,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2021-03-11",
+      "season": "2020/21",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.94,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2021-03-30",
+      "season": "2020/21",
+      "call": "go",
+      "peak_significant_wave_height_m": 2.94,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2021-10-08",
+      "season": "2021/22",
+      "call": "go",
+      "peak_significant_wave_height_m": 2.86,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2021-11-13",
+      "season": "2021/22",
+      "call": "go",
+      "peak_significant_wave_height_m": 2.72,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2021-11-14",
+      "season": "2021/22",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.01,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2021-11-15",
+      "season": "2021/22",
+      "call": "go",
+      "peak_significant_wave_height_m": 2.99,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2021-11-19",
+      "season": "2021/22",
+      "call": "none",
+      "peak_significant_wave_height_m": 2.06,
+      "gold_day": true,
+      "gold_tier": "reported"
+    },
+    {
+      "date": "2021-12-11",
+      "season": "2021/22",
+      "call": "watch",
+      "peak_significant_wave_height_m": 3.59,
+      "gold_day": true,
+      "gold_tier": "reported"
+    },
+    {
+      "date": "2021-12-12",
+      "season": "2021/22",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.37,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2021-12-13",
+      "season": "2021/22",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.22,
+      "gold_day": true,
+      "gold_tier": "ratified"
+    },
+    {
+      "date": "2021-12-23",
+      "season": "2021/22",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.09,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2021-12-28",
+      "season": "2021/22",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.65,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2022-01-07",
+      "season": "2021/22",
+      "call": "go",
+      "peak_significant_wave_height_m": 5.17,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2022-01-08",
+      "season": "2021/22",
+      "call": "go",
+      "peak_significant_wave_height_m": 5.02,
+      "gold_day": true,
+      "gold_tier": "ratified"
+    },
+    {
+      "date": "2022-01-12",
+      "season": "2021/22",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.6,
+      "gold_day": true,
+      "gold_tier": "reported"
+    },
+    {
+      "date": "2022-02-09",
+      "season": "2021/22",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.34,
+      "gold_day": true,
+      "gold_tier": "reported"
+    },
+    {
+      "date": "2022-02-10",
+      "season": "2021/22",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.63,
+      "gold_day": true,
+      "gold_tier": "ratified"
+    },
+    {
+      "date": "2022-02-11",
+      "season": "2021/22",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.47,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2022-02-24",
+      "season": "2021/22",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.06,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2022-02-25",
+      "season": "2021/22",
+      "call": "go",
+      "peak_significant_wave_height_m": 5.28,
+      "gold_day": true,
+      "gold_tier": "reported"
+    },
+    {
+      "date": "2022-02-26",
+      "season": "2021/22",
+      "call": "watch",
+      "peak_significant_wave_height_m": 4.3,
+      "gold_day": true,
+      "gold_tier": "ratified"
+    },
+    {
+      "date": "2022-02-27",
+      "season": "2021/22",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.35,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2022-03-01",
+      "season": "2021/22",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.06,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2022-03-20",
+      "season": "2021/22",
+      "call": "go",
+      "peak_significant_wave_height_m": 2.59,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2022-03-22",
+      "season": "2021/22",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.23,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2022-11-06",
+      "season": "2022/23",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.87,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2022-11-07",
+      "season": "2022/23",
+      "call": "go",
+      "peak_significant_wave_height_m": 5.03,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2022-11-30",
+      "season": "2022/23",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.1,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2023-01-12",
+      "season": "2022/23",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.84,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2023-02-28",
+      "season": "2022/23",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.3,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2023-03-03",
+      "season": "2022/23",
+      "call": "go",
+      "peak_significant_wave_height_m": 2.82,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2024-01-09",
+      "season": "2023/24",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.23,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2024-01-22",
+      "season": "2023/24",
+      "call": "watch",
+      "peak_significant_wave_height_m": 3.85,
+      "gold_day": true,
+      "gold_tier": "ratified"
+    },
+    {
+      "date": "2024-02-18",
+      "season": "2023/24",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.24,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2024-02-22",
+      "season": "2023/24",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.59,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2025-01-16",
+      "season": "2024/25",
+      "call": "go",
+      "peak_significant_wave_height_m": 2.58,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2025-01-19",
+      "season": "2024/25",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.26,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2025-02-18",
+      "season": "2024/25",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.8,
+      "gold_day": true,
+      "gold_tier": "ratified"
+    },
+    {
+      "date": "2025-02-24",
+      "season": "2024/25",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.17,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2025-03-17",
+      "season": "2024/25",
+      "call": "go",
+      "peak_significant_wave_height_m": 3.73,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2025-12-08",
+      "season": "2025/26",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.13,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2025-12-12",
+      "season": "2025/26",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.66,
+      "gold_day": false,
+      "gold_tier": null
+    },
+    {
+      "date": "2025-12-13",
+      "season": "2025/26",
+      "call": "go",
+      "peak_significant_wave_height_m": 5.3,
+      "gold_day": true,
+      "gold_tier": "ratified"
+    },
+    {
+      "date": "2025-12-18",
+      "season": "2025/26",
+      "call": "go",
+      "peak_significant_wave_height_m": 4.46,
+      "gold_day": false,
+      "gold_tier": null
+    }
+  ]
+}

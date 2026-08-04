@@ -46,6 +46,7 @@ weather services separate a *watch* from a *warning*.
 | **Training target** | *Built.* Significant wave height from Monican02, the Instituto Hidrográfico mooring 15km off Nazaré near the canyon head. Hourly from 2010, via the Copernicus Marine In Situ TAC. Coverage is uneven and two winters are missing entirely. No buoy data reaches the running system: it is analysed in `analysis/buoy_coverage/` and became a dataset in #9 — **73,601 hours paired with the Hindcast across 14 seasons**, in [`analysis/training_dataset/`](./analysis/training_dataset/). |
 | **Calibration** | *Applied.* A hand-verified set of days confirmed as genuinely giant — contest days, ratified records — establishing what a predicted height actually means. Thirty-eight are sourced in `analysis/gold_days/`, and since #36 verified and #39 ingested the Copernicus wave reanalysis, all thirty-eight carry a real Swell partition rather than only the 9 since 2022. [`analysis/calibration/`](./analysis/calibration/) fits the thresholds against them, split on Big-Wave Season boundaries: **25 to choose them, 13 held back to check them**. The interface states that number rather than implying a precision the record cannot support. |
 | **Learned model** | *Shipped, and it does not win everywhere.* A least-squares fit on the training dataset, active since #13 and selected by `NAZARENOW_MODEL`. Held out on 2020/21–2025/26 it is **worse across all hours** (0.207m against 0.196m of mean absolute error) and **better in every band above 3m**, reaching 0.621m against 1.031m above 6m and 0.564m against 0.885m on Gold Day hours. It corrects a systematic under-read rather than adding scale: the Hindcast sits about 0.86m below the buoy on the biggest held-out days. It changes the predicted height only — every Watch and Go Call is still the rule's — and what it learned is the difference between a reanalysis and a buoy, **not** the canyon's Amplification. [`analysis/amplification_model/`](./analysis/amplification_model/). |
+| **Track record** | *Published.* Since #16 the site carries a page stating what the system called and what happened, at `/api/track-record` and below the forecast. It is a **file, not a computation** — [`analysis/track_record/`](./analysis/track_record/) joins the committed reports into `backend/src/nazarenow/track_record.json` and the API only reads it, because scoring the record at request time would mean re-deriving what the system "would have said" from data that did not exist when it said it. Held out, the Watch tier catches **12 of 13** Gold Days on 193 flagged days and the Go Call tier **9 of 13** on 43, so **at most 34 of 43 Go Calls — 79% — would have been a wasted trip**. Every accuracy figure carries the Heuristic Baseline beside it, structurally: a band without both models is refused by the loader and by the frontend's one runtime check. The served figures are #52's corrected ones, not `served_path_scores.csv`'s, whose two most flattering rows measure the shipped Translation's own extrapolation. Two rows carry a caveat published with them, because their sources insist: the Gold Day comparison rests on five days, and the served `Combined Sea ≥ 3 m` aggregate is **not robust** — it falls from +0.027 to −0.004 under a residual grown with the sea, and it is the shipped fit that reverses. |
 | **Baseline** | The surf community's rule of thumb, implemented first and retained permanently as the benchmark any learned model must beat. Scored in [`analysis/backtest/`](./analysis/backtest/). Over the whole 2011–2025 record it catches **33 of 38** Gold Days at Watch or better and 16 at Go Call, on 574 Watch days and 128 Go Calls — about 36 and 8 a season. Read those two together: the Watch tier used to catch 37 of 38 on 1050 days, and #43 halved its cost for four Gold Days that the held-out split says were never worth anything (12 of 13 either way). The honest figures are the held-out ones in [`analysis/calibration/`](./analysis/calibration/). |
 
 ## Running it locally
@@ -158,7 +159,7 @@ downloaded data, so CI checks them statically:
 .venv/Scripts/python.exe -m ruff format --check analysis/
 ```
 
-Thirteen exceptions, all fully runnable because they need no credentials:
+Fourteen exceptions, all fully runnable because they need no credentials:
 
 ```bash
 .venv/Scripts/python.exe analysis/gold_days/build.py --check
@@ -174,6 +175,7 @@ Thirteen exceptions, all fully runnable because they need no credentials:
 .venv/Scripts/python.exe analysis/model_spread/agreement.py --check
 .venv/Scripts/python.exe analysis/overlap/measure.py --check
 .venv/Scripts/python.exe analysis/wind_products/gap.py --check
+.venv/Scripts/python.exe analysis/track_record/publish.py --check
 ```
 
 The Gold Day list is hand-written in `analysis/gold_days/README.md` and built from it into
@@ -235,6 +237,16 @@ The finding is that staleness accounts for about 6% of the spread one day out an
 real, growing with Lead Time, and safe to leave uncorrected only because it inflates the
 spread rather than hiding agreement. See
 [`analysis/model_spread/`](./analysis/model_spread/).
+
+The fourteenth joins the committed reports into the track record the site publishes (#16), and
+self-tests the joins that would each publish an individually correct number in the wrong place:
+the Big-Wave Season divisor behind "flags per season", the Gold Day split against the shipped
+threshold file, both tiers surviving every join, and — the one that matters most — that the
+served figures come from #52's fair generator rather than from `served_path_scores.csv`, whose
+`all hours` and `under 2 m` rows read +0.035 and +0.074 against the fair generator's −0.077 and
+−0.126. Reading the wrong file does not fail; it publishes eight plausible numbers, two of them
+wrong in the direction that flatters the learned model. See
+[`analysis/track_record/`](./analysis/track_record/).
 
 **The backtest and the calibration** read only free Open-Meteo data, so they run too, though
 the first downloads about 10 MB the first time:
@@ -320,6 +332,14 @@ Open-Meteo, stored, and displayed with hour-by-hour detail — and every day now
 **Watch**, **Go**, **Confirmed** or **No call**, with the conditions that produced it.
 Every call is kept: the store appends rather than replaces, so the succession of calls
 made about a date as it approaches survives, which is the record #11 scores.
+
+Below the forecast the site now publishes its own track record (#16): what the rule
+would have called across 2011-2025, what actually happened on those days, and how far
+off the predicted height was — always with the Heuristic Baseline beside it. It states
+its own limits in the same breath, above the figures rather than below them: the calls
+are reconstructed from the Hindcast rather than issued in advance, the whole calibration
+rests on 38 confirmed days, and the height it predicts is Significant Wave Height and not
+the Face Height the news quotes.
 
 Each Pipeline Run is recorded in its own right, and the raw responses it fetched and the
 calls it derived both point back at it — so the inputs behind any stored call are a

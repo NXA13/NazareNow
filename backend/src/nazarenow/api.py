@@ -24,6 +24,8 @@ from nazarenow.days import group_by_date
 from nazarenow.decision import Agreement, Status
 from nazarenow.spread import BEARINGS, ORGANISATIONS, is_degraded
 from nazarenow.store import Store, StoreUnavailable
+from nazarenow.track_record import Band, Panel, Tier, TrackRecord, TrackRecordUnusable
+from nazarenow.track_record import load as load_track_record
 
 app = FastAPI(
     title="NazareNow",
@@ -57,6 +59,17 @@ def store_unavailable(_request: Request, error: StoreUnavailable) -> JSONRespons
     error. This keeps that from happening for any path not anticipated.
     """
     return JSONResponse(status_code=500, content={"detail": f"Store unavailable: {error}"})
+
+
+@app.exception_handler(TrackRecordUnusable)
+def track_record_unusable(_request: Request, error: TrackRecordUnusable) -> JSONResponse:
+    """Turn an unusable track record into a described 500, for the reason above.
+
+    Same shape as the store handler and for the same reason: an unhandled exception
+    surfaces outside CORSMiddleware, so a browser sees an opaque CORS failure rather than
+    the error. The dependency catches the expected case; this covers the rest.
+    """
+    return JSONResponse(status_code=500, content={"detail": f"Track record unusable: {error}"})
 
 
 @lru_cache
@@ -483,6 +496,268 @@ def forecast(store: Annotated[Store, Depends(get_store)]) -> Forecast:
             summarise(day, by_date[day], stored.get(day), disagreement.get(day, {}))
             for day in sorted(by_date)
         ],
+    )
+
+
+class TierRecord(BaseModel):
+    """One tier's record against the Gold Days, with every rate already worked out.
+
+    The counts travel too, because a rate without them is not checkable — "69% of Gold Days"
+    reads the same whether it rests on thirteen days or thirteen hundred, and this one rests
+    on thirteen. But the interface never divides: the arithmetic lives in `track_record.py`,
+    for the same reason `degraded` is derived on this side of the seam rather than the other.
+    """
+
+    gold_days_called: int
+    gold_days_in_panel: int
+    days_flagged: int
+
+    recall: float
+    precision_lower_bound: float
+    """A **lower** bound. A flagged day absent from the hand-verified Gold Day list may still
+    have been an XXL Day nobody documented, so the true precision can only be higher."""
+
+    wasted_upper_bound: float
+    days_wasted_upper_bound: int
+    """How often acting on this tier would have been wasted, at worst — the figure #16 asks
+    to be stated plainly rather than left as an inversion the reader performs. Sent as both a
+    share and a count, because a share is comparable and a count is what a reader pictures."""
+
+    flags_per_big_wave_season: float
+
+
+class PanelRecord(BaseModel):
+    """One span the record was scored over.
+
+    Both tiers are named fields rather than a mapping, so a response carrying only one of
+    them cannot be constructed. #16 requires Watch and Go Call accuracy reported separately
+    and never as one figure; making the pair structural means no renderer has to remember.
+    """
+
+    span: str
+    basis: str
+    """What produced the calls — the Hindcast, which is a reconstruction of Offshore
+    Conditions built after the fact and was never available in advance. Named rather than
+    assumed by the interface: a rule scored against a perfect reconstruction flatters itself
+    against the same rule served a real forecast, and a reader is owed which one this is."""
+
+    gold_days: int
+    big_wave_seasons: float
+    watch_or_better: TierRecord
+    go_call: TierRecord
+
+
+class AccuracyBand(BaseModel):
+    """How close each model came on one subset of hours.
+
+    Both errors are required fields. ADR 0006 forbids reporting an accuracy figure without
+    the Heuristic Baseline beside it, and a required pair is a promise the schema keeps.
+    """
+
+    name: str
+    hours: int
+    baseline_mae_m: float
+    learned_mae_m: float
+    gain_m: float
+    """Positive means the learned Amplification Model is closer to the Proxy Target — the
+    sign convention `analysis/amplification_model/` already publishes in."""
+
+    caveat: str | None
+    """What this row cannot carry on its own, on the rows whose source says so.
+
+    Two rows have one. The Gold Day row rests on five days, which
+    `analysis/amplification_model/README.md` says must never be quoted without. And #52
+    measured the served `Combined Sea 3 m and above` aggregate as **not robust** to the
+    reconstruction assumption — it falls from +0.027 to −0.004 under a residual that grows
+    with the sea, and that is the shipped fit rather than an alternative. Sent with the band
+    so the qualification travels into whatever renders the table."""
+
+
+class RecordedDayResponse(BaseModel):
+    date: str
+    season: str
+    call: Status
+    peak_significant_wave_height_m: float
+    """The day's largest Significant Wave Height **in the Hindcast** — which is the same
+    reconstruction the call was derived from, not an independent observation of the outcome.
+    The independently verified part of this row is `gold_day`.
+
+    Not Face Height, and not convertible to it by any fixed ratio — `CONTEXT.md` keeps the
+    two apart because the difference is the whole reason this system predicts the smaller
+    number."""
+
+    gold_day: bool
+    gold_tier: str | None
+
+
+class IssuedRecord(BaseModel):
+    """What this installation has actually issued, as opposed to what the reports reconstruct.
+
+    Kept apart from every figure above, and deliberately unscored. Scoring these would mean
+    comparing a stored call against an observation, and no buoy reading reaches the running
+    system at all — ADR 0002's Proxy Target lives in the analysis directory, for training.
+    So this section counts and dates the retained calls and says nothing about whether they
+    were right, which is the only honest thing it can say.
+
+    It is here because #16 asks for a record derived from predictions as they were issued.
+    The reconstructed panels above cannot demonstrate that on their own, and a page that
+    showed only them would let a backtest read as an operating history.
+    """
+
+    calls_issued: int
+    dates_covered: int
+    go_calls_issued: int
+    first_issued_at: str | None
+    last_issued_at: str | None
+    """None when nothing has been issued yet, which is the ordinary state of a fresh
+    installation and is shown as such rather than as a zero-length record of success."""
+
+
+class PublishedTrackRecord(BaseModel):
+    published_at: str
+    source: str
+    """The path in this repository that regenerates the record, so a reader can check it
+    rather than take it."""
+
+    held_out: PanelRecord
+    full_record: PanelRecord
+    """Two panels, never averaged. The held-out one is measured on Big-Wave Seasons the
+    thresholds never saw; the whole-record one is larger and partly covers the seasons they
+    were fitted on. A reader given only their mean would be given neither."""
+
+    scored: list[AccuracyBand]
+    served: list[AccuracyBand]
+    """The same comparison twice: once on identical Hindcast rows, once along the path a
+    Pipeline Run takes, where the learned model must first restate an Open-Meteo reading into
+    the units it was fitted in. They disagree, and the disagreement is the finding rather
+    than a discrepancy to resolve."""
+
+    gold_days_fitted: int
+    gold_days_validated: int
+    gold_days_total: int
+    days: list[RecordedDayResponse]
+
+    issued: IssuedRecord | None
+    """None when the store could not be opened at all.
+
+    Null rather than a section of zeros, and null rather than a failed request. The
+    published record is a property of the release and does not need the store to exist, so a
+    misconfigured database must not take down the page a reader consults to decide whether
+    to trust the system — but reporting "0 calls issued" for a store nobody could read would
+    be inventing the most flattering of the two possible truths."""
+
+
+def as_tier(tier: Tier) -> TierRecord:
+    return TierRecord(
+        gold_days_called=tier.gold_days_called,
+        gold_days_in_panel=tier.gold_days_in_panel,
+        days_flagged=tier.days_flagged,
+        recall=tier.recall,
+        precision_lower_bound=tier.precision_lower_bound,
+        wasted_upper_bound=tier.wasted_upper_bound,
+        days_wasted_upper_bound=tier.days_wasted_upper_bound,
+        flags_per_big_wave_season=tier.flags_per_big_wave_season,
+    )
+
+
+def as_panel(panel: Panel) -> PanelRecord:
+    return PanelRecord(
+        span=panel.span,
+        basis=panel.basis,
+        gold_days=panel.gold_days,
+        big_wave_seasons=panel.big_wave_seasons,
+        watch_or_better=as_tier(panel.watch_or_better),
+        go_call=as_tier(panel.go_call),
+    )
+
+
+def as_bands(bands: list[Band]) -> list[AccuracyBand]:
+    return [
+        AccuracyBand(
+            name=band.name,
+            hours=band.hours,
+            baseline_mae_m=band.baseline_mae_m,
+            learned_mae_m=band.learned_mae_m,
+            gain_m=band.gain_m,
+            caveat=band.caveat,
+        )
+        for band in bands
+    ]
+
+
+@lru_cache
+def default_track_record() -> TrackRecord:
+    """The published record this process serves.
+
+    Cached because it is a file that cannot change without a release, exactly like the
+    thresholds. Injected below so tests can substitute one.
+    """
+    return load_track_record()
+
+
+def get_track_record() -> TrackRecord:
+    try:
+        return default_track_record()
+    except TrackRecordUnusable as error:
+        raise HTTPException(status_code=500, detail=f"Track record unusable: {error}") from error
+
+
+def optional_store() -> Store | None:
+    """The store, or None when it cannot be opened.
+
+    Only the track record uses this. Every other endpoint needs the store to answer at all,
+    so a fault there is the answer; here the store contributes one section of a page whose
+    substance is a file shipped with the release. Failing the whole request would mean a
+    misconfigured database took down the page a reader consults to decide whether to trust
+    the system — the one page whose absence is indistinguishable from a system with nothing
+    to show.
+    """
+    try:
+        return default_store()
+    except StoreUnavailable:
+        return None
+
+
+@app.get("/api/track-record")
+def track_record(
+    store: Annotated[Store | None, Depends(optional_store)],
+    published: Annotated[TrackRecord, Depends(get_track_record)],
+) -> PublishedTrackRecord:
+    """What the system has called, and what actually happened.
+
+    Ticket #16. Nothing is scored here — the panels are read from a file the analysis
+    directory writes, and the issued counts are read from the store. ADR 0005 makes this
+    layer a reader, and on this endpoint that is more than a rule: re-deriving what the
+    system "would have called" at request time would score it against data that did not
+    exist when it called, which is precisely the flattery the record exists to rule out.
+
+    Served whether or not any Pipeline Run has stored anything, and whether or not the store
+    can be opened at all. The published record is a property of the release, not of this
+    installation's history, and a reader deciding whether to trust the system should not be
+    told there is no record because nothing has been ingested today.
+    """
+    return PublishedTrackRecord(
+        published_at=published.published_at,
+        source=published.source,
+        held_out=as_panel(published.held_out),
+        full_record=as_panel(published.full_record),
+        scored=as_bands(published.scored),
+        served=as_bands(published.served),
+        gold_days_fitted=published.gold_days_fitted,
+        gold_days_validated=published.gold_days_validated,
+        gold_days_total=published.gold_days_total,
+        days=[
+            RecordedDayResponse(
+                date=day.date,
+                season=day.season,
+                call=day.call,
+                peak_significant_wave_height_m=day.peak_significant_wave_height_m,
+                gold_day=day.gold_day,
+                gold_tier=day.gold_tier,
+            )
+            for day in published.days
+        ],
+        issued=None if store is None else IssuedRecord(**store.issued_summary()),
     )
 
 

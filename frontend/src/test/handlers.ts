@@ -12,7 +12,14 @@
 
 import { http, HttpResponse } from 'msw';
 
-import type { Calibration, CallStatus, CurrentConditions, DaySpread, Forecast } from '../api';
+import type {
+  Calibration,
+  CallStatus,
+  CurrentConditions,
+  DaySpread,
+  Forecast,
+  TrackRecord,
+} from '../api';
 
 export const currentConditions: CurrentConditions = {
   observed_at: '2026-02-13T09:00',
@@ -223,7 +230,180 @@ export const calibration: Calibration = {
   fitted_at: '2026-08-02',
 };
 
+/**
+ * The published track record (#16).
+ *
+ * Every figure is the real one, and that is deliberate. This page exists to state the
+ * system's limitations plainly, so a fixture with rounder, kinder numbers would let a test
+ * assert that the caveats are shown while the component quietly renders a different, more
+ * flattering system than the one that ships.
+ *
+ * The two panels differ in every count, so a component reading the wrong one cannot pass.
+ * The two accuracy tables disagree in sign on `all hours` for the same reason: that
+ * disagreement is the actual finding, and a fixture where both tables agreed could not tell
+ * a page rendering each from one rendering the first table twice.
+ */
+export const trackRecord: TrackRecord = {
+  published_at: '2026-08-04',
+  source: 'analysis/track_record/publish.py',
+  held_out: {
+    span: '2020/21-2025/26',
+    basis: 'Hindcast',
+    gold_days: 13,
+    big_wave_seasons: 6,
+    watch_or_better: {
+      gold_days_called: 12,
+      gold_days_in_panel: 13,
+      days_flagged: 193,
+      recall: 12 / 13,
+      precision_lower_bound: 12 / 193,
+      wasted_upper_bound: 1 - 12 / 193,
+      days_wasted_upper_bound: 181,
+      flags_per_big_wave_season: 193 / 6,
+    },
+    go_call: {
+      gold_days_called: 9,
+      gold_days_in_panel: 13,
+      days_flagged: 43,
+      recall: 9 / 13,
+      precision_lower_bound: 9 / 43,
+      wasted_upper_bound: 1 - 9 / 43,
+      days_wasted_upper_bound: 34,
+      flags_per_big_wave_season: 43 / 6,
+    },
+  },
+  full_record: {
+    span: '2011-2025',
+    basis: 'Hindcast',
+    gold_days: 38,
+    big_wave_seasons: 16,
+    watch_or_better: {
+      gold_days_called: 33,
+      gold_days_in_panel: 38,
+      days_flagged: 574,
+      recall: 33 / 38,
+      precision_lower_bound: 33 / 574,
+      wasted_upper_bound: 1 - 33 / 574,
+      days_wasted_upper_bound: 541,
+      flags_per_big_wave_season: 574 / 16,
+    },
+    go_call: {
+      gold_days_called: 16,
+      gold_days_in_panel: 38,
+      days_flagged: 128,
+      recall: 16 / 38,
+      precision_lower_bound: 16 / 128,
+      wasted_upper_bound: 1 - 16 / 128,
+      days_wasted_upper_bound: 112,
+      flags_per_big_wave_season: 128 / 16,
+    },
+  },
+  // Exactly two rows carry a caveat, as in the real record: the strongest-looking figure on
+  // the page, and the one aggregate whose sign does not survive #52's sensitivity check. The
+  // rest are null, so a component that rendered a note against every row could not pass.
+  scored: [
+    {
+      name: 'all hours',
+      hours: 28426,
+      baseline_mae_m: 0.1964,
+      learned_mae_m: 0.207,
+      gain_m: -0.0106,
+      caveat: null,
+    },
+    {
+      name: 'Gold Day hours',
+      hours: 120,
+      baseline_mae_m: 0.8851,
+      learned_mae_m: 0.5636,
+      gain_m: 0.3215,
+      caveat: '120 hours across only 5 Gold Days.',
+    },
+    {
+      name: '6 m and above',
+      hours: 325,
+      baseline_mae_m: 1.0313,
+      learned_mae_m: 0.6211,
+      gain_m: 0.4102,
+      caveat: null,
+    },
+  ],
+  served: [
+    {
+      name: 'all hours',
+      hours: 28426,
+      baseline_mae_m: 0.2197,
+      learned_mae_m: 0.2971,
+      gain_m: -0.0774,
+      caveat: null,
+    },
+    {
+      name: 'Combined Sea 3 m and above',
+      hours: 4473,
+      baseline_mae_m: 0.4278,
+      learned_mae_m: 0.4005,
+      gain_m: 0.0273,
+      caveat: 'Not robust to the reconstruction assumption: +0.027 becomes -0.004.',
+    },
+    {
+      name: 'under 2 m',
+      hours: 15665,
+      baseline_mae_m: 0.1562,
+      learned_mae_m: 0.282,
+      gain_m: -0.1258,
+      caveat: null,
+    },
+    // Deliberately not 0.3555. A gain landing exactly on a rounding boundary makes the
+    // rendered string depend on floating-point representation rather than on the component,
+    // so the test would be asserting arithmetic nobody wrote.
+    {
+      name: '6 m and above',
+      hours: 325,
+      baseline_mae_m: 1.0109,
+      learned_mae_m: 0.6549,
+      gain_m: 0.356,
+      caveat: null,
+    },
+  ],
+  gold_days_fitted: 25,
+  gold_days_validated: 13,
+  gold_days_total: 38,
+  days: [
+    {
+      date: '2011-11-01',
+      season: '2011/12',
+      call: 'watch',
+      peak_significant_wave_height_m: 3.4,
+      gold_day: true,
+      gold_tier: 'ratified',
+    },
+    {
+      date: '2018-01-18',
+      season: '2017/18',
+      call: 'none',
+      peak_significant_wave_height_m: 5.02,
+      gold_day: true,
+      gold_tier: 'ratified',
+    },
+    {
+      date: '2024-12-30',
+      season: '2024/25',
+      call: 'go',
+      peak_significant_wave_height_m: 4.61,
+      gold_day: false,
+      gold_tier: null,
+    },
+  ],
+  issued: {
+    calls_issued: 0,
+    dates_covered: 0,
+    go_calls_issued: 0,
+    first_issued_at: null,
+    last_issued_at: null,
+  },
+};
+
 export const handlers = [
   http.get('*/api/conditions/forecast', () => HttpResponse.json(forecast)),
   http.get('*/api/conditions/current', () => HttpResponse.json(currentConditions)),
+  http.get('*/api/track-record', () => HttpResponse.json(trackRecord)),
 ];

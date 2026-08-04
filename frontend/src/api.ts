@@ -191,6 +191,157 @@ export interface Calibration {
   fitted_at: string;
 }
 
+/**
+ * One tier's record against the days independently confirmed as giant.
+ *
+ * Every rate arrives already worked out. This layer does no arithmetic on them, for the
+ * same reason it does not derive `degraded` or count the provider roster: a second
+ * implementation of a figure is a second answer, and the one on the page is the one nobody
+ * re-derives. The counts travel too, because a rate without them is not checkable — "69% of
+ * the days that mattered" reads the same whether it rests on thirteen days or thirteen
+ * hundred, and it rests on thirteen.
+ */
+export interface TierRecord {
+  gold_days_called: number;
+  gold_days_in_panel: number;
+  days_flagged: number;
+  recall: number;
+  /** A **lower** bound. A flagged day missing from the hand-verified list may still have
+   * been a genuinely giant day nobody documented, so the truth can only be kinder. */
+  precision_lower_bound: number;
+  /** How often acting on this tier would have been wasted, at worst — the complement of a
+   * lower bound. Rendered as given, and never softened: the page is asking someone to
+   * spend money on the strength of it. */
+  wasted_upper_bound: number;
+  days_wasted_upper_bound: number;
+  flags_per_big_wave_season: number;
+}
+
+/** One span the record was scored over.
+ *
+ * Both tiers are fields rather than a map, so a panel missing one cannot be constructed —
+ * a watch and a go call are different promises and are never reported as one figure. */
+export interface PanelRecord {
+  span: string;
+  /** What produced the calls. A reconstruction of the conditions built afterwards is not
+   * the same evidence as a forecast issued in advance, and the page says which. */
+  basis: string;
+  gold_days: number;
+  big_wave_seasons: number;
+  watch_or_better: TierRecord;
+  go_call: TierRecord;
+}
+
+/**
+ * How close each model came, over one subset of hours.
+ *
+ * Both errors are required. ADR 0006 forbids reporting an accuracy figure without the
+ * Heuristic Baseline beside it, and a required pair is a promise the type keeps — there is
+ * no shape here in which one model's number travels alone.
+ */
+export interface AccuracyBand {
+  name: string;
+  hours: number;
+  baseline_mae_m: number;
+  learned_mae_m: number;
+  /** Positive means the learned model is closer to the buoy. */
+  gain_m: number;
+  /** What this row cannot carry on its own, on the rows whose source says so.
+   *
+   * Sent with the band rather than written into the page, so the qualification travels with
+   * the number instead of living next to one particular table. Two rows have one, and both
+   * are figures that look strong until qualified — which is the kind a page drops. */
+  caveat: string | null;
+}
+
+export interface RecordedDay {
+  date: string;
+  season: string;
+  call: CallStatus;
+  /** The largest significant wave height that day **in the reconstruction the call was made
+   * from** — not an independent measurement of how the day turned out. The independently
+   * verified part of a row is `gold_day`.
+   *
+   * The whole sea, 15km offshore near the head of the canyon. Not the height of a wave face
+   * at the beach, and not convertible to it by any fixed ratio. */
+  peak_significant_wave_height_m: number;
+  gold_day: boolean;
+  gold_tier: string | null;
+}
+
+/** What this installation has actually issued, as opposed to what the reports reconstruct.
+ *
+ * Deliberately unscored, and the page says why: no buoy reading reaches the running system,
+ * so there is nothing here to score a stored call against. Counting them is the honest
+ * limit of what this section can claim. */
+export interface IssuedRecord {
+  calls_issued: number;
+  dates_covered: number;
+  go_calls_issued: number;
+  /** Null on a fresh installation, which is shown as "nothing yet" rather than as an empty
+   * record of success. */
+  first_issued_at: string | null;
+  last_issued_at: string | null;
+}
+
+export interface TrackRecord {
+  published_at: string;
+  /** The path in the repository that regenerates the record, rendered so a reader can go
+   * and check it rather than take it on trust. */
+  source: string;
+  /** Two panels, never averaged. One is measured only on seasons the thresholds never saw;
+   * the other is larger and partly covers the seasons they were chosen on. */
+  held_out: PanelRecord;
+  full_record: PanelRecord;
+  /** The two models compared on identical hours, each reading the reconstruction. */
+  scored: AccuracyBand[];
+  /** The same comparison along the path the running system actually takes. They disagree,
+   * and the disagreement is the finding rather than a discrepancy to tidy away. */
+  served: AccuracyBand[];
+  gold_days_fitted: number;
+  gold_days_validated: number;
+  gold_days_total: number;
+  days: RecordedDay[];
+  /** Null when the backend could not open its store at all. Distinct from a store with
+   * nothing in it, which reports zeros: this one is "we do not know", and the page says so
+   * rather than showing a fresh installation's numbers for a database nobody could read. */
+  issued: IssuedRecord | null;
+}
+
+/**
+ * The one runtime check in this module, and it earns its place.
+ *
+ * `AccuracyBand` requires both models' error, but a type is a compile-time promise and the
+ * body arriving here is untyped JSON. ADR 0006 forbids reporting an accuracy figure without
+ * the Heuristic Baseline beside it, and without this the failure is not a missing column —
+ * it is a crash inside the number formatter, which React renders as a blank page. Neither
+ * outcome tells a reader anything, and one of them looks like a system with no track record
+ * rather than a page that could not load one.
+ *
+ * So a band missing either model makes the whole record unusable, deliberately. Dropping the
+ * row instead would publish a shorter table with no sign it was ever longer.
+ */
+function bandsAreComplete(bands: AccuracyBand[]): boolean {
+  return bands.every(
+    (band) => typeof band?.baseline_mae_m === 'number' && typeof band?.learned_mae_m === 'number',
+  );
+}
+
+export async function fetchTrackRecord(): Promise<TrackRecord> {
+  const response = await fetch(`${API_BASE}/api/track-record`);
+  if (!response.ok) {
+    throw new Error(`Track record request failed with status ${response.status}`);
+  }
+  const record = (await response.json()) as TrackRecord;
+
+  if (!bandsAreComplete(record.scored ?? []) || !bandsAreComplete(record.served ?? [])) {
+    throw new Error(
+      'Track record carries an accuracy band without both models, which ADR 0006 does not permit',
+    );
+  }
+  return record;
+}
+
 export async function fetchForecast(): Promise<Forecast> {
   const response = await fetch(`${API_BASE}/api/conditions/forecast`);
   if (!response.ok) {

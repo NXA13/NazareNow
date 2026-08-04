@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { fetchCurrentConditions, type CurrentConditions, type Reading } from './api';
 import { ForecastRange } from './Forecast';
 import { compassPoint, formatTimestamp, formatValue } from './format';
+import { TrackRecordPage } from './TrackRecord';
 import './App.css';
 
 type LoadState =
@@ -132,6 +133,12 @@ export function App() {
           </section>
 
           <ForecastRange />
+
+          {/* Below the forecast rather than above it: someone arriving already knows what
+              they came for. But on the same page rather than behind a link, because a
+              track record nobody navigates to is a limitation nobody reads. It fetches
+              independently, so a failure here costs the record and not the forecast. */}
+          <TrackRecordPage />
 
           <footer>
             <p data-testid="freshness">
