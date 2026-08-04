@@ -47,7 +47,7 @@ like agreement and is not.
 | 2021-01 … 2022-10 | 720–744 | **every one** | 0.000 | backfill (ERA5) |
 | 2022-11 | 720 | 372 | 2.004 | boundary — part of each |
 | 2022-12 | 744 | 3 | 3.281 | forecast |
-| 2023-01 | 360 | 4 | 3.023 | forecast |
+| 2023-01 | 744 | 5 | 3.345 | forecast |
 
 The boundary is **2022-11-16T09:00**, the first hour that differs at all. After it, exact matches
 run at about 1.4% — the rate two independent series agree by coincidence when readings are

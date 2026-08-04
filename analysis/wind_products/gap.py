@@ -359,7 +359,7 @@ def measure_gap(subset: str, hours: list[Paired], regime: str = "hours") -> Gap:
     xs = [hour.hindcast_kmh for hour in hours]
     ys = [hour.forecast_kmh for hour in hours]
     differences = [hour.difference for hour in hours]
-    slope, intercept, residual = measure._least_squares(xs, ys)
+    slope, intercept, residual = measure.least_squares(xs, ys)
     n = len(hours)
     return Gap(
         subset=subset,
@@ -381,7 +381,17 @@ def measure_gap(subset: str, hours: list[Paired], regime: str = "hours") -> Gap:
     )
 
 
-def fit_translation(start: date = START, end: date = END) -> measure.Translation:
+def exemption_band(paired: list[Paired]) -> list[Paired]:
+    """The hours below `EXEMPTION_BAND_KMH`, on the Hindcast axis.
+
+    One definition, because the transform is fitted on this band and the report scores it,
+    and a fit quietly cut differently from the row describing it is the kind of drift the
+    numbers here would not reveal.
+    """
+    return [hour for hour in paired if hour.hindcast_kmh < EXEMPTION_BAND_KMH]
+
+
+def fit_translation(paired: list[Paired] | None = None) -> measure.Translation:
     """The Hindcast-to-forecast transform for wind, in the regime the exemption decides in.
 
     What `calibrate.py` restates the fitted exemption with, in the same shape and the same
@@ -396,13 +406,17 @@ def fit_translation(start: date = START, end: date = END) -> measure.Translation
     **The choice of band is not load-bearing.** The band below `EXEMPTION_BAND_KMH` and the
     narrow window straddling the bar disagree about the slope and agree about the shipped
     number once it is rounded to the calibration's step. `README.md` reports all three.
+
+    `paired` is taken as an argument so a caller that has already paired the record does not
+    pair it twice. `calibrate.py` and `backtest.py` call this once each and pass nothing,
+    which is why it still knows how to do the work itself.
     """
-    band = [hour for hour in pair_hours(start, end) if hour.hindcast_kmh < EXEMPTION_BAND_KMH]
+    band = exemption_band(pair_hours() if paired is None else paired)
     if len(band) < 2:
         raise RuntimeError(
-            f"fewer than two hours below {EXEMPTION_BAND_KMH:g} km/h in {start}..{end}; the "
-            "regime the exemption operates in is not represented and the transform would be "
-            "fitted on weather that never blocks a Gold Day"
+            f"fewer than two hours below {EXEMPTION_BAND_KMH:g} km/h; the regime the "
+            "exemption operates in is not represented and the transform would be fitted on "
+            "weather that never blocks a Gold Day"
         )
     return measure_gap(
         f"exemption band (Hindcast < {EXEMPTION_BAND_KMH:g} km/h)",
@@ -426,7 +440,6 @@ class Verdicts:
     input error the wind condition was working from.
     """
 
-    label: str
     bar: float
     n: int
     over_admitted: int
@@ -441,9 +454,7 @@ class Verdicts:
         return self.disagreements / self.n if self.n else 0.0
 
 
-def exemption_verdicts(
-    paired: list[Paired], fitted_bar: float, shipped_bar: float, label: str
-) -> Verdicts:
+def exemption_verdicts(paired: list[Paired], fitted_bar: float, shipped_bar: float) -> Verdicts:
     """Score a shipped bar against the fit's intent, hour by hour.
 
     `over_admitted` are hours the deployed bar treats as light wind that the fit would not
@@ -458,7 +469,6 @@ def exemption_verdicts(
         1 for hour in paired if hour.forecast_kmh > shipped_bar and hour.hindcast_kmh <= fitted_bar
     )
     return Verdicts(
-        label=label,
         bar=shipped_bar,
         n=len(paired),
         over_admitted=over,
@@ -478,7 +488,7 @@ def subsets(paired: list[Paired], bar: float) -> list[tuple[str, list[Paired]]]:
         ("all hours", paired),
         (
             f"exemption band (Hindcast < {EXEMPTION_BAND_KMH:g} km/h)",
-            [h for h in paired if h.hindcast_kmh < EXEMPTION_BAND_KMH],
+            exemption_band(paired),
         ),
         (
             f"straddling the bar (Hindcast {bar - 2:g}-{bar + 2:g} km/h)",
@@ -512,7 +522,20 @@ def write_csv(gaps: list[Gap], bar: float) -> Path:
     return path
 
 
-def probe_backfill(months: int = 24) -> list[tuple[str, int, int, float]]:
+PROBE_FIRST = date(2021, 1, 1)
+PROBE_LAST = date(2023, 1, 31)
+"""The span the probe walks, in whole months either side of the boundary.
+
+Whole months because a partial one reports fewer hours than its neighbours and reads as a
+gap in the archive rather than as the edge of the probe. Two years of backfill before the
+boundary and two months of forecast after it is enough to show which side each month is on
+without re-downloading the record.
+"""
+
+
+def probe_backfill(
+    first: date = PROBE_FIRST, last: date = PROBE_LAST
+) -> list[tuple[str, int, int, float]]:
     """Where does the backfill stop? Month by month, by exact-match count.
 
     Returns `(month, hours, exact matches, mean absolute difference)`. A backfilled month
@@ -522,8 +545,7 @@ def probe_backfill(months: int = 24) -> list[tuple[str, int, int, float]]:
     """
     era5 = hindcast_wind()
     rows = []
-    first = date(2021, 1, 1)
-    for index, (start, end) in enumerate(_months(first, first + timedelta(days=31 * months))):
+    for index, (start, end) in enumerate(_months(first, last)):
         key = f"probe_wind_{start:%Y-%m}"
         cached = (CACHE / f"{key}.json").exists()
         body = _get(
@@ -634,6 +656,41 @@ def check() -> int:
         ],
     )
 
+    # The verdict counts are the headline of this whole measurement, and the two directions
+    # are trivially transposable — a swapped comparison would still produce two plausible
+    # numbers that sum to the same total, and the conclusion would reverse in silence. So
+    # each direction is pinned separately, on hours built to exercise exactly one of them.
+    #
+    # Fit admits ERA5 <= 16.5; the deployed bar is applied to the forecast reading.
+    fit_admits_only = Paired(at="h", hindcast_kmh=16.0, forecast_kmh=20.0)
+    bar_admits_only = Paired(at="h", hindcast_kmh=18.0, forecast_kmh=12.0)
+    both_admit = Paired(at="h", hindcast_kmh=10.0, forecast_kmh=9.0)
+    neither = Paired(at="h", hindcast_kmh=30.0, forecast_kmh=28.0)
+
+    over = exemption_verdicts([bar_admits_only], 16.5, 16.5)
+    expect("a bar admitting what the fit refuses is over-admission", over.over_admitted, 1)
+    expect("...and not under-admission", over.under_admitted, 0)
+
+    under = exemption_verdicts([fit_admits_only], 16.5, 16.5)
+    expect("a bar refusing what the fit admits is under-admission", under.under_admitted, 1)
+    expect("...and not over-admission", under.over_admitted, 0)
+
+    agreed = exemption_verdicts([both_admit, neither], 16.5, 16.5)
+    expect("hours the two agree on count as neither", agreed.disagreements, 0)
+
+    # The boundary is `<=` on both sides: an hour exactly at the bar is admitted, not refused.
+    # Written as `<` the Gold Day that set the exemption falls straight back out of it.
+    at_both_bars = Paired(at="h", hindcast_kmh=16.5, forecast_kmh=14.5)
+    expect(
+        "an hour exactly at both bars disagrees with nothing",
+        exemption_verdicts([at_both_bars], 16.5, 14.5).disagreements,
+        0,
+    )
+
+    mixed = exemption_verdicts([bar_admits_only, fit_admits_only, both_admit], 16.5, 16.5)
+    expect("the share counts every hour, not just the disagreeing ones", mixed.n, 3)
+    expect("...and reports two of three", round(mixed.share, 6), round(2 / 3, 6))
+
     # The month the archive opens in is the one the probe exists to find, so it must not be
     # rounded into either neighbour. 372 of 720 is the real reading from 2022-11.
     expect("a fully backfilled month is named", _verdict(744, 744), "BACKFILL (ERA5)")
@@ -720,7 +777,7 @@ def main() -> int:
     # What the bar was doing before #51 translated it, against what it does now. Before #51
     # the shipped bar *was* the fitted bar, so the comparison is the fitted value against
     # its translation.
-    translation = fit_translation()
+    translation = fit_translation(paired)
     translated = math.ceil(translation.apply(FITTED_EXEMPTION_KMH) / LIGHT_WIND_STEP_KMH) * (
         LIGHT_WIND_STEP_KMH
     )
@@ -740,7 +797,7 @@ def main() -> int:
         ("untranslated (before #51)", FITTED_EXEMPTION_KMH),
         ("shipped", shipped_bar),
     ):
-        verdicts = exemption_verdicts(paired, FITTED_EXEMPTION_KMH, shipped, label)
+        verdicts = exemption_verdicts(paired, FITTED_EXEMPTION_KMH, shipped)
         print(
             f"  {label:26s} bar {verdicts.bar:5.2f} km/h: "
             f"{verdicts.over_admitted:5d} admitted the fit would refuse, "

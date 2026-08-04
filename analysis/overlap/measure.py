@@ -338,7 +338,7 @@ class Translation:
         )
 
 
-def _least_squares(xs: list[float], ys: list[float]) -> tuple[float, float, float]:
+def least_squares(xs: list[float], ys: list[float]) -> tuple[float, float, float]:
     """Slope, intercept and residual RMSE of `ys` on `xs`."""
     n = len(xs)
     if n < 2:
@@ -382,7 +382,7 @@ def fit_translations(product: reanalysis.Product = reanalysis.IBI) -> dict[str, 
             [h.operational_period for h in hours],
         ),
     ):
-        slope, intercept, rmse = _least_squares(candidate, actual)
+        slope, intercept, rmse = least_squares(candidate, actual)
         fitted[variable] = Translation(
             variable=variable,
             slope=slope,
@@ -473,7 +473,7 @@ def check() -> int:
     # The translation recovers a line it is given exactly. Written with the regression the
     # wrong way round it would still look plausible — the slope would simply be 1/2 instead
     # of 2 — and the shipped bar would be wrong in a direction nobody would notice.
-    slope, intercept, rmse = _least_squares([1.0, 2.0, 3.0], [3.0, 5.0, 7.0])
+    slope, intercept, rmse = least_squares([1.0, 2.0, 3.0], [3.0, 5.0, 7.0])
     expect("slope of a known line", round(slope, 9), 2.0)
     expect("intercept of a known line", round(intercept, 9), 1.0)
     expect("an exact line has no residual", round(rmse, 9), 0.0)
@@ -486,11 +486,11 @@ def check() -> int:
     expect("...and the other way round", round(high.apply(high.invert(13.5)), 9), 13.5)
 
     try:
-        _least_squares([2.0, 2.0], [1.0, 3.0])
+        least_squares([2.0, 2.0], [1.0, 3.0])
     except ValueError:
         pass
     else:
-        failures.append("_least_squares: expected a ValueError when the slope is undefined")
+        failures.append("least_squares: expected a ValueError when the slope is undefined")
 
     for failure in failures:
         print(f"FAIL {failure}")
