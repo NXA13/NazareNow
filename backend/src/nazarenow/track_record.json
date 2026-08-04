@@ -42,55 +42,64 @@
           "name": "all hours",
           "hours": 28426,
           "baseline_mae_m": 0.1964,
-          "learned_mae_m": 0.207
+          "learned_mae_m": 0.207,
+          "caveat": null
         },
         {
           "name": "Combined Sea 3 m and above",
           "hours": 4473,
           "baseline_mae_m": 0.4026,
-          "learned_mae_m": 0.3557
+          "learned_mae_m": 0.3557,
+          "caveat": null
         },
         {
           "name": "Gold Day hours",
           "hours": 120,
           "baseline_mae_m": 0.8851,
-          "learned_mae_m": 0.5636
+          "learned_mae_m": 0.5636,
+          "caveat": "120 hours across only 5 Gold Days \u2014 the held-out seasons hold 13, but training also requires the buoy to have been reporting and the wind to be present, and only 5 survive both."
         },
         {
           "name": "under 2 m",
           "hours": 15665,
           "baseline_mae_m": 0.1193,
-          "learned_mae_m": 0.1648
+          "learned_mae_m": 0.1648,
+          "caveat": null
         },
         {
           "name": "2-3 m",
           "hours": 7511,
           "baseline_mae_m": 0.2025,
-          "learned_mae_m": 0.2145
+          "learned_mae_m": 0.2145,
+          "caveat": null
         },
         {
           "name": "3-4 m",
           "hours": 3383,
           "baseline_mae_m": 0.3076,
-          "learned_mae_m": 0.2779
+          "learned_mae_m": 0.2779,
+          "caveat": null
         },
         {
           "name": "4-5 m",
           "hours": 1127,
           "baseline_mae_m": 0.4667,
-          "learned_mae_m": 0.3209
+          "learned_mae_m": 0.3209,
+          "caveat": null
         },
         {
           "name": "5-6 m",
           "hours": 415,
           "baseline_mae_m": 0.7006,
-          "learned_mae_m": 0.4487
+          "learned_mae_m": 0.4487,
+          "caveat": null
         },
         {
           "name": "6 m and above",
           "hours": 325,
           "baseline_mae_m": 1.0313,
-          "learned_mae_m": 0.621
+          "learned_mae_m": 0.621,
+          "caveat": null
         }
       ]
     },
@@ -100,49 +109,57 @@
           "name": "all hours",
           "hours": 28426,
           "baseline_mae_m": 0.2197,
-          "learned_mae_m": 0.2971
+          "learned_mae_m": 0.2971,
+          "caveat": null
         },
         {
           "name": "Combined Sea 3 m and above",
           "hours": 4473,
           "baseline_mae_m": 0.4278,
-          "learned_mae_m": 0.4005
+          "learned_mae_m": 0.4005,
+          "caveat": "Not robust to the reconstruction assumption: under a residual that grows with the sea this aggregate falls from +0.027 to -0.004. The per-band rows below it hold their sign under all three assumptions; this one does not."
         },
         {
           "name": "under 2 m",
           "hours": 15665,
           "baseline_mae_m": 0.1562,
-          "learned_mae_m": 0.282
+          "learned_mae_m": 0.282,
+          "caveat": null
         },
         {
           "name": "2-3 m",
           "hours": 7511,
           "baseline_mae_m": 0.2116,
-          "learned_mae_m": 0.2651
+          "learned_mae_m": 0.2651,
+          "caveat": null
         },
         {
           "name": "3-4 m",
           "hours": 3383,
           "baseline_mae_m": 0.3215,
-          "learned_mae_m": 0.3433
+          "learned_mae_m": 0.3433,
+          "caveat": null
         },
         {
           "name": "4-5 m",
           "hours": 1127,
           "baseline_mae_m": 0.4553,
-          "learned_mae_m": 0.3984
+          "learned_mae_m": 0.3984,
+          "caveat": null
         },
         {
           "name": "5-6 m",
           "hours": 415,
           "baseline_mae_m": 0.6765,
-          "learned_mae_m": 0.5153
+          "learned_mae_m": 0.5153,
+          "caveat": null
         },
         {
           "name": "6 m and above",
           "hours": 325,
           "baseline_mae_m": 1.0109,
-          "learned_mae_m": 0.6554
+          "learned_mae_m": 0.6554,
+          "caveat": null
         }
       ]
     }

@@ -562,15 +562,29 @@ class AccuracyBand(BaseModel):
     """Positive means the learned Amplification Model is closer to the Proxy Target — the
     sign convention `analysis/amplification_model/` already publishes in."""
 
+    caveat: str | None
+    """What this row cannot carry on its own, on the rows whose source says so.
+
+    Two rows have one. The Gold Day row rests on five days, which
+    `analysis/amplification_model/README.md` says must never be quoted without. And #52
+    measured the served `Combined Sea 3 m and above` aggregate as **not robust** to the
+    reconstruction assumption — it falls from +0.027 to −0.004 under a residual that grows
+    with the sea, and that is the shipped fit rather than an alternative. Sent with the band
+    so the qualification travels into whatever renders the table."""
+
 
 class RecordedDayResponse(BaseModel):
     date: str
     season: str
     call: Status
     peak_significant_wave_height_m: float
-    """The day's largest Significant Wave Height in the Hindcast. Not Face Height, and not
-    convertible to it by any fixed ratio — `CONTEXT.md` keeps the two apart because the
-    difference is the whole reason this system predicts the smaller number."""
+    """The day's largest Significant Wave Height **in the Hindcast** — which is the same
+    reconstruction the call was derived from, not an independent observation of the outcome.
+    The independently verified part of this row is `gold_day`.
+
+    Not Face Height, and not convertible to it by any fixed ratio — `CONTEXT.md` keeps the
+    two apart because the difference is the whole reason this system predicts the smaller
+    number."""
 
     gold_day: bool
     gold_tier: str | None
@@ -622,7 +636,15 @@ class PublishedTrackRecord(BaseModel):
     gold_days_validated: int
     gold_days_total: int
     days: list[RecordedDayResponse]
-    issued: IssuedRecord
+
+    issued: IssuedRecord | None
+    """None when the store could not be opened at all.
+
+    Null rather than a section of zeros, and null rather than a failed request. The
+    published record is a property of the release and does not need the store to exist, so a
+    misconfigured database must not take down the page a reader consults to decide whether
+    to trust the system — but reporting "0 calls issued" for a store nobody could read would
+    be inventing the most flattering of the two possible truths."""
 
 
 def as_tier(tier: Tier) -> TierRecord:
@@ -644,8 +666,8 @@ def as_panel(panel: Panel) -> PanelRecord:
         basis=panel.basis,
         gold_days=panel.gold_days,
         big_wave_seasons=panel.big_wave_seasons,
-        watch_or_better=as_tier(panel.tiers["watch_or_better"]),
-        go_call=as_tier(panel.tiers["go_call"]),
+        watch_or_better=as_tier(panel.watch_or_better),
+        go_call=as_tier(panel.go_call),
     )
 
 
@@ -657,6 +679,7 @@ def as_bands(bands: list[Band]) -> list[AccuracyBand]:
             baseline_mae_m=band.baseline_mae_m,
             learned_mae_m=band.learned_mae_m,
             gain_m=band.gain_m,
+            caveat=band.caveat,
         )
         for band in bands
     ]
@@ -679,9 +702,25 @@ def get_track_record() -> TrackRecord:
         raise HTTPException(status_code=500, detail=f"Track record unusable: {error}") from error
 
 
+def optional_store() -> Store | None:
+    """The store, or None when it cannot be opened.
+
+    Only the track record uses this. Every other endpoint needs the store to answer at all,
+    so a fault there is the answer; here the store contributes one section of a page whose
+    substance is a file shipped with the release. Failing the whole request would mean a
+    misconfigured database took down the page a reader consults to decide whether to trust
+    the system — the one page whose absence is indistinguishable from a system with nothing
+    to show.
+    """
+    try:
+        return default_store()
+    except StoreUnavailable:
+        return None
+
+
 @app.get("/api/track-record")
 def track_record(
-    store: Annotated[Store, Depends(get_store)],
+    store: Annotated[Store | None, Depends(optional_store)],
     published: Annotated[TrackRecord, Depends(get_track_record)],
 ) -> PublishedTrackRecord:
     """What the system has called, and what actually happened.
@@ -692,27 +731,18 @@ def track_record(
     system "would have called" at request time would score it against data that did not
     exist when it called, which is precisely the flattery the record exists to rule out.
 
-    Served whether or not any Pipeline Run has stored anything. The published record is a
-    property of the release, not of this installation's history, and a reader deciding
-    whether to trust the system should not be told there is no record because nothing has
-    been ingested today.
+    Served whether or not any Pipeline Run has stored anything, and whether or not the store
+    can be opened at all. The published record is a property of the release, not of this
+    installation's history, and a reader deciding whether to trust the system should not be
+    told there is no record because nothing has been ingested today.
     """
-    history = store.call_history()
-    issued = IssuedRecord(
-        calls_issued=len(history),
-        dates_covered=len({call["issued_for_date"] for call in history}),
-        go_calls_issued=sum(1 for call in history if call["status"] == Status.GO),
-        first_issued_at=history[0]["issued_at"] if history else None,
-        last_issued_at=history[-1]["issued_at"] if history else None,
-    )
-
     return PublishedTrackRecord(
         published_at=published.published_at,
         source=published.source,
         held_out=as_panel(published.held_out),
         full_record=as_panel(published.full_record),
-        scored=as_bands(published.scored.bands),
-        served=as_bands(published.served.bands),
+        scored=as_bands(published.scored),
+        served=as_bands(published.served),
         gold_days_fitted=published.gold_days_fitted,
         gold_days_validated=published.gold_days_validated,
         gold_days_total=published.gold_days_total,
@@ -727,7 +757,7 @@ def track_record(
             )
             for day in published.days
         ],
-        issued=issued,
+        issued=None if store is None else IssuedRecord(**store.issued_summary()),
     )
 
 

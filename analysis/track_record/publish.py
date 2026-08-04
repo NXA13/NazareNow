@@ -67,6 +67,11 @@ DESTINATION = ROOT / "backend" / "src" / "nazarenow" / "track_record.json"
 PANEL = "reanalysis"
 """The backtest panel the whole-record figures come from.
 
+This and the two names below are `daily_calls.csv`'s own column values, quoted so the join
+matches — not this project's vocabulary for what they hold. What the panel actually carries
+is the Hindcast; `CONTEXT.md` bars the report's spelling as a name for it, and nothing
+published from here uses it.
+
 `daily_calls.csv` also carries an `operational (diagnostic)` panel over 2022-2025 and a
 superseded `reconstructed` one. Mixing panels would double-count days: the same date appears
 in more than one, scored against a different product each time.
@@ -87,9 +92,40 @@ SERVED_SCATTER = "flat"
 pairing at every size. See the module docstring for why the other generator's rows are not
 publishable."""
 
-TIERS = {"watch_or_better": "watch_or_better", "go_call": "go_call"}
+TIERS = ("watch_or_better", "go_call")
 """The two tiers, under the names both the reports and the backend use. #16 requires them
 reported separately and never as one figure."""
+
+GOLD_DAY_CAVEAT = (
+    "120 hours across only 5 Gold Days — the held-out seasons hold 13, but training also "
+    "requires the buoy to have been reporting and the wind to be present, and only 5 survive "
+    "both."
+)
+"""The one figure on the page that is typed here rather than joined from a report.
+
+`analysis/amplification_model/README.md` says of the Gold Day row: "Five days is far too few
+to carry the headline on its own", and "that is the number to hold this claim to". The count
+lives only in that README's prose — `held_out_scores.csv` carries hours, not distinct days —
+so `--check` cannot verify it and this constant cites its source instead. Dropping the row
+was the alternative, and it is the row #16 most asks for.
+"""
+
+SENSITIVITY_CAVEAT = (
+    "Not robust to the reconstruction assumption: under a residual that grows with the sea "
+    "this aggregate falls from {flat:+.3f} to {proportional:+.3f}. The per-band rows below "
+    "it hold their sign under all three assumptions; this one does not."
+)
+"""#52's explicit warning, attached to the one row it applies to.
+
+"Do not quote the ≥ 3 m aggregate as robust to the reconstruction assumption" — and it is
+the *shipped* fit that fails there, not an alternative. Both numbers are read from
+`translation_shapes.csv` rather than typed, so the caveat cannot drift from the table it
+qualifies.
+"""
+
+SENSITIVITY_BAND = "Combined Sea >= 3 m"
+SENSITIVITY_SCATTER = "proportional"
+"""The band the warning is about, and the residual assumption that breaks it."""
 
 BAND_LABELS = {
     "held-out: all hours": "all hours",
@@ -145,27 +181,20 @@ def seasons_in(daily: list[dict[str, str]], *, held_out: bool | None = None) -> 
     return sorted(found)
 
 
-def tier_counts(scores: list[dict[str, str]], split: str) -> dict[str, dict[str, int]]:
-    """Both tiers' counts for one split of `calibrated_scores.csv`."""
-    by_tier = {row["tier"]: row for row in scores if row["split"] == split}
+def tier_counts(
+    rows_in: list[dict[str, str]], path: Path, column: str, value: str
+) -> dict[str, dict[str, int]]:
+    """Both tiers' counts from one report, selecting the panel or split by one column.
+
+    The held-out figures come from `calibrated_scores.csv` keyed on `split` and the
+    whole-record ones from `summary.csv` keyed on `panel`, but the join is the same shape
+    and the refusal has to be: a report missing a tier must stop the build rather than
+    publish a page that quotes one tier's figures under both headings.
+    """
+    by_tier = {row["tier"]: row for row in rows_in if row[column] == value}
     missing = [tier for tier in TIERS if tier not in by_tier]
     if missing:
-        raise SystemExit(f"{CALIBRATED} has no {missing} row for the {split!r} split")
-    return {
-        tier: {
-            "gold_days_called": int(by_tier[tier]["gold_days_called"]),
-            "days_flagged": int(by_tier[tier]["days_flagged"]),
-        }
-        for tier in TIERS
-    }
-
-
-def summary_counts(summary: list[dict[str, str]]) -> dict[str, dict[str, int]]:
-    """Both tiers' counts for the whole record, from #11's own summary."""
-    by_tier = {row["tier"]: row for row in summary if row["panel"] == PANEL}
-    missing = [tier for tier in TIERS if tier not in by_tier]
-    if missing:
-        raise SystemExit(f"{SUMMARY} has no {missing} row for the {PANEL!r} panel")
+        raise SystemExit(f"{path} has no {missing} row for {column}={value!r}")
     return {
         tier: {
             "gold_days_called": int(by_tier[tier]["gold_days_called"]),
@@ -184,12 +213,17 @@ def scored_bands(scores: list[dict[str, str]]) -> list[dict[str, Any]]:
                 f"{SCORED} carries subset {row['subset']!r}, which this script has no name "
                 "for; a band nobody chose must not reach the page under its report spelling"
             )
+        name = BAND_LABELS[row["subset"]]
         published.append(
             {
-                "name": BAND_LABELS[row["subset"]],
+                "name": name,
                 "hours": int(row["rows"]),
                 "baseline_mae_m": round(float(row["baseline_mae"]), 4),
                 "learned_mae_m": round(float(row["learned_mae"]), 4),
+                # The one row `analysis/amplification_model/README.md` says must never be
+                # quoted bare. It is also the row #16 asks for most directly, so it is
+                # published with the qualification rather than dropped.
+                "caveat": GOLD_DAY_CAVEAT if name == "Gold Day hours" else None,
             }
         )
     return published
@@ -211,16 +245,40 @@ def served_bands(shapes: list[dict[str, str]]) -> list[dict[str, Any]]:
             "whose reconstruction is what #52 found was measuring itself"
         )
 
+    # #52 scored every candidate under three residual assumptions and found exactly one
+    # published row whose *sign* does not survive all three. Looked up rather than typed, so
+    # the warning cannot drift from the figure it qualifies.
+    alternative = {
+        row["band"]: float(row["served_gain_m"])
+        for row in shapes
+        if row["generator"] == SERVED_GENERATOR
+        and row["candidate"] == SERVED_CANDIDATE
+        and row["scatter"] == SENSITIVITY_SCATTER
+    }
+
     published = []
     for row in selected:
         if row["band"] not in SERVED_BAND_LABELS:
             raise SystemExit(f"{SHAPES} carries band {row['band']!r}, which has no page name")
+        caveat = None
+        if row["band"] == SENSITIVITY_BAND:
+            if SENSITIVITY_BAND not in alternative:
+                raise SystemExit(
+                    f"{SHAPES} has no {SENSITIVITY_SCATTER!r} row for {SENSITIVITY_BAND!r}, so "
+                    "#52's warning that this aggregate is not robust cannot be published "
+                    "beside it — and the figure must not be published without it"
+                )
+            caveat = SENSITIVITY_CAVEAT.format(
+                flat=float(row["served_gain_m"]),
+                proportional=alternative[SENSITIVITY_BAND],
+            )
         published.append(
             {
                 "name": SERVED_BAND_LABELS[row["band"]],
                 "hours": int(row["rows"]),
                 "baseline_mae_m": round(float(row["served_baseline_mae"]), 4),
                 "learned_mae_m": round(float(row["served_learned_mae"]), 4),
+                "caveat": caveat,
             }
         )
     # Report order, so the page's two tables read down the same bands in the same sequence.
@@ -257,7 +315,14 @@ def recorded_days(daily: list[dict[str, str]]) -> list[dict[str, Any]]:
     return sorted(published, key=lambda day: day["date"])
 
 
-def build() -> int:
+def assemble() -> dict[str, Any]:
+    """The whole record, in memory.
+
+    Separated from writing it so `--check` can rebuild the record and compare it against the
+    committed file. Without that, a report regenerated after this file was last written
+    leaves a stale `track_record.json` in the repository that every check passes — and the
+    stale copy is what the backend serves.
+    """
     daily = [row for row in rows(DAILY) if row["panel"] == PANEL]
     if not daily:
         raise SystemExit(f"{DAILY} carries no {PANEL!r} panel")
@@ -272,10 +337,9 @@ def build() -> int:
             "thresholds behind these calls rest on"
         )
 
-    held_out_seasons = seasons_in(daily, held_out=True)
-    all_seasons = seasons_in(daily)
+    whole = next(row for row in summary if row["panel"] == PANEL)
 
-    record = {
+    return {
         "published_at": datetime.now(UTC).date().isoformat(),
         "source": "analysis/track_record/publish.py",
         "call_record": {
@@ -287,17 +351,15 @@ def build() -> int:
                         "gold_days_in_split"
                     ]
                 ),
-                "big_wave_seasons": float(len(held_out_seasons)),
-                "tiers": tier_counts(calibrated, "held-out"),
+                "big_wave_seasons": float(len(seasons_in(daily, held_out=True))),
+                "tiers": tier_counts(calibrated, CALIBRATED, "split", "held-out"),
             },
             "full_record": {
-                "span": next(row for row in summary if row["panel"] == PANEL)["span"],
+                "span": whole["span"],
                 "basis": "Hindcast",
-                "gold_days": int(
-                    next(row for row in summary if row["panel"] == PANEL)["gold_days_in_span"]
-                ),
-                "big_wave_seasons": float(len(all_seasons)),
-                "tiers": summary_counts(summary),
+                "gold_days": int(whole["gold_days_in_span"]),
+                "big_wave_seasons": float(len(seasons_in(daily))),
+                "tiers": tier_counts(summary, SUMMARY, "panel", PANEL),
             },
         },
         "height_record": {
@@ -311,11 +373,15 @@ def build() -> int:
         "days": recorded_days(daily),
     }
 
+
+def build() -> int:
+    record = assemble()
     DESTINATION.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
     print(f"wrote {DESTINATION.relative_to(ROOT)}")
     print(
-        f"  {len(record['days'])} days, {len(all_seasons)} Big-Wave Seasons "
-        f"({len(held_out_seasons)} held out)"
+        f"  {len(record['days'])} days, "
+        f"{record['call_record']['full_record']['big_wave_seasons']:.0f} Big-Wave Seasons "
+        f"({record['call_record']['held_out']['big_wave_seasons']:.0f} held out)"
     )
     return 0
 
@@ -393,8 +459,8 @@ def check() -> int:
     #    reporting one tier's figures under both headings, which is the shape of #12's
     #    collapse rather than a visible gap.
     for label, counts in (
-        ("held-out", tier_counts(calibrated, "held-out")),
-        ("whole record", summary_counts(summary)),
+        ("held-out", tier_counts(calibrated, CALIBRATED, "split", "held-out")),
+        ("whole record", tier_counts(summary, SUMMARY, "panel", PANEL)),
     ):
         expect(
             set(counts) == set(TIERS),
@@ -435,11 +501,46 @@ def check() -> int:
         "watch_or_better": sum(1 for row in daily if row["call"] in ("watch", "go")),
         "go_call": sum(1 for row in daily if row["call"] == "go"),
     }
-    for tier, flagged in summary_counts(summary).items():
+    for tier, flagged in tier_counts(summary, SUMMARY, "panel", PANEL).items():
         expect(
             counted[tier] == flagged["days_flagged"],
             f"whole record {tier}: summary.csv says {flagged['days_flagged']} days flagged, "
             f"daily_calls.csv holds {counted[tier]}",
+        )
+
+    # 7. #52's warning is attached to the row it is about. The aggregate reverses sign under
+    #    a residual grown with the sea, and it is the *shipped* fit that does — every
+    #    alternative stays positive there. Publishing it bare is the one way this page could
+    #    quote a figure #52 explicitly said not to quote.
+    fragile = by_name.get(SERVED_BAND_LABELS[SENSITIVITY_BAND])
+    expect(
+        fragile is not None and bool(fragile["caveat"]),
+        f"the served {SENSITIVITY_BAND!r} row carries no caveat; #52 measured it falling from "
+        "+0.027 to -0.004 under a size-weighted residual and said not to quote it as robust",
+    )
+    expect(
+        all(band["caveat"] is None for band in served if band is not fragile),
+        "a served row other than the fragile aggregate carries a caveat, which would spread a "
+        "warning onto rows that hold their sign under every assumption",
+    )
+
+    # 8. The committed file is the one this script would write now. Everything above checks
+    #    the joins; none of it looks at DESTINATION, so a report regenerated after the last
+    #    publish leaves a stale record that every other check passes — and the stale record is
+    #    what the backend serves. `published_at` is excluded because it moves by design.
+    fresh = assemble()
+    try:
+        committed = json.loads(DESTINATION.read_text(encoding="utf-8"))
+    except OSError as error:
+        committed = None
+        failures.append(f"cannot read the committed record at {DESTINATION}: {error}")
+    if committed is not None:
+        volatile = "published_at"
+        expect(
+            {key: value for key, value in fresh.items() if key != volatile}
+            == {key: value for key, value in committed.items() if key != volatile},
+            f"{DESTINATION.relative_to(ROOT)} is not what this script would write now — a "
+            "report has moved since it was last published. Re-run without --check",
         )
 
     for failure in failures:

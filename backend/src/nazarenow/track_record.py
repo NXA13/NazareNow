@@ -16,9 +16,11 @@ it said it, which is the exact failure the retained-call record was built to pre
 direction — the rate is what gets quoted, the counts are what get regenerated. So the file
 holds counts and this module divides.
 
-**A band is a pair.** ADR 0006 requires the Heuristic Baseline beside every accuracy figure
-this project reports. Rather than asking each renderer to remember, `Band` cannot be
-constructed without both models' error, so there is no shape in which one travels alone.
+**A band is a pair, and a panel is a pair.** ADR 0006 requires the Heuristic Baseline beside
+every accuracy figure this project reports, and #16 requires Watch and Go Call accuracy
+reported separately. Both are enforced by the shape: `Band` cannot be constructed without
+both models' error, and `Panel` names its two tiers as fields rather than keying them out of
+a mapping. Neither promise is left to a renderer to remember.
 
 The validation below is the same idea as `thresholds.py`'s: every refusal describes a file
 that parses cleanly and means something wrong. A track record's corruption does not crash a
@@ -42,8 +44,13 @@ PATH_VARIABLE = "NAZARENOW_TRACK_RECORD"
 """Points at a different file, following `NAZARENOW_THRESHOLDS` and `NAZARENOW_DB`."""
 
 TIERS = ("watch_or_better", "go_call")
-"""Both tiers, always. #16 requires Watch and Go Call accuracy reported separately, and a
-file carrying one of them would render a page quoting its figures under both headings."""
+"""The two tiers a panel must carry, in the order a reader meets them.
+
+Named here so the file's keys are spelled once. The parsed `Panel` holds them as fields
+rather than as a mapping — a file carrying one tier would render a page quoting its figures
+under both headings, and that is a shape worth making unrepresentable rather than checking
+for at each place a tier is read.
+"""
 
 
 class TrackRecordUnusable(ValueError):
@@ -63,7 +70,6 @@ class Tier:
     Counts only. Every rate below is a property, for the reason the module docstring gives.
     """
 
-    name: str
     gold_days_called: int
     gold_days_in_panel: int
     days_flagged: int
@@ -112,7 +118,7 @@ class Tier:
 
 @dataclass(frozen=True)
 class Panel:
-    """One span the record was scored over, with both tiers.
+    """One span the record was scored over, with both tiers as fields.
 
     Two panels are published and they are deliberately not merged. The held-out one is the
     honest figure; the whole-record one is larger and partly measured on days the thresholds
@@ -128,7 +134,8 @@ class Panel:
 
     gold_days: int
     big_wave_seasons: float
-    tiers: dict[str, Tier]
+    watch_or_better: Tier
+    go_call: Tier
 
 
 @dataclass(frozen=True)
@@ -140,6 +147,16 @@ class Band:
     hours: int
     baseline_mae_m: float
     learned_mae_m: float
+
+    caveat: str | None
+    """What this row cannot carry on its own, when the report it came from says so.
+
+    Present on exactly the rows whose source insists the figure never be quoted bare — the
+    Gold Day row, which rests on five days, and the served aggregate, which #52 measured as
+    not robust to the reconstruction assumption. A caveat that lives beside the number
+    travels with it into whatever renders the table; one that lives in the renderer does not
+    survive the next table.
+    """
 
     @property
     def gain_m(self) -> float:
@@ -153,22 +170,21 @@ class Band:
 
 
 @dataclass(frozen=True)
-class HeightRecord:
-    """How close the predicted height came, band by band."""
-
-    bands: list[Band]
-
-
-@dataclass(frozen=True)
 class RecordedDay:
-    """One past day: what was called, and what the sea then did."""
+    """One past day: what was called, and what the Hindcast then held for it."""
 
     date: str
     season: str
     call: Status
     peak_significant_wave_height_m: float
-    """The day's largest Significant Wave Height in the Hindcast — the whole Combined Sea,
-    15km offshore near the canyon head. Not Face Height, and not convertible to it."""
+    """The day's largest Significant Wave Height **in the Hindcast** — which is the same
+    reconstruction the call above was derived from, not an independent observation of the
+    outcome. The independent part of this row is `gold_day`.
+
+    Published anyway because it is what the call was judged on and a reader comparing a
+    missed Gold Day against a quiet sea is owed the number. But it must never be labelled as
+    what was measured afterwards: no buoy reading is involved, and the whole point of the
+    Proxy Target is that Face Height at Praia do Norte has no historical archive."""
 
     gold_day: bool
     gold_tier: str | None
@@ -184,11 +200,11 @@ class TrackRecord:
 
     held_out: Panel
     full_record: Panel
-    scored: HeightRecord
+    scored: list[Band]
     """Both models on identical hours, each reading the Hindcast directly. What the fit is
     worth, in the units it was fitted in."""
 
-    served: HeightRecord
+    served: list[Band]
     """The same comparison along the path a Pipeline Run actually takes, where the learned
     model must first restate an Open-Meteo reading into the units it was fitted in.
 
@@ -251,7 +267,6 @@ def _tier(raw: Any, name: str, panel: str, gold_days: int, seasons: float) -> Ti
         )
 
     return Tier(
-        name=name,
         gold_days_called=gold_days_called,
         gold_days_in_panel=gold_days,
         days_flagged=days_flagged,
@@ -282,16 +297,17 @@ def _panel(raw: Any, name: str) -> Panel:
             "both headings"
         )
 
-    tiers = {tier: _tier(tiers_raw[tier], tier, where, gold_days, float(seasons)) for tier in TIERS}
+    watch, go_call = (
+        _tier(tiers_raw[tier], tier, where, gold_days, float(seasons)) for tier in TIERS
+    )
 
     # ADR 0003 makes a Watch reach further than a Go Call, so this ordering is a property of
     # the tiers rather than of any particular calibration. A file inverting it is not a worse
     # system; it is a mislabelled table, and every rate on it would read as the other tier's.
-    if tiers["watch_or_better"].days_flagged < tiers["go_call"].days_flagged:
+    if watch.days_flagged < go_call.days_flagged:
         raise TrackRecordUnusable(
-            f"{where}: the Watch tier flagged fewer days "
-            f"({tiers['watch_or_better'].days_flagged}) than the Go Call tier "
-            f"({tiers['go_call'].days_flagged}); the recall tier reaches further than the "
+            f"{where}: the Watch tier flagged fewer days ({watch.days_flagged}) than the Go "
+            f"Call tier ({go_call.days_flagged}); the recall tier reaches further than the "
             "precision tier by construction, so this is a table with its columns swapped"
         )
 
@@ -300,11 +316,12 @@ def _panel(raw: Any, name: str) -> Panel:
         basis=str(_require(raw, "basis", where)),
         gold_days=gold_days,
         big_wave_seasons=float(seasons),
-        tiers=tiers,
+        watch_or_better=watch,
+        go_call=go_call,
     )
 
 
-def _height(raw: Any, name: str) -> HeightRecord:
+def _bands(raw: Any, name: str) -> list[Band]:
     where = f"height_record.{name}"
     raw_bands = _require(raw, "bands", where)
     if not isinstance(raw_bands, list) or not raw_bands:
@@ -313,6 +330,7 @@ def _height(raw: Any, name: str) -> HeightRecord:
     bands = []
     for index, band in enumerate(raw_bands):
         at = f"{where}[{index}]"
+        caveat = band.get("caveat") if isinstance(band, dict) else None
         bands.append(
             Band(
                 name=str(_require(band, "name", at)),
@@ -322,9 +340,10 @@ def _height(raw: Any, name: str) -> HeightRecord:
                 # whoever writes the next renderer.
                 baseline_mae_m=_metres(band, "baseline_mae_m", at),
                 learned_mae_m=_metres(band, "learned_mae_m", at),
+                caveat=str(caveat) if caveat else None,
             )
         )
-    return HeightRecord(bands=bands)
+    return bands
 
 
 def _day(raw: Any, index: int) -> RecordedDay:
@@ -389,8 +408,8 @@ def parse(body: dict[str, Any]) -> TrackRecord:
     full_record = _panel(_require(call_record, "full_record", "call_record"), "full_record")
 
     height = body["height_record"]
-    scored = _height(_require(height, "scored", "height_record"), "scored")
-    served = _height(_require(height, "served", "height_record"), "served")
+    scored = _bands(_require(height, "scored", "height_record"), "scored")
+    served = _bands(_require(height, "served", "height_record"), "served")
 
     gold_days = body["gold_days"]
     fitted = _count(gold_days, "fitted", "gold_days")

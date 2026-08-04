@@ -74,6 +74,7 @@ VALID: dict[str, Any] = {
                     "hours": 120,
                     "baseline_mae_m": 0.8851,
                     "learned_mae_m": 0.5636,
+                    "caveat": "rests on five days",
                 },
             ]
         },
@@ -156,8 +157,8 @@ class TestParsing:
         """
         record = parse(VALID)
 
-        assert record.held_out.tiers["go_call"].gold_days_called == 9
-        assert record.full_record.tiers["go_call"].gold_days_called == 16
+        assert record.held_out.go_call.gold_days_called == 9
+        assert record.full_record.go_call.gold_days_called == 16
 
     def test_days_carry_what_was_called_and_what_the_sea_did(self) -> None:
         record = parse(VALID)
@@ -190,29 +191,29 @@ class TestDerivedRates:
     def test_recall_comes_from_the_counts(self) -> None:
         record = parse(VALID)
 
-        assert record.held_out.tiers["go_call"].recall == pytest.approx(9 / 13)
-        assert record.held_out.tiers["watch_or_better"].recall == pytest.approx(12 / 13)
+        assert record.held_out.go_call.recall == pytest.approx(9 / 13)
+        assert record.held_out.watch_or_better.recall == pytest.approx(12 / 13)
 
     def test_precision_is_a_lower_bound_from_the_counts(self) -> None:
         """A flagged day that is not a Gold Day may still have been an XXL Day nobody
         documented, so this can only ever be a floor — #11's own wording."""
         record = parse(VALID)
 
-        assert record.held_out.tiers["go_call"].precision_lower_bound == pytest.approx(9 / 43)
+        assert record.held_out.go_call.precision_lower_bound == pytest.approx(9 / 43)
 
     def test_wasted_trips_are_the_complement_of_precision(self) -> None:
         """The figure #16 asks to be stated plainly: how often acting on a Go Call would
         have been wasted. An upper bound exactly because precision is a lower one."""
         record = parse(VALID)
 
-        tier = record.held_out.tiers["go_call"]
+        tier = record.held_out.go_call
         assert tier.wasted_upper_bound == pytest.approx(1 - 9 / 43)
         assert tier.days_wasted_upper_bound == 34
 
     def test_flags_per_big_wave_season_comes_from_the_counts(self) -> None:
         record = parse(VALID)
 
-        assert record.held_out.tiers["go_call"].flags_per_big_wave_season == pytest.approx(43 / 6.0)
+        assert record.held_out.go_call.flags_per_big_wave_season == pytest.approx(43 / 6.0)
 
     def test_a_panel_spanning_no_seasons_reports_no_rate_rather_than_dividing(self) -> None:
         with pytest.raises(TrackRecordUnusable, match="big_wave_seasons"):
@@ -259,10 +260,56 @@ class TestBothModelsOrNeither:
         every table in `analysis/amplification_model/` already uses."""
         record = parse(VALID)
 
-        scored = {band.name: band for band in record.scored.bands}
+        scored = {band.name: band for band in record.scored}
         assert scored["all hours"].gain_m == pytest.approx(0.1964 - 0.2070)
         assert scored["all hours"].gain_m < 0
         assert scored["Gold Day hours"].gain_m == pytest.approx(0.8851 - 0.5636)
+
+
+class TestCaveats:
+    """A qualification the source insists on travels with the number, not with the renderer.
+
+    Two rows have one. `analysis/amplification_model/README.md` says the Gold Day figure
+    "rests on five days ... and should never be quoted without that", and #52 says of the
+    served `Combined Sea >= 3 m` aggregate: do not quote it as robust to the reconstruction
+    assumption. Both are figures that look strong and are qualified, which is exactly the
+    kind a page drops on the way to a table.
+    """
+
+    def test_a_caveat_rides_on_the_band_it_qualifies(self) -> None:
+        record = parse(VALID)
+
+        scored = {band.name: band for band in record.scored}
+        assert scored["Gold Day hours"].caveat == "rests on five days"
+        assert scored["all hours"].caveat is None
+
+    def test_a_band_without_one_reports_none_rather_than_an_empty_string(self) -> None:
+        """`None` and `""` render differently: an empty string is a caveat that says
+        nothing, and a footnote marker beside a figure with no footnote is worse than no
+        marker at all."""
+        body = deepcopy(VALID)
+        body["height_record"]["scored"]["bands"][0]["caveat"] = ""
+
+        assert parse(body).scored[0].caveat is None
+
+    def test_the_shipped_record_qualifies_both_rows_that_need_it(self) -> None:
+        """Pinned against the file this release actually publishes, not a fixture.
+
+        These are the two figures on the page most likely to be quoted out of context — the
+        Gold Day comparison, which is the headline, and the aggregate that reverses sign
+        under a different residual assumption. A regeneration that dropped either caveat
+        would leave both figures reading as unqualified.
+        """
+        record = load(DEFAULT_PATH)
+
+        scored = {band.name: band for band in record.scored}
+        served = {band.name: band for band in record.served}
+
+        assert scored["Gold Day hours"].caveat and "5 Gold Days" in scored["Gold Day hours"].caveat
+        fragile = served["Combined Sea 3 m and above"]
+        assert fragile.caveat and "Not robust" in fragile.caveat
+        # The bands that do hold their sign must not inherit the warning.
+        assert served["6 m and above"].caveat is None
 
 
 class TestArithmeticThatWouldOverstate:
@@ -354,9 +401,9 @@ class TestLoading:
         record = load(DEFAULT_PATH)
 
         assert record.days
-        assert record.scored.bands
-        assert record.served.bands
-        assert record.held_out.tiers["go_call"].days_flagged > 0
+        assert record.scored
+        assert record.served
+        assert record.held_out.go_call.days_flagged > 0
 
     def test_the_environment_variable_is_honoured(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

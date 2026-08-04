@@ -85,6 +85,33 @@ describe('both models, always together', () => {
   });
 });
 
+describe('caveats that travel with a figure', () => {
+  it('shows the qualification under the table, not as a marker to chase', async () => {
+    // Both caveated rows are figures that read as stronger than they are — the headline
+    // Gold Day comparison, and the one aggregate whose sign does not survive #52's
+    // sensitivity check. A footnote a reader has to go and find is a footnote that failed.
+    render(<TrackRecordPage />);
+
+    const scored = await screen.findByTestId('scored-accuracy');
+    const served = screen.getByTestId('served-accuracy');
+
+    expect(within(scored).getByText(/120 hours across only 5 Gold Days/)).toBeInTheDocument();
+    expect(
+      within(served).getByText(/Not robust to the reconstruction assumption/),
+    ).toBeInTheDocument();
+  });
+
+  it('does not put a note against a row that does not have one', async () => {
+    render(<TrackRecordPage />);
+
+    const scored = await screen.findByTestId('scored-accuracy');
+    const notes = within(scored).getAllByRole('listitem');
+
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toHaveTextContent('Gold Day hours');
+  });
+});
+
 describe('the two tiers', () => {
   it('reports Watch and Go Call separately, never as one figure', async () => {
     render(<TrackRecordPage />);
@@ -182,6 +209,18 @@ describe('what it refuses to leave out', () => {
     expect(limitations).toHaveTextContent(/mooring 15km offshore/);
   });
 
+  it('says the height column is the call input, not the outcome', async () => {
+    // A column headed "peak height" next to one headed "what it called" implies the second
+    // was checked against the first. It was not: both come from the same reconstruction, and
+    // the only independently verified column is the last one.
+    render(<TrackRecordPage />);
+
+    const caveat = await screen.findByTestId('day-record-caveat');
+
+    expect(caveat).toHaveTextContent('The height column is not an outcome.');
+    expect(caveat).toHaveTextContent(/same reconstruction the call was made from/);
+  });
+
   it('shows the confirmed giant days it missed, not only the ones it caught', async () => {
     render(<TrackRecordPage />);
 
@@ -230,6 +269,20 @@ describe('the live record', () => {
     expect(issued).toHaveTextContent('42');
     expect(issued).toHaveTextContent('None of them are scored here.');
     expect(issued).toHaveTextContent(/No buoy reading reaches the running system/);
+  });
+
+  it('distinguishes an unreadable record from an empty one', async () => {
+    // Null is an absence of knowledge; zero is a fact about this installation. Reporting the
+    // unreadable case as zero would invent the more flattering of the two — a clean record
+    // rather than one nobody could open. The rest of the page must survive it.
+    serve({ issued: null });
+    render(<TrackRecordPage />);
+
+    const issued = await screen.findByTestId('issued-record');
+
+    expect(issued).toHaveTextContent('Not known.');
+    expect(issued).not.toHaveTextContent('Nothing yet.');
+    expect(screen.getByTestId('scored-accuracy')).toBeInTheDocument();
   });
 });
 

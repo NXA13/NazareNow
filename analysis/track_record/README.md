@@ -52,6 +52,24 @@ What is taken instead is `translation_shapes.csv` filtered to the shipped candid
 wrong generator does not fail: it publishes eight plausible numbers, two of them wrong in the
 direction that flatters.
 
+## Two rows carry a caveat, because their sources insist
+
+A figure that looks strong and is qualified is the kind a page drops on the way to a table,
+so the qualification rides on the band rather than in the renderer.
+
+| Row | Why |
+|---|---|
+| scored `Gold Day hours` | 120 hours across **5** Gold Days. `analysis/amplification_model/README.md`: "that is the number to hold this claim to". |
+| served `Combined Sea 3 m and above` | **+0.027 becomes −0.004** under a residual grown with the sea — and it is the *shipped* fit that reverses, not an alternative. #52: do not quote this aggregate as robust to the reconstruction assumption. |
+
+The served caveat's two numbers are read from `translation_shapes.csv`, so the warning cannot
+drift from the figure it qualifies, and `--check` fails if the row arrives without it.
+
+**The Gold Day count of 5 is the one figure typed here rather than joined.** It exists only in
+the amplification README's prose — `held_out_scores.csv` carries hours, not distinct days — so
+`--check` cannot verify it, and `GOLD_DAY_CAVEAT` cites its source instead. The alternative was
+dropping the row, and it is the row #16 asks for most directly.
+
 ## Rates are not written
 
 The file carries counts. `backend/src/nazarenow/track_record.py` divides.
@@ -84,6 +102,14 @@ Offline, against the committed reports:
    and a union built by concatenation would list it twice — doubling the most important rows.
 6. **`summary.csv` against `daily_calls.csv`.** These are different files, and #11 regenerating
    one without the other is how a summary starts describing a backtest that has since moved.
+7. **#52's warning is attached to the row it is about**, and to no other row. Spreading it
+   would warn about figures that hold their sign under every assumption; dropping it would
+   publish the one that does not as though it did.
+8. **The committed `track_record.json` is what this script would write now.** Everything else
+   checks the joins and none of it looks at the output, so a report regenerated after the last
+   publish leaves a stale record that every other check passes — and the stale record is what
+   the backend serves. `published_at` is excluded from the comparison because it moves by
+   design; everything else must match byte for byte.
 
 ## Two things it deliberately does not publish
 

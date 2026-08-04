@@ -13,7 +13,7 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 
-from nazarenow.api import app, get_store, get_track_record
+from nazarenow.api import app, get_track_record, optional_store
 from nazarenow.decision import Status
 from nazarenow.store import Store
 from nazarenow.track_record import DEFAULT_PATH, TrackRecordUnusable
@@ -27,7 +27,7 @@ def published_client(store: Store) -> Iterator[TestClient]:
     The record is loaded explicitly rather than left to the cached default so the test
     cannot pass on a file another test happened to leave behind.
     """
-    app.dependency_overrides[get_store] = lambda: store
+    app.dependency_overrides[optional_store] = lambda: store
     app.dependency_overrides[get_track_record] = lambda: load_track_record(DEFAULT_PATH)
     yield TestClient(app)
     app.dependency_overrides.clear()
@@ -92,6 +92,19 @@ class TestWhatItPublishes:
         assert served["under 2 m"]["gain_m"] == pytest.approx(-0.1258, abs=5e-4)
         # And the finding that survives it: still decisively better on the days that matter.
         assert served["6 m and above"]["gain_m"] > 0.3
+
+    def test_the_two_qualified_figures_arrive_qualified(self, published_client: TestClient) -> None:
+        """#52 said not to quote the served aggregate as robust, and the amplification
+        README says the Gold Day figure should never be quoted without the five days behind
+        it. Both are strong-looking numbers a page would otherwise publish bare."""
+        body = published_client.get("/api/track-record").json()
+
+        scored = {band["name"]: band for band in body["scored"]}
+        served = {band["name"]: band for band in body["served"]}
+
+        assert "5 Gold Days" in scored["Gold Day hours"]["caveat"]
+        assert "Not robust" in served["Combined Sea 3 m and above"]["caveat"]
+        assert served["6 m and above"]["caveat"] is None
 
     def test_the_gold_day_basis_is_stated_and_small(self, published_client: TestClient) -> None:
         body = published_client.get("/api/track-record").json()
@@ -183,6 +196,27 @@ class TestTheIssuedRecord:
         """
         assert published_client.get("/api/track-record").status_code == 200
 
+    def test_an_unopenable_store_costs_the_issued_section_and_nothing_else(self) -> None:
+        """A misconfigured database must not take down the page a reader consults to decide
+        whether to trust the system — that is the one page whose absence looks exactly like
+        a system with nothing to show for itself.
+
+        Null rather than a section of zeros. "0 calls issued" for a store nobody could read
+        is the more flattering of the two possible truths, invented.
+        """
+        app.dependency_overrides[optional_store] = lambda: None
+        app.dependency_overrides[get_track_record] = lambda: load_track_record(DEFAULT_PATH)
+        try:
+            response = TestClient(app).get("/api/track-record")
+        finally:
+            app.dependency_overrides.clear()
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["issued"] is None
+        assert body["days"], "the published record must survive the store being unreadable"
+        assert body["held_out"]["go_call"]["days_flagged"] > 0
+
 
 class TestFailure:
     def test_an_unusable_record_is_a_described_500(self, store: Store) -> None:
@@ -192,7 +226,7 @@ class TestFailure:
         def broken() -> None:
             raise TrackRecordUnusable("the file moved")
 
-        app.dependency_overrides[get_store] = lambda: store
+        app.dependency_overrides[optional_store] = lambda: store
         app.dependency_overrides[get_track_record] = broken
         try:
             response = TestClient(app, raise_server_exceptions=False).get("/api/track-record")

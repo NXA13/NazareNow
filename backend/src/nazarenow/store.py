@@ -755,11 +755,11 @@ class Store:
     def call_history(self) -> list[dict[str, Any]]:
         """Every call ever made, oldest first, including superseded ones.
 
-        No HTTP surface exposes these yet — ticket #11 scores Go Call precision from this
-        record, and #16 publishes the result. Like `raw_responses`, this is a deliberate
-        narrow exception to the backend seam: retention across runs is required by ADR
-        0005 and there is nothing else that can observe it. When the track record gets an
-        endpoint, the test should move to it.
+        Ticket #11 scores Go Call precision from this record, and #16 summarises it for the
+        track record endpoint — see `issued_summary`, which is what that endpoint reads.
+        Like `raw_responses`, the full history is a deliberate narrow exception to the
+        backend seam: retention across runs is required by ADR 0005 and there is nothing
+        else that can observe it.
         """
         rows = self._connect().execute(f"SELECT run_id, {CALL_COLUMNS} FROM day_call ORDER BY id")
         # `run_id` is carried on the history rather than on `calls()` and `latest_call()`:
@@ -767,6 +767,50 @@ class Store:
         # for whoever audits the record, not something a traveller reading a forecast has
         # any use for. When the track record gets an endpoint (#16), that can change.
         return [self._call(row) | {"date": row["date"], "run_id": row["run_id"]} for row in rows]
+
+    def issued_summary(self) -> dict[str, Any]:
+        """How much this installation has actually issued, and over what stretch.
+
+        Counts only, and deliberately so: scoring a stored call means comparing it against
+        an observation, and no buoy reading reaches the running system at all. Counting is
+        the honest limit of what the retained record can say about itself.
+
+        Lives here rather than in the API layer because it is a fact about the store's own
+        rows, and because the ordering below is this class's knowledge to hold. `first` and
+        `last` are the ends of insertion order, not of `issued_at` — `latest_call` documents
+        why: two runs inside one second tie on `issued_at`, so the sequence the store
+        appended in is the only total order it has. That is the same order `call_history`
+        returns and the order the succession of calls about a date actually happened in.
+        """
+        row = (
+            self._connect()
+            .execute(
+                """
+            SELECT
+                COUNT(*) AS calls_issued,
+                COUNT(DISTINCT issued_for_date) AS dates_covered,
+                SUM(CASE WHEN status = 'go' THEN 1 ELSE 0 END) AS go_calls_issued,
+                (SELECT issued_at FROM day_call ORDER BY id LIMIT 1) AS first_issued_at,
+                (SELECT issued_at FROM day_call ORDER BY id DESC LIMIT 1) AS last_issued_at
+            FROM day_call
+            """
+            )
+            .fetchone()
+        )
+
+        return {
+            "calls_issued": row["calls_issued"],
+            "dates_covered": row["dates_covered"],
+            # SUM over no rows is NULL, not 0. Coerced here rather than left to the caller:
+            # a null reaching the interface would render as "no Go Calls issued" only by
+            # accident, and as a blank beside three real counts by default.
+            "go_calls_issued": row["go_calls_issued"] or 0,
+            # Left null on an empty store rather than substituted. A fresh installation has
+            # no first call, and inventing a timestamp for one would make an empty record
+            # read as a record.
+            "first_issued_at": row["first_issued_at"],
+            "last_issued_at": row["last_issued_at"],
+        }
 
     @staticmethod
     def _call(row: sqlite3.Row) -> dict[str, Any]:

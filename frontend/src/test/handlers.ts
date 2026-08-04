@@ -298,6 +298,9 @@ export const trackRecord: TrackRecord = {
       flags_per_big_wave_season: 128 / 16,
     },
   },
+  // Exactly two rows carry a caveat, as in the real record: the strongest-looking figure on
+  // the page, and the one aggregate whose sign does not survive #52's sensitivity check. The
+  // rest are null, so a component that rendered a note against every row could not pass.
   scored: [
     {
       name: 'all hours',
@@ -305,6 +308,7 @@ export const trackRecord: TrackRecord = {
       baseline_mae_m: 0.1964,
       learned_mae_m: 0.207,
       gain_m: -0.0106,
+      caveat: null,
     },
     {
       name: 'Gold Day hours',
@@ -312,6 +316,7 @@ export const trackRecord: TrackRecord = {
       baseline_mae_m: 0.8851,
       learned_mae_m: 0.5636,
       gain_m: 0.3215,
+      caveat: '120 hours across only 5 Gold Days.',
     },
     {
       name: '6 m and above',
@@ -319,6 +324,7 @@ export const trackRecord: TrackRecord = {
       baseline_mae_m: 1.0313,
       learned_mae_m: 0.6211,
       gain_m: 0.4102,
+      caveat: null,
     },
   ],
   served: [
@@ -328,6 +334,15 @@ export const trackRecord: TrackRecord = {
       baseline_mae_m: 0.2197,
       learned_mae_m: 0.2971,
       gain_m: -0.0774,
+      caveat: null,
+    },
+    {
+      name: 'Combined Sea 3 m and above',
+      hours: 4473,
+      baseline_mae_m: 0.4278,
+      learned_mae_m: 0.4005,
+      gain_m: 0.0273,
+      caveat: 'Not robust to the reconstruction assumption: +0.027 becomes -0.004.',
     },
     {
       name: 'under 2 m',
@@ -335,6 +350,7 @@ export const trackRecord: TrackRecord = {
       baseline_mae_m: 0.1562,
       learned_mae_m: 0.282,
       gain_m: -0.1258,
+      caveat: null,
     },
     // Deliberately not 0.3555. A gain landing exactly on a rounding boundary makes the
     // rendered string depend on floating-point representation rather than on the component,
@@ -345,6 +361,7 @@ export const trackRecord: TrackRecord = {
       baseline_mae_m: 1.0109,
       learned_mae_m: 0.6549,
       gain_m: 0.356,
+      caveat: null,
     },
   ],
   gold_days_fitted: 25,

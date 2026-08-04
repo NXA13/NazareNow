@@ -246,15 +246,24 @@ export interface AccuracyBand {
   learned_mae_m: number;
   /** Positive means the learned model is closer to the buoy. */
   gain_m: number;
+  /** What this row cannot carry on its own, on the rows whose source says so.
+   *
+   * Sent with the band rather than written into the page, so the qualification travels with
+   * the number instead of living next to one particular table. Two rows have one, and both
+   * are figures that look strong until qualified — which is the kind a page drops. */
+  caveat: string | null;
 }
 
 export interface RecordedDay {
   date: string;
   season: string;
   call: CallStatus;
-  /** The largest significant wave height that day in the reconstruction — the whole sea,
-   * 15km offshore near the head of the canyon. Not the height of a wave face at the
-   * beach, and not convertible to it by any fixed ratio. */
+  /** The largest significant wave height that day **in the reconstruction the call was made
+   * from** — not an independent measurement of how the day turned out. The independently
+   * verified part of a row is `gold_day`.
+   *
+   * The whole sea, 15km offshore near the head of the canyon. Not the height of a wave face
+   * at the beach, and not convertible to it by any fixed ratio. */
   peak_significant_wave_height_m: number;
   gold_day: boolean;
   gold_tier: string | null;
@@ -293,7 +302,10 @@ export interface TrackRecord {
   gold_days_validated: number;
   gold_days_total: number;
   days: RecordedDay[];
-  issued: IssuedRecord;
+  /** Null when the backend could not open its store at all. Distinct from a store with
+   * nothing in it, which reports zeros: this one is "we do not know", and the page says so
+   * rather than showing a fresh installation's numbers for a database nobody could read. */
+  issued: IssuedRecord | null;
 }
 
 /**

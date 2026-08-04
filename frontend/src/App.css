@@ -568,3 +568,17 @@ footer p {
 .limitations li {
   margin-bottom: 0.6rem;
 }
+
+/* A caveat the source insists on, under the table it qualifies. Not muted into a
+   footnote: both of these exist because the figure above reads as stronger than it
+   is, and a note a reader skips is a note that has failed. */
+.band-caveats {
+  margin: 0;
+  padding: 0.6rem 1rem 0.75rem 2rem;
+  border-top: 1px solid var(--line);
+  font-size: 0.85rem;
+}
+
+.band-caveats li + li {
+  margin-top: 0.35rem;
+}

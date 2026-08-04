@@ -165,6 +165,20 @@ function AccuracyTable({
           ))}
         </tbody>
       </table>
+      {/* Rendered under the table it qualifies, in full, not as a marker a reader has to
+          chase. The whole point of these two is that the figure above reads as stronger than
+          it is, so a footnote they have to go and find is a footnote that has failed. */}
+      {bands.some((band) => band.caveat) && (
+        <ul className="band-caveats">
+          {bands
+            .filter((band) => band.caveat)
+            .map((band) => (
+              <li key={band.name}>
+                <strong>{band.name}:</strong> {band.caveat}
+              </li>
+            ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -276,7 +290,7 @@ export function TrackRecordPage() {
       <p>
         Two models, always shown together. The <strong>rule of thumb</strong> is the surf
         community&apos;s, with no learning in it; the <strong>learned model</strong> is fitted on
-        fifteen years of buoy readings. The rule of thumb is kept permanently as the thing any
+        buoy readings from the seasons above. The rule of thumb is kept permanently as the thing any
         learned model has to beat, so no accuracy figure here appears without it.
       </p>
       <p>
@@ -309,18 +323,30 @@ export function TrackRecordPage() {
         it stayed quiet about that turned out ordinary are the overwhelming majority and are counted
         above rather than listed.
       </p>
+      {/* The height column is the call's own input restated, not a measurement of how the
+          day turned out — the reconstruction the rule was applied to. Saying so here rather
+          than letting a column headed "peak height" beside a column headed "what it called"
+          imply the second was checked against the first. The independently verified column
+          is the last one. */}
+      <p className="caveat" data-testid="day-record-caveat">
+        <strong>The height column is not an outcome.</strong> It is the largest significant wave
+        height that day in the same reconstruction the call was made from, so it says what the
+        system was looking at rather than what was later measured. The independently verified column
+        is the last one: whether the day was confirmed giant by a contest, a ratified record, or
+        documented coverage.
+      </p>
       <div className="record-table days" data-testid="day-record">
         <table>
           <caption>
-            {record.days.length} days, most recent first. The height is the largest of that day,
-            15km offshore.
+            {record.days.length} days, most recent first. Heights are significant wave height, 15km
+            offshore — not the height of a wave face.
           </caption>
           <thead>
             <tr>
               <th scope="col">Date</th>
               <th scope="col">Big-Wave Season</th>
               <th scope="col">What it called</th>
-              <th scope="col">Peak height</th>
+              <th scope="col">Peak significant wave height</th>
               <th scope="col">Confirmed giant?</th>
             </tr>
           </thead>
@@ -340,7 +366,16 @@ export function TrackRecordPage() {
 
       <h3>What this system has issued for real</h3>
       <p data-testid="issued-record">
-        {record.issued.calls_issued === 0 ? (
+        {record.issued === null ? (
+          // Distinct from "nothing yet", which is a fact about this installation. This is
+          // an absence of knowledge, and reporting it as zero would be inventing the more
+          // flattering of the two — a clean record rather than an unreadable one.
+          <>
+            <strong>Not known.</strong> The retained-call record could not be read, so this page
+            cannot say what this installation has issued. Everything above is unaffected: it is
+            published with the release rather than kept in that record.
+          </>
+        ) : record.issued.calls_issued === 0 ? (
           <>
             <strong>Nothing yet.</strong> This installation has issued no calls at all, so
             everything above is reconstruction and none of it is an operating history.
@@ -363,9 +398,10 @@ export function TrackRecordPage() {
           <strong>It does not predict the height of a wave face.</strong> Every height on this page
           is significant wave height — an instrument&apos;s measure of the whole sea, and the number
           a buoy reports. The height a surfer rides and the news quotes is a wave <em>face</em>,
-          which is several times larger and cannot be converted from this by any fixed ratio.
-          Nothing here has ever been fitted against a wave face, because no reliable historical
-          record of them exists.
+          which is much larger and <em>cannot be converted from this by any fixed ratio</em> — no
+          multiplier turns one into the other, and applying one would produce a confident,
+          plausible, wrong number. Nothing here has ever been fitted against a wave face, because no
+          reliable historical record of them exists.
         </li>
         <li>
           <strong>The buoy it was fitted against is not the beach.</strong> The target is a mooring
