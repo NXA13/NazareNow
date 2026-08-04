@@ -67,8 +67,11 @@ def test_thresholds_are_what_the_reports_scored() -> None:
 
     Refitted by #39 against 38 Gold Days rather than #12's 9, on the Copernicus reanalysis,
     and translated back into Open-Meteo units on the way out. `light_wind_exemption_kmh` is
-    new in ADR 0009 and is the only one read in the units it was fitted in — wind comes from
-    ERA5 on both sides of that translation.
+    new in ADR 0009 and was for a time the only one shipped in the units it was fitted in, on
+    the claim that wind came from ERA5 on both sides of that translation. #51 measured that
+    boundary and found the claim false of the deployed system — a Pipeline Run reads wind from
+    a forecast product — so the exemption is translated too and the fitted 16.5 km/h now ships
+    as 14.5.
 
     The Watch bar then moved once more, from 10.1 s to 11.5 s, when #43 gave the recall tier
     a stated price under ADR 0010. It is the only one of the seven that #43 moved, which is
@@ -81,7 +84,7 @@ def test_thresholds_are_what_the_reports_scored() -> None:
     assert SHIPPED.swell_arc == (255.0, 330.0), RERUN
     assert SHIPPED.offshore_wind_arc == (20.0, 180.0), RERUN
     assert SHIPPED.maximum_wind_speed_kmh == 35.0, RERUN
-    assert SHIPPED.light_wind_exemption_kmh == 16.5, RERUN
+    assert SHIPPED.light_wind_exemption_kmh == 14.5, RERUN
 
 
 def test_the_shipped_thresholds_carry_their_provenance() -> None:
@@ -131,7 +134,7 @@ def test_the_same_readings_always_give_the_same_answer() -> None:
         ({"swell_direction": 254.0}, ["swell direction"]),
         ({"swell_direction": 331.0}, ["swell direction"]),
         # Onshore *and* windy enough that the ADR 0009 exemption does not rescue it. Both
-        # halves matter: at 16.5 km/h or below this bearing would hold.
+        # halves matter: at 14.5 km/h or below this bearing would hold.
         ({"wind_direction": 270.0}, ["wind"]),
         ({"wind_speed": 35.1}, ["wind"]),
     ],
@@ -169,13 +172,15 @@ class TestTheLightWindExemption:
     def test_the_exemption_stops_exactly_at_its_speed(self) -> None:
         """Checked from both sides, so a `<` written for a `<=` fails here.
 
-        2020-02-17 is the Gold Day that set this bar: its calmest hour was 16.3 km/h, and a
-        comparison one step tight would put it back outside the rule that was changed to
-        admit it.
+        2020-02-17 is the Gold Day that set this bar: its calmest hour read 16.3 km/h in ERA5,
+        and a comparison one step tight would put it back outside the rule that was changed to
+        admit it. The speeds here are the **shipped** bar rather than that hour, because since
+        #51 the two are in different products' units — the same weather reads about 1.5 km/h
+        lighter where a Pipeline Run measures it.
         """
         model = HeuristicBaseline()
-        at_the_bar = GIANT | {"wind_speed": 16.5, "wind_direction": 225.0}
-        just_over = GIANT | {"wind_speed": 16.6, "wind_direction": 225.0}
+        at_the_bar = GIANT | {"wind_speed": 14.5, "wind_direction": 225.0}
+        just_over = GIANT | {"wind_speed": 14.6, "wind_direction": 225.0}
 
         assert model.predict(at_the_bar).matches_rule
         assert not model.predict(just_over).matches_rule
@@ -213,7 +218,7 @@ class TestTheLightWindExemption:
             o.explanation for o in prediction.conditions if o.condition.value == "wind"
         )
         assert "onshore" in explanation
-        assert "16.5" in explanation
+        assert "14.5" in explanation
 
 
 def test_the_baseline_reports_itself_calibrated() -> None:

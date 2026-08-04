@@ -88,6 +88,13 @@ the way `analysis/calibration/` reports the others. The six days above put a flo
 16.3 km/h; the days that already pass put a ceiling on how far it can rise before it starts
 admitting genuine onshore slop.
 
+**Amended by #51: every speed on this page is an ERA5 speed, and the shipped bar is not.** The
+days above are read from the ERA5 archive, which is what the fit sees. A Pipeline Run applies
+the bar to Open-Meteo's forecast product, which reads about 1.5 km/h lighter in this band, so
+the fitted 16.5 km/h ships as **14.5**. Nothing about the six days or the 16.3 km/h floor
+changes — they are the same weather — but a reader comparing this page against
+`thresholds.json` will find two different numbers, and this is why.
+
 ADR 0006's requirement that the learned model and the Heuristic Baseline are reported side by
 side is unaffected. Its amendment's second obligation — that any figure derived from the
 calibration states how many Gold Days it rests on — now has a larger and more honest number to

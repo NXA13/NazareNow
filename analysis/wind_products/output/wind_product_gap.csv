@@ -1,0 +1,4 @@
+subset,hours,mean_hindcast_kmh,mean_forecast_kmh,bias_kmh,mae_kmh,rmse_kmh,slope,intercept,residual_rmse_kmh,exemption_translated_kmh
+all hours,27384,16.3343,14.5795,-1.7549,3.2344,4.1473,0.9182,-0.4185,3.6963,14.7316
+exemption band (Hindcast < 20 km/h),18798,11.8471,10.3341,-1.5130,3.0156,3.8540,0.8320,0.4773,3.4514,14.2053
+straddling the bar (Hindcast 14.5-18.5 km/h),4945,16.4509,14.3107,-2.1402,3.4867,4.4254,0.9852,-1.8965,3.8735,14.3591

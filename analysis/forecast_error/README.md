@@ -296,18 +296,20 @@ be a stated exclusion, not a silent one.
 6. **`END` is fixed at 2026-07-31** so the derivation is reproducible. Extending it re-runs
    cheaply — the cache is keyed by month and only new months are fetched.
 
-## A note for #51
+## A note for #51 — now answered
 
-[#51](https://github.com/NXA13/NazareNow/issues/51) asks whether the light-wind exemption,
+[#51](https://github.com/NXA13/NazareNow/issues/51) asked whether the light-wind exemption,
 fitted at 16.5 km/h with the windiest Gold Day it must admit at 16.3, survives being applied to
 wind that crosses a product boundary untranslated. That is a question about **products**; this
 is a measurement about **Lead Time**. Nothing here measures the product boundary, so nothing
-here settles #51.
+here settled #51 — `analysis/wind_products/` did.
 
-What this does add is a second, independent reason the margin is thin. The exemption's margin is
-**0.2 km/h**. Open-Meteo's wind moves by **3.18 km/h RMSE** between one day out and its own
-settled analysis — before any product boundary is crossed. Whatever #51 finds the boundary
-costs, it is being added to this, not measured instead of it.
+What this adds is a second, independent reason the margin is thin, and the two turn out to be
+the same size. The exemption's margin is **0.2 km/h**. Open-Meteo's wind moves by **3.18 km/h
+RMSE** between one day out and its own settled analysis, and #51 measured the product boundary
+at **3.45 km/h** residual on top of a 1.5 km/h offset. The offset was correctable and has been
+corrected — the exemption now ships translated, at 14.5 km/h. The two scatters were not, and
+they stack: a wind reading a Go Call is issued on carries both.
 
 ## Files
 

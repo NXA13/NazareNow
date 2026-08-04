@@ -40,8 +40,10 @@ reanalysis's own units, because a fit is only meaningful if it is internally con
 a reanalysis — and `analysis/overlap/README.md` measured that the same sea reads about half a
 second longer in the reanalysis. So the three fitted wave bars are translated back into
 operational units on the way out, and the translation is recorded in the file beside them.
-The light-wind exemption is deliberately not translated: wind reaches both sides of that
-boundary from ERA5, so it is already in the units it is applied in.
+Since #51 the light-wind exemption is translated too, on a transform of its own. It was not,
+on the claim that wind reached both sides of that boundary from ERA5 — true of this module's
+two backtest paths and false of the deployed system, which reads wind from a forecast product
+(`analysis/wind_products/README.md`).
 Shipping the untranslated numbers would have made the deployed system quietly stricter than
 the fit intended, which is the mirror image of the mistake #39 was written to prevent.
 
@@ -68,8 +70,10 @@ sys.path.insert(0, str(ROOT / "analysis" / "backtest"))
 sys.path.insert(0, str(ROOT / "backend" / "src"))
 
 sys.path.insert(0, str(ROOT / "analysis" / "overlap"))
+sys.path.insert(0, str(ROOT / "analysis" / "wind_products"))
 
 import backtest  # noqa: E402
+import gap  # noqa: E402
 import measure  # noqa: E402
 from backtest import GoldDay, load_gold_days, reanalysis_hours, season_of  # noqa: E402
 from nazarenow.days import group_by_date  # noqa: E402
@@ -678,26 +682,37 @@ def translate(thresholds: Thresholds, translations: dict[str, measure.Translatio
     and shipping 13.5 s would silently move the deployed bar half a second stricter than
     anything the Gold Days justify.
 
-    Only the two *wave* quantities are translated. The swell arc is verified rather than
-    fitted, and its measured direction offset is 1-3° against an arc 75° wide.
+    The swell arc is not translated: it is verified rather than fitted, and its measured
+    direction offset is 1-3° against an arc 75° wide.
 
-    **The light-wind exemption is deliberately not translated**, and this is not an
-    oversight. Height and period are read from the reanalysis during the fit and from
-    Open-Meteo in production, which is what makes them need converting. Wind is read from
-    ERA5 via `hindcast.wind()` in *both* paths — `operational_hours` and `reanalysis_hours`
-    take the same series — so the exemption is already in the units it will be applied in.
-    Translating it with a transform fitted on wave height would be arithmetic applied to the
-    wrong variable.
+    **The light-wind exemption is translated too, since #51, and with its own transform.**
+    Until then it was not, on the claim that wind reached the fit and the deployed system
+    alike from ERA5. That claim is true of this module's *two backtest paths* —
+    `operational_hours` and `reanalysis_hours` both take `hindcast.wind()` — and false of
+    the thing the bar actually ships to. A **Pipeline Run** reads wind from
+    `open_meteo.WEATHER_URL`, which is a forecast product, so the exemption crosses the same
+    product boundary the wave bars do. `analysis/wind_products/README.md` measures the gap
+    over three Big-Wave Seasons: the forecast product reads about 1.5 km/h lighter than ERA5
+    in the band the exemption decides in, which is several times the 0.2 km/h margin the fit
+    had to spare. Untranslated, the deployed exemption admitted hours the fit never
+    sanctioned.
+
+    Its transform is fitted on wind, not borrowed: applying a line fitted on wave height to
+    a wind speed would be arithmetic applied to the wrong variable.
 
     Rounded after translating, not before: a translated bar lands on some number like
     12.8637, and the fitted values are supposed to be numbers a person would choose. Height
     is floored to `HEIGHT_STEP_M`, which can only make the bar more permissive and so cannot
     cost a Gold Day the fit admitted; periods go to one decimal, which is the resolution the
-    operational feed reports. Both transforms are increasing, so the Go bar cannot cross
-    below the Watch bar and `parse` cannot be handed a set it would refuse.
+    operational feed reports. The exemption is raised to `LIGHT_WIND_STEP_KMH` for the reason
+    it is raised when fitted — up is its permissive direction, and rounding it down would put
+    it under the translated calmest hour of the Gold Day that set it. Every transform here is
+    increasing, so the Go bar cannot cross below the Watch bar and `parse` cannot be handed a
+    set it would refuse.
     """
     height = translations["significant_wave_height_m"]
     period = translations["swell_period_s"]
+    wind = translations["light_wind_exemption_kmh"]
     return thresholds.replacing(
         minimum_significant_wave_height_m=(
             int(height.apply(thresholds.minimum_significant_wave_height_m) / HEIGHT_STEP_M)
@@ -709,10 +724,14 @@ def translate(thresholds: Thresholds, translations: dict[str, measure.Translatio
         go_call_minimum_swell_period_s=round(
             period.apply(thresholds.go_call_minimum_swell_period_s), 1
         ),
+        light_wind_exemption_kmh=(
+            math.ceil(wind.apply(thresholds.light_wind_exemption_kmh) / LIGHT_WIND_STEP_KMH)
+            * LIGHT_WIND_STEP_KMH
+        ),
     )
 
 
-def _describe_exemption(thresholds: Thresholds, support: tuple[float, int]) -> str:
+def _describe_exemption(fitted: Thresholds, support: tuple[float, int]) -> str:
     """How the light-wind exemption was fitted, and what the record had to say about it.
 
     ADR 0009 asks that a value the Gold Days do not pin down says so rather than shipping a
@@ -720,9 +739,15 @@ def _describe_exemption(thresholds: Thresholds, support: tuple[float, int]) -> s
     that evidence: at zero, the bar is an assertion the record neither supports nor
     contradicts, and a reader deciding how much weight to give it needs to know which case
     they are in. It travels in `method` because that is what reaches the API.
+
+    Takes the **pre-translation** thresholds, since #51. Every number in this sentence is an
+    ERA5 wind speed — the bar, and the calmest hour it had to admit — and quoting the shipped
+    bar beside them would read as a value lower than the hour it supposedly admits, which is
+    incoherent rather than merely imprecise. What the Pipeline Run applies is the translated
+    bar, and the sentence that follows this one in `method` says so.
     """
     calmest, days_needing = support
-    exemption = thresholds.light_wind_exemption_kmh
+    exemption = fitted.light_wind_exemption_kmh
     if not days_needing:
         return (
             f"The {exemption:g} km/h light-wind exemption (ADR 0009) is the smallest "
@@ -730,10 +755,10 @@ def _describe_exemption(thresholds: Thresholds, support: tuple[float, int]) -> s
             "it, so the record does not constrain where it sits."
         )
     return (
-        f"The light-wind exemption (ADR 0009) was fitted, not verified: {exemption:g} km/h, "
-        f"the lowest value admitting the {days_needing} Gold Days in the fitting split that "
-        "no hour passes on direction and speed alone, the calmest hour of the windiest of "
-        f"them being {calmest:.1f} km/h."
+        f"The light-wind exemption (ADR 0009) was fitted, not verified: {exemption:g} km/h "
+        f"against ERA5, the lowest value admitting the {days_needing} Gold Days in the "
+        "fitting split that no hour passes on direction and speed alone, the calmest hour "
+        f"of the windiest of them being {calmest:.1f} km/h."
     )
 
 
@@ -786,18 +811,20 @@ def write_thresholds(
                 f"bar also required to sit above the Watch bar. What set the Watch bar in "
                 f"this fit was {watch_binding}; what set the Go Call bar was {go_binding}. "
                 "Height and both arcs were verified to block no Gold Day rather than fitted. "
-                + _describe_exemption(thresholds, exemption_support)
-                + " The wave bars above are in "
+                + _describe_exemption(fitted, exemption_support)
+                + " The bars above are in "
                 "Open-Meteo units, which is what the Pipeline Run reads; the fit ran in "
                 "reanalysis units, where the same sea reports a longer swell period, and "
                 "chose "
                 f"{fitted.minimum_significant_wave_height_m:g} m / "
                 f"{fitted.watch_minimum_swell_period_s:g} s / "
-                f"{fitted.go_call_minimum_swell_period_s:g} s. Translated by "
+                f"{fitted.go_call_minimum_swell_period_s:g} s / "
+                f"{fitted.light_wind_exemption_kmh:g} km/h. Translated by "
                 + "; ".join(t.describe() for t in translations.values())
-                + " (analysis/overlap/README.md). The light-wind exemption is not "
-                "translated: wind reaches the fit and the Pipeline Run alike from ERA5, so "
-                "it is already in the units it is applied in."
+                + " (analysis/overlap/README.md, analysis/wind_products/README.md). The "
+                "light-wind exemption is translated too, since #51: it is fitted against "
+                "ERA5 and applied by a Pipeline Run to a forecast product, which reads "
+                "lighter in the band the exemption decides in."
             ),
             "source": "analysis/calibration/calibrate.py",
             "fitted_at": date_type.today().isoformat(),
@@ -1159,6 +1186,10 @@ def main() -> int:
     # every table written describes the reanalysis the fit ran on; only the shipped file is
     # restated in the units the Pipeline Run reads.
     translations = measure.fit_translations()
+    # Wind comes from a different pairing than the wave quantities — ERA5 against the
+    # forecast product, not Copernicus against Open-Meteo — so it is fitted where it is
+    # measured and imported here rather than re-derived.
+    translations["light_wind_exemption_kmh"] = gap.fit_translation()
     shipped = translate(chosen, translations)
     print("\nTranslating the fitted bars into the units the Pipeline Run reads:")
     for translation in translations.values():
@@ -1169,7 +1200,9 @@ def main() -> int:
         f"  Watch bar {chosen.watch_minimum_swell_period_s:g} s  -> "
         f"{shipped.watch_minimum_swell_period_s:g} s\n"
         f"  Go bar    {chosen.go_call_minimum_swell_period_s:g} s  -> "
-        f"{shipped.go_call_minimum_swell_period_s:g} s"
+        f"{shipped.go_call_minimum_swell_period_s:g} s\n"
+        f"  exemption {chosen.light_wind_exemption_kmh:g} km/h  -> "
+        f"{shipped.light_wind_exemption_kmh:g} km/h"
     )
 
     sweep_path = write_sweep_csv(rows)

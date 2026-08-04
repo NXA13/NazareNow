@@ -53,8 +53,11 @@ GO_PERIOD_S = 12.9
 SWELL_ARC_FROM, SWELL_ARC_TO = 255.0, 330.0
 WIND_ARC_FROM, WIND_ARC_TO = 20.0, 180.0
 MAX_WIND_KMH = 35.0
-LIGHT_WIND_KMH = 16.5
-"""ADR 0009: below this the offshore arc is not consulted. Not a second cap — see the ADR."""
+LIGHT_WIND_KMH = 14.5
+"""ADR 0009: below this the offshore arc is not consulted. Not a second cap — see the ADR.
+
+The shipped bar, which since #51 is the fitted 16.5 km/h translated out of ERA5 units into
+the forecast product's."""
 CONFIRMED_LEAD = 1
 GO_LEAD = 7
 
