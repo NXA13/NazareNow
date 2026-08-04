@@ -145,8 +145,9 @@ What the measurement does **not** remove is the scatter. The residual is 3.45 km
 correctly placed bar disagrees with the fit's intent on about 13% of hours. Translating fixes
 where the bar sits, not how noisy the reading it is applied to is.
 
-**Whether the wave translation is the right shape outside the regime it was fitted in —
-measured by #52, and it is not.** The consequence recorded above keeps the fit in native units
+**Whether the wave translation is the right shape outside the regime it was fitted in. #52
+measured that it is not, and left the fix open.** The consequence recorded above keeps the fit
+in native units
 and inverts the translation at inference. It says nothing about where that translation is
 fitted. It is fitted on hours at or above 3 m, in the regime the *thresholds* operate in, and
 then applied by the Amplification Model to every hour served — 84% of which sit below 3 m of

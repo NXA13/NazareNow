@@ -70,6 +70,7 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 
@@ -259,12 +260,12 @@ class Shape:
         return f"piecewise, {self.regime} — " + "; ".join(pieces)
 
 
-def _shape_from(translation: dict) -> Shape:
+def _shape_from(variable: str, translation: dict) -> Shape:
     """A one-segment shape from an `amplification.json` translation block."""
     return Shape(
-        variable="shipped",
+        variable=variable,
         name="shipped",
-        regime="hours",
+        regime=f"{translation['fitted_on_hours']} hours, per amplification.json",
         segments=(
             Segment(
                 lower=-math.inf,
@@ -354,7 +355,6 @@ class Candidate:
     """One shape of Translation, for both quantities the Amplification Model restates."""
 
     name: str
-    note: str
     height: Shape
     period: Shape
 
@@ -397,21 +397,39 @@ different 4,941 hours. CONTEXT.md keeps Combined Sea and Swell apart for exactly
 """
 
 
-def _pairs(product: reanalysis.Product = reanalysis.IBI) -> list[measure.Paired]:
-    return measure.pair_hours(product)
+PAIRINGS: dict[
+    str,
+    tuple[
+        Callable[[measure.Paired], float],
+        Callable[[measure.Paired], float],
+        Callable[[Candidate], Shape],
+    ],
+] = {
+    "significant_wave_height_m": (
+        lambda h: h.reanalysis_combined_sea,
+        lambda h: h.operational_combined_sea,
+        lambda candidate: candidate.height,
+    ),
+    "swell_period_s": (
+        lambda h: h.combined_period,
+        lambda h: h.operational_period,
+        lambda candidate: candidate.period,
+    ),
+}
+"""The two quantities a Translation is fitted between, and where each lives.
+
+Named once because three places need it and they must not drift: the fitting, the error
+measurement in section 2, and the restatement at scoring time. Two of them reading the pairing
+differently is exactly the class of defect `served_path.check` exists to catch between the two
+feature encodings.
+"""
 
 
 def _columns(hours: list[measure.Paired]) -> dict[str, tuple[list[float], list[float]]]:
-    """The two (reanalysis, operational) pairings a Translation is fitted between."""
+    """Each pairing drawn out of a subset of hours, ready to fit."""
     return {
-        "significant_wave_height_m": (
-            [h.reanalysis_combined_sea for h in hours],
-            [h.operational_combined_sea for h in hours],
-        ),
-        "swell_period_s": (
-            [h.combined_period for h in hours],
-            [h.operational_period for h in hours],
-        ),
+        quantity: ([source(h) for h in hours], [target(h) for h in hours])
+        for quantity, (source, target, _) in PAIRINGS.items()
     }
 
 
@@ -434,7 +452,6 @@ def build_candidates(hours: list[measure.Paired]) -> list[Candidate]:
         candidates.append(
             Candidate(
                 name=name,
-                note=regime,
                 height=fit_line(
                     "significant_wave_height_m", name, regime, *columns["significant_wave_height_m"]
                 ),
@@ -449,7 +466,6 @@ def build_candidates(hours: list[measure.Paired]) -> list[Candidate]:
     candidates.append(
         Candidate(
             name="regime-aware",
-            note=f"two lines joined at Combined Sea {KNOT_M:g} m, fitted on every hour",
             height=fit_hinge(
                 "significant_wave_height_m",
                 "regime-aware",
@@ -545,21 +561,11 @@ def pairing_error(hours: list[measure.Paired], candidates: list[Candidate]) -> l
     different failures, and only the second is what extrapolating a fitted line does.
     """
     combined = np.array([h.reanalysis_combined_sea for h in hours])
-    quantities = {
-        "significant_wave_height_m": (
-            combined,
-            np.array([h.operational_combined_sea for h in hours]),
-            lambda candidate: candidate.height,
-        ),
-        "swell_period_s": (
-            np.array([h.combined_period for h in hours]),
-            np.array([h.operational_period for h in hours]),
-            lambda candidate: candidate.period,
-        ),
-    }
+    columns = _columns(hours)
 
     rows: list[PairingError] = []
-    for quantity, (xs, ys, pick) in quantities.items():
+    for quantity, (_, _, pick) in PAIRINGS.items():
+        xs, ys = (np.array(column) for column in columns[quantity])
         for lower, upper in (*INPUT_BANDS, (0.0, 99.0)):
             mask = (combined >= lower) & (combined < upper)
             if not mask.any():
@@ -585,6 +591,16 @@ def pairing_error(hours: list[measure.Paired], candidates: list[Candidate]) -> l
 # ---------------------------------------------------------------------------------------
 
 
+Scatter = Literal["flat", "proportional", "none"]
+"""What the reconstruction adds on top of the transform.
+
+`flat` is `served_path.py`'s assumption — the residual is independent of sea state. `none`
+isolates the measured offset from the assumed scatter. `proportional` redistributes the same
+residual so that it grows with the sea, which is the reading that would make a conclusion an
+artefact of the assumption rather than a property of the system.
+"""
+
+
 @dataclass(frozen=True)
 class Reconstruction:
     """How the operational series a candidate is scored against is generated.
@@ -596,31 +612,23 @@ class Reconstruction:
     """
 
     generator: Candidate
-    noise: bool = True
-    proportional: bool = False
-
-    @property
-    def scatter_label(self) -> str:
-        if not self.noise:
-            return "none"
-        return "proportional" if self.proportional else "flat"
+    scatter: Scatter = "flat"
 
     @property
     def label(self) -> str:
-        return f"{self.generator.name} / scatter {self.scatter_label}"
+        return f"{self.generator.name} / scatter {self.scatter}"
 
     def draw(self, rng, shape: Shape, values: np.ndarray) -> np.ndarray:
         operational = shape.apply(values)
-        if not self.noise:
+        if self.scatter == "none":
             return operational
-        scatter = shape.scatter(values)
-        if self.proportional:
+        spread = shape.scatter(values)
+        if self.scatter == "proportional":
             # Same total residual energy, redistributed so that it grows with the sea
             # instead of sitting flat across it. The alternative reading of the same
             # measurement, and the one that would make the sign change an artefact.
-            weight = values / max(float(np.mean(values)), 1e-9)
-            scatter = scatter * weight
-        return operational + rng.normal(0.0, 1.0, len(values)) * scatter
+            spread = spread * (values / max(float(np.mean(values)), 1e-9))
+        return operational + rng.normal(0.0, 1.0, len(values)) * spread
 
 
 def score_candidates(
@@ -799,15 +807,15 @@ def reconstructions(by_name: dict[str, Candidate], generator_name: str) -> list[
     return [
         Reconstruction(generator=by_name["shipped"]),
         Reconstruction(generator=generator),
-        Reconstruction(generator=generator, noise=False),
-        Reconstruction(generator=generator, proportional=True),
+        Reconstruction(generator=generator, scatter="none"),
+        Reconstruction(generator=generator, scatter="proportional"),
     ]
 
 
 def build(generator_name: str, trials: int) -> int:
     parameters, frame = served_path.load()
     target = frame["proxy_target_height_m"].to_numpy()
-    hours = _pairs()
+    hours = measure.pair_hours(reanalysis.IBI)
     candidates = build_candidates(hours)
     by_name = {candidate.name: candidate for candidate in candidates}
     if generator_name not in by_name:
@@ -824,7 +832,7 @@ def build(generator_name: str, trials: int) -> int:
     print("The transforms\n")
     for candidate in candidates:
         flag = "" if candidate.shippable else "   [not expressible as a Translation]"
-        print(f"  {candidate.name:<16} {candidate.note}{flag}")
+        print(f"  {candidate.name:<16} {candidate.height.regime}{flag}")
         print(f"      height  {candidate.height.describe()}")
         print(f"      period  {candidate.period.describe()}")
 
@@ -922,7 +930,7 @@ def build(generator_name: str, trials: int) -> int:
                 shape_rows.append(
                     {
                         "generator": reconstruction.generator.name,
-                        "scatter": reconstruction.scatter_label,
+                        "scatter": reconstruction.scatter,
                         "candidate": name,
                         "band": band,
                         "rows": int(bands[band].sum()),
@@ -953,8 +961,12 @@ def build(generator_name: str, trials: int) -> int:
         "Six readings of the same band, each one assumption further out than the last. The gap\n"
         "between `published` and `fair gen` is the reconstruction's own contribution to the\n"
         "published figure; the gap between `fair gen` and `best alt` is all any change of shape\n"
-        "could buy; and what is left against `scored` is the residual scatter, which no shape\n"
-        "removes.\n"
+        "could buy; and `no scatter` against `best alt` is what the assumed residual costs. What\n"
+        "is left against `scored` is none of those three — it is the real difference between the\n"
+        "two products, which shifts the baseline's reading and cannot be transformed away.\n\n"
+        "`best alt`, `no scatter` and `sized scatter` are the best candidate *for that band*,\n"
+        "named in the last column. It is not always an alternative: where it reads `shipped`,\n"
+        "nothing beat the shipped fit.\n"
     )
     published = {row["subset"]: row for row in _published_served()}
     ladder = (
@@ -1135,7 +1147,7 @@ def check() -> int:
     # Height floors to the 0.25 m step and periods go to one decimal, per `calibrate.translate`.
     identity = fit_line("significant_wave_height_m", "id", "hours", [0.0, 1.0], [0.02, 1.02])
     slightly_long = fit_line("swell_period_s", "id", "hours", [0.0, 1.0], [0.04, 1.04])
-    bars = shipped_bars(Candidate(name="synthetic", note="", height=identity, period=slightly_long))
+    bars = shipped_bars(Candidate(name="synthetic", height=identity, period=slightly_long))
     expect("height floors to the step", bars["minimum_significant_wave_height_m"], 2.75)
     expect("the Watch bar goes to one decimal", bars["watch_minimum_swell_period_s"], 12.0)
     expect("the Go bar goes to one decimal", bars["go_call_minimum_swell_period_s"], 13.5)
@@ -1150,23 +1162,24 @@ def check() -> int:
     ]
     from_file = Candidate(
         name="shipped",
-        note="",
-        height=_shape_from(shipped_translations["significant_wave_height_m"]),
-        period=_shape_from(shipped_translations["swell_period_s"]),
+        height=_shape_from(
+            "significant_wave_height_m", shipped_translations["significant_wave_height_m"]
+        ),
+        period=_shape_from("swell_period_s", shipped_translations["swell_period_s"]),
     )
     current = json.loads(THRESHOLDS.read_text(encoding="utf-8"))
     for name, value in shipped_bars(from_file).items():
         expect(f"the fitted {name} translates to the shipped bar", value, float(current[name]))
 
     # --- the reconstruction ----------------------------------------------------------------
-    synthetic = Candidate(name="synthetic", note="", height=line, period=line)
+    synthetic = Candidate(name="synthetic", height=line, period=line)
     values = np.array([1.0, 2.0, 3.0])
     rng = np.random.default_rng(0)
     expect(
         "noise off returns the transform exactly",
         [
             round(float(v), 9)
-            for v in Reconstruction(synthetic, noise=False).draw(rng, line, values)
+            for v in Reconstruction(synthetic, scatter="none").draw(rng, line, values)
         ],
         [round(float(v), 9) for v in line.apply(values)],
     )
