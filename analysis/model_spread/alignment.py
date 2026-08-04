@@ -27,8 +27,13 @@ spread, a gap shorter than the bound cannot be what the spread is made of. If th
 *not* small, this settles nothing and #8 has to align by observation after all.
 
 Deliberately not assumed: that self-movement scales with the square root of time, or
-linearly, or any other way. No such law is applied to convert 24 hours into six. The measured
-24-hour figure is reported as what it is.
+linearly, or any other way. The growth exponent is **fitted** — `scaling` measures how movement
+grows across every interval the archive offers, and `Comparison.movement_over` applies that
+measured exponent downward to reach six and twelve hours. A pure random walk would give 0.5 and
+a steadily improving forecast 1.0; the measured value sits between, so neither assumption would
+have been right. It is still extrapolation below the measured range: the report states the
+fitted exponent up front and keeps the extrapolated columns (`stale/6h`, `stale/12h`) separate
+from the measured one (`measured/24h`), so the 24-hour figure is still reported as what it is.
 
 **One honest mismatch.** The archive carries `_previous_dayN` only for the Combined Sea
 partition — `analysis/forecast_error/README.md` records that the Swell variables come back

@@ -98,6 +98,16 @@ export interface DaySpread {
   providers: string[];
   /** Whether fewer than the full roster of organisations answered. */
   degraded: boolean;
+  /** How many organisations a full read would have heard from — the backend's roster size,
+   * sent rather than known here so "two of three" cannot go on saying three after a fourth
+   * organisation joins. */
+  providers_expected: number;
+  /** Whether `lowest` and `highest` are compass points rather than points on a line.
+   *
+   * Sent by the backend, which names its bearings explicitly, rather than inferred here from
+   * the unit string: this decides how the pair is read, and a provider respelling its degree
+   * sign would otherwise silently turn an arc into an interval. */
+  bearing: boolean;
   /** How many of the date's forecast hours could be measured, out of how many it has. */
   hours_measured: number;
   hours_total: number;

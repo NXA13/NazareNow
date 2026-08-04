@@ -9,7 +9,8 @@ organisations — EWAM and GWAM are both DWD, and the two GFS Wave resolutions a
 Two resolutions of one centre's model share its physics, its assimilation and its bugs, so
 counting them separately makes the ensemble look twice as corroborated as it is. That is the
 concrete meaning of ADR 0003's word *independent*, and it is what keeps the number comparable
-when one member drops out at its horizon: DWD still has GWAM, so the vote count does not move.
+when one member stops answering at long Lead Time: DWD still has GWAM, so the vote count does
+not move.
 
 **This is an upper bound on disagreement, not a calibrated uncertainty.** The models publish
 on different cycles and their runs are not aligned — run age cannot be read from the provider
@@ -24,6 +25,7 @@ never toward a Go Call that should not have been issued.
 from __future__ import annotations
 
 import statistics
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 # The roster, mapped to the organisation that runs each model. ADR 0003 named four models
@@ -63,6 +65,18 @@ Nazaré Canyon focuses.
 """
 
 
+def is_degraded(providers: Sequence[str]) -> bool:
+    """Whether this many organisations is fewer than the full roster.
+
+    One predicate, because the read path derives the flag rather than storing it (a stored
+    flag and the list it describes can disagree after a roster change) and would otherwise
+    restate the comparison beside a second copy of the roster's size. Two copies of "degraded
+    means fewer than all of them" is exactly how the interface comes to say "2 of 3" while
+    the backend knows about four.
+    """
+    return len(providers) < len(ORGANISATIONS)
+
+
 @dataclass(frozen=True)
 class Spread:
     """Disagreement on one variable at one moment, and who contributed to it.
@@ -91,7 +105,7 @@ class Spread:
     @property
     def degraded(self) -> bool:
         """Whether this rests on fewer organisations than the full roster."""
-        return len(self.providers) < len(ORGANISATIONS)
+        return is_degraded(self.providers)
 
 
 @dataclass(frozen=True)

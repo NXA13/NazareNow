@@ -12,9 +12,14 @@ unavailable.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from helpers import ENSEMBLE_SPREAD_M, GIANT, forecast_provider, ingest
+from nazarenow.pipeline import ENSEMBLE_UNAVAILABLE
+from nazarenow.runs import FailureKind
+from nazarenow.spread import PROVIDERS
 
 TODAY = "2026-02-09"
 SOON = "2026-02-12"
@@ -24,6 +29,7 @@ SOON = "2026-02-12"
 # property that keeps the spread comparable across Lead Times.
 NCEP = ("ncep_gfswave025", "ncep_gfswave016")
 MOST_OF_THE_ROSTER = (*NCEP, "meteofrance_wave")
+ROSTER = tuple(PROVIDERS)
 
 
 def spread_for(client, date: str, reading: str = "swell_height") -> dict:
@@ -138,6 +144,78 @@ class TestSwellDirectionIsMeasuredOnACircle:
         assert measured["unit"] == "°"
 
 
+class TestAgreementAndDisagreementReachTheReader:
+    """#8's first named test, driven from the transport rather than from `derive`.
+
+    `test_spread.py` already asserts the property on `spread.derive` with literal readings.
+    That is the arithmetic, and it is not the criterion: everything between the provider and
+    the page — the fetch, the per-model store, the median hour, the API — could collapse the
+    members and those unit tests would still pass. These stub providers that genuinely agree
+    and providers that genuinely disagree, and read the answer back off the endpoint.
+    """
+
+    # Offsets from the marine body, in metres, per model. `AGREEING` is deliberately not all
+    # zeros: identical readings would also pass a `derive` that had silently stopped looking
+    # at anything but the first member.
+    AGREEING = {
+        "meteofrance_wave": 0.0,
+        "dwd_ewam": 0.01,
+        "dwd_gwam": 0.02,
+        "ncep_gfswave025": 0.03,
+        "ncep_gfswave016": 0.03,
+    }
+    DISAGREEING = {
+        "meteofrance_wave": 0.0,
+        "dwd_ewam": 1.4,
+        "dwd_gwam": 1.5,
+        "ncep_gfswave025": 2.8,
+        "ncep_gfswave016": 2.9,
+    }
+
+    def test_providers_that_agree_yield_a_narrow_spread(self, store, client) -> None:
+        ingest(
+            store,
+            forecast_provider({SOON: GIANT}, today=TODAY, ensemble_offsets=self.AGREEING),
+        )
+
+        measured = spread_for(client, SOON)
+
+        assert measured["spread"] == pytest.approx(0.03, abs=1e-6)
+        assert measured["providers"] == ["DWD", "MeteoFrance", "NCEP"]
+
+    def test_providers_that_disagree_yield_a_wide_spread(self, store, client) -> None:
+        ingest(
+            store,
+            forecast_provider({SOON: GIANT}, today=TODAY, ensemble_offsets=self.DISAGREEING),
+        )
+
+        measured = spread_for(client, SOON)
+
+        # DWD votes at the median of its two models (1.45) and NCEP at 2.85, so the widest
+        # gap is between MeteoFrance and NCEP.
+        assert measured["spread"] == pytest.approx(2.85, abs=1e-6)
+
+    def test_the_same_sea_read_two_ways_moves_the_spread_and_not_the_forecast(
+        self, store, client
+    ) -> None:
+        """The two runs differ only in how far apart the members sit. If disagreement leaked
+        into the forecast the traveller reads, these heights would move together — which is
+        the averaging-on-arrival failure the first criterion forbids, seen from the far end.
+        """
+
+        def peak_and_spread(offsets: dict[str, float]) -> tuple[float, float]:
+            ingest(store, forecast_provider({SOON: GIANT}, today=TODAY, ensemble_offsets=offsets))
+            body = client.get("/api/conditions/forecast").json()
+            day = next(day for day in body["days"] if day["date"] == SOON)
+            return day["peak_swell_height"]["value"], day["model_spread"]["swell_height"]["spread"]
+
+        agreeing_peak, narrow = peak_and_spread(self.AGREEING)
+        disagreeing_peak, wide = peak_and_spread(self.DISAGREEING)
+
+        assert narrow < wide
+        assert agreeing_peak == pytest.approx(disagreeing_peak)
+
+
 class TestAProviderBeingUnavailable:
     """ADR 0003: it degrades the estimate rather than failing the Pipeline Run."""
 
@@ -197,8 +275,75 @@ class TestAProviderBeingUnavailable:
         assert all(row["providers"] == [] for row in history)
         assert all(row["hours_total"] == 24 for row in history)
 
+    def test_an_unreachable_ensemble_is_distinguishable_from_a_quiet_one(self, store) -> None:
+        """#8 asks for the unavailability itself to be *recorded*, and the spread rows alone
+        cannot carry that: a date with no value looks identical whether the endpoint could not
+        be reached or answered cleanly with every member silent. Those are different facts —
+        one is our sight of the models failing, the other is the models having nothing to say —
+        and #11 scores calls against the inputs that were actually available behind them.
+        """
+        ingest(store, forecast_provider({SOON: GIANT}, today=TODAY, ensemble_status=503))
+        unreachable = store.inputs_behind(store.runs()[0]["id"])
+
+        ingest(store, forecast_provider({SOON: GIANT}, today=TODAY, silent_models=ROSTER))
+        quiet = store.inputs_behind(store.runs()[1]["id"])
+
+        assert [row["source"] for row in unreachable] == [
+            "open-meteo-marine",
+            "open-meteo-weather",
+            ENSEMBLE_UNAVAILABLE,
+        ]
+        recorded = json.loads(unreachable[-1]["body"])
+        assert recorded["failure_kind"] == FailureKind.PROVIDER_UNAVAILABLE.value
+        assert "503" in recorded["failure_detail"]
+        assert unreachable[-1]["url"], "the record must name where we were looking"
+
+        # The quiet run reached the endpoint, so it files a real response and no failure.
+        assert [row["source"] for row in quiet] == [
+            "open-meteo-marine",
+            "open-meteo-weather",
+            "open-meteo-ensemble",
+        ]
+
 
 class TestTheRecordAccumulates:
+    def test_the_record_keeps_the_model_count_beside_the_organisation_count(self, store) -> None:
+        """Three votes from five models, and the record holds both numbers.
+
+        `providers` is what the spread is measured across and is the figure shown; the model
+        count is how many series stood behind it. They move independently — one of DWD's two
+        models dropping out leaves the vote count at three while the model count falls to four
+        — and that difference is the only thing distinguishing a thinner ensemble from an
+        unchanged one when a spread widens between runs.
+        """
+        ingest(store, forecast_provider({SOON: GIANT}, today=TODAY))
+
+        measured = next(
+            row
+            for row in store.spread_history()
+            if row["date"] == SOON and row["variable"] == "swell_height"
+        )
+
+        assert measured["providers"] == ["DWD", "MeteoFrance", "NCEP"]
+        assert measured["models_reporting"] == 5
+
+    def test_one_model_of_an_organisation_dropping_thins_the_ensemble_without_losing_a_vote(
+        self, store
+    ) -> None:
+        ingest(
+            store,
+            forecast_provider({SOON: GIANT}, today=TODAY, silent_models=("dwd_ewam",)),
+        )
+
+        measured = next(
+            row
+            for row in store.spread_history()
+            if row["date"] == SOON and row["variable"] == "swell_height"
+        )
+
+        assert measured["providers"] == ["DWD", "MeteoFrance", "NCEP"]
+        assert measured["models_reporting"] == 4
+
     def test_a_later_run_adds_to_the_record_rather_than_replacing_it(self, store) -> None:
         """What a date's disagreement was at ten days and what it had become at three is
         the series #11 needs to say whether narrowing spread preceded the swells that

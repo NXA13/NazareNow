@@ -223,22 +223,19 @@ function CallDetail({ day, model }: { day: ForecastDay; model: string | null }) 
   );
 }
 
-/** How many independent forecasters the backend's full roster holds.
- *
- * Used only to say "two of three" rather than "two", so a reader can tell a degraded read
- * from a normal one. Derived from the day's own numbers where possible — see `Agreement` —
- * because this layer knowing the roster's size independently is exactly how the two drift. */
-const FULL_ROSTER = 3;
-
 /** A spread rendered in the reading's own terms.
  *
  * Swell direction is a compass arc, not an interval: it runs clockwise from `lowest` to
  * `highest`, and across north the second number is the smaller one. Printing "5 to 355"
  * would name the wrong three-quarters of the compass on precisely the swells the canyon
- * focuses best, so direction gets its own sentence rather than the shared one. */
+ * focuses best, so direction gets its own sentence rather than the shared one.
+ *
+ * Which readings are arcs is the backend's `bearing` flag, not a test on the unit string.
+ * The backend names its bearings for exactly this reason — the unit is the provider's own
+ * text, and it decides arithmetic here rather than only presentation. */
 function spreadRange(spread: DaySpread): string {
   if (spread.lowest === null || spread.highest === null) return '';
-  if (spread.unit === '°') {
+  if (spread.bearing) {
     return (
       `${compassPoint(spread.lowest)} to ${compassPoint(spread.highest)} ` +
       `(${formatValue(spread.lowest)}° to ${formatValue(spread.highest)}°)`
@@ -305,18 +302,19 @@ function Agreement({ day }: { day: ForecastDay }) {
             )}
           </p>
           <p className="provenance">
-            {height.providers.join(', ')} — measured across {height.hours_measured} of this day's{' '}
-            {height.hours_total} hours. A narrow gap means they are describing the same weather; a
-            wide one means the forecast has not settled and the day could still change. It is an
-            upper bound on how far apart they are, not a margin on the height above: the models
-            publish on different schedules, which widens the gap rather than narrowing it.
+            {height.providers.join(', ')} at that hour. A spread could be measured for{' '}
+            {height.hours_measured} of this day's {height.hours_total} hours. A narrow gap means
+            they are describing the same weather; a wide one means the forecast has not settled and
+            the day could still change. It is an upper bound on how far apart they are, not a margin
+            on the height above: the models publish on different schedules, which widens the gap
+            rather than narrowing it.
           </p>
         </>
       )}
       {height.degraded && (
         <p role="status" className="alert" data-testid={`spread-degraded-${day.date}`}>
-          Only {height.providers.length} of {FULL_ROSTER} independent forecasters answered for this
-          day, so this rests on less than a full read.
+          Only {height.providers.length} of {height.providers_expected} independent forecasters
+          answered for this day, so this rests on less than a full read.
         </p>
       )}
     </section>

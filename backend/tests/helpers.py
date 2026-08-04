@@ -120,6 +120,7 @@ def forecast_provider(
     also_hours: dict[str, tuple[dict[str, float], tuple[int, ...]]] | None = None,
     silent_models: tuple[str, ...] = (),
     ensemble_status: int = 200,
+    ensemble_offsets: dict[str, float] | None = None,
 ) -> httpx.MockTransport:
     """A provider returning `days` days from `today`, quiet except where overridden.
 
@@ -136,7 +137,9 @@ def forecast_provider(
     recognised by its `models` parameter. `silent_models` makes named members answer null
     for every hour, which is how a provider is unavailable rather than absent; a non-200
     `ensemble_status` makes the endpoint itself fail, which ADR 0003 requires to degrade the
-    estimate rather than the run.
+    estimate rather than the run. `ensemble_offsets` moves the members apart or together, so
+    agreement and disagreement can be driven from the transport rather than asserted on
+    `spread.derive` in isolation.
     """
     by_date = by_date or {}
     only_hours = only_hours or {}
@@ -206,7 +209,9 @@ def forecast_provider(
         "hourly": {"time": stamps, **weather},
     }
 
-    ensemble_body = ensemble_body_from(marine_body, silent_models=silent_models)
+    ensemble_body = ensemble_body_from(
+        marine_body, silent_models=silent_models, offsets=ensemble_offsets
+    )
 
     def handle(request: httpx.Request) -> httpx.Response:
         if is_ensemble_request(request):
@@ -232,7 +237,10 @@ def is_ensemble_request(request: httpx.Request) -> bool:
 
 
 def ensemble_body_from(
-    marine_body: dict[str, Any], *, silent_models: tuple[str, ...] = ()
+    marine_body: dict[str, Any],
+    *,
+    silent_models: tuple[str, ...] = (),
+    offsets: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """One series per model per variable, built from a marine body's own hourly arrays.
 
@@ -244,6 +252,12 @@ def ensemble_body_from(
     which is what an unavailable member actually looks like and is why a 200 alone proves a
     model agreed with nobody.
 
+    `offsets` replaces how far each member sits from the marine body, which is what makes
+    members agree or disagree. #8 requires a test that agreeing providers yield a narrow
+    spread and disagreeing ones a wide one; with a fixed set of offsets that can only be
+    asserted on `derive` directly, never on providers stubbed at the transport and read back
+    through the run.
+
     A marine body deliberately broken to exercise a rejection path is copied as far as it
     goes and no further. Those runs fail on the marine response, which is fetched first, so
     the ensemble is never requested — but this is built when the transport is constructed,
@@ -253,7 +267,7 @@ def ensemble_body_from(
     series: dict[str, list[Any]] = {"time": hourly.get("time", [])}
     units: dict[str, str] = {"time": "iso8601"}
 
-    for model, offset in ENSEMBLE_OFFSETS.items():
+    for model, offset in (offsets or ENSEMBLE_OFFSETS).items():
         silent = model in silent_models
         for variable, shift in (
             ("swell_wave_height", offset),

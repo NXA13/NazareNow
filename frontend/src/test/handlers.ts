@@ -89,6 +89,7 @@ function spreadFor(
   gap: number,
   unit: string,
   providers = ALL_PROVIDERS,
+  bearing = false,
 ): DaySpread {
   return {
     unit,
@@ -97,6 +98,10 @@ function spreadFor(
     highest: Number((middle + gap / 2).toFixed(2)),
     providers,
     degraded: providers.length < ALL_PROVIDERS.length,
+    providers_expected: ALL_PROVIDERS.length,
+    // Named per reading, as the backend names it, rather than derived from `unit` — a fixture
+    // that sniffed the degree sign could not catch a component doing the same thing.
+    bearing,
     hours_measured: 24,
     hours_total: 24,
   };
@@ -111,6 +116,8 @@ export const unmeasurableSpread: DaySpread = {
   highest: null,
   providers: [],
   degraded: true,
+  providers_expected: ALL_PROVIDERS.length,
+  bearing: false,
   hours_measured: 0,
   hours_total: 24,
 };
@@ -171,7 +178,7 @@ export function dayFrom(
     model_spread: modelSpread ?? {
       swell_height: spreadFor(middleHour.swell_height.value, 0.3, 'm'),
       swell_period: spreadFor(middleHour.swell_period.value, 1.2, 's'),
-      swell_direction: spreadFor(middleHour.swell_direction.value, 14, '°'),
+      swell_direction: spreadFor(middleHour.swell_direction.value, 14, '°', ALL_PROVIDERS, true),
     },
     hours,
   };

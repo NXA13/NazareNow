@@ -22,7 +22,7 @@ from pydantic import BaseModel
 from nazarenow.cycle import STALE_AFTER_HOURS, STALE_AFTER_SECONDS
 from nazarenow.days import group_by_date
 from nazarenow.decision import Status
-from nazarenow.spread import ORGANISATIONS
+from nazarenow.spread import BEARINGS, ORGANISATIONS, is_degraded
 from nazarenow.store import Store, StoreUnavailable
 
 app = FastAPI(
@@ -224,6 +224,22 @@ class DaySpread(BaseModel):
     """Whether fewer than the full roster of organisations answered. A spread from two is not
     comparable with one from three, and ADR 0003 requires that degradation to be visible."""
 
+    providers_expected: int
+    """How many organisations a full read would have heard from.
+
+    Sent rather than left for the interface to know, so "two of three" is the backend's roster
+    said once. A second copy over there is a number that stays at three the day a fourth
+    organisation joins, and it would be wrong in the one direction that matters: printing
+    "3 of 3" beside a degraded flag reads as a full read that is somehow still degraded."""
+
+    bearing: bool
+    """Whether `lowest` and `highest` are compass points rather than points on a line.
+
+    Named here for the same reason `spread.BEARINGS` names them rather than inferring from the
+    unit: this decides arithmetic, and the unit is the provider's own string. An interface
+    sniffing for a degree sign is one provider spelling change away from rendering an arc as
+    an interval, which across north names the wrong three-quarters of the compass."""
+
     hours_measured: int
     hours_total: int
     """How many of the date's forecast hours carried a measurable spread, out of how many it
@@ -336,6 +352,12 @@ def summarise_spread(stored: dict[str, dict[str, Any]]) -> dict[str, DaySpread]:
     Storing it would let the flag and the list it describes disagree after a roster change —
     and a row saying "not degraded" beside two organisations out of three is worse than no
     flag at all.
+
+    `providers_expected` and `bearing` are sent for the same reason in the other direction:
+    both are facts about the roster and the variable that this layer already knows, and an
+    interface re-deriving either — by counting to three itself, or by sniffing the unit for a
+    degree sign — is a second copy that drifts silently when the roster or the provider's
+    spelling changes.
     """
     return {
         variable: DaySpread(
@@ -344,7 +366,9 @@ def summarise_spread(stored: dict[str, dict[str, Any]]) -> dict[str, DaySpread]:
             lowest=row["lowest"],
             highest=row["highest"],
             providers=row["providers"],
-            degraded=len(row["providers"]) < len(ORGANISATIONS),
+            degraded=is_degraded(row["providers"]),
+            providers_expected=len(ORGANISATIONS),
+            bearing=variable in BEARINGS,
             hours_measured=row["hours_measured"],
             hours_total=row["hours_total"],
         )

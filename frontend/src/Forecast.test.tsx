@@ -361,6 +361,55 @@ describe('how much the forecasters agree', () => {
     );
   });
 
+  it('counts the roster from the backend, not from a number kept here', async () => {
+    // The day a fourth organisation joins, a roster size known on this side goes on saying
+    // three — and prints "3 of 3 independent forecasters answered" beside a degraded flag,
+    // which reads as a full read that is somehow still degraded.
+    const fourth = {
+      ...BIG,
+      model_spread: {
+        swell_height: {
+          ...BIG.model_spread.swell_height!,
+          providers: ['DWD', 'MeteoFrance', 'NCEP'],
+          degraded: true,
+          providers_expected: 4,
+        },
+      },
+    };
+    serveDays([fourth]);
+
+    render(<ForecastRange />);
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
+
+    expect(await screen.findByTestId(`spread-degraded-${BIG.date}`)).toHaveTextContent(
+      /3 of 4 independent forecasters/i,
+    );
+  });
+
+  it('does not attribute the middle hour of contributors to the whole day', async () => {
+    // `providers` is the median hour's, and `hours_measured` counts the whole day. Joining
+    // them into one clause — "DWD, NCEP — measured across 18 of 24 hours" — claims those
+    // organisations answered for all eighteen, which nothing in the record establishes.
+    const partial = {
+      ...BIG,
+      model_spread: {
+        swell_height: {
+          ...BIG.model_spread.swell_height!,
+          providers: ['DWD', 'NCEP'],
+          hours_measured: 18,
+          hours_total: 24,
+        },
+      },
+    };
+    serveDays([partial]);
+
+    const panel = await agreementFor(BIG.date);
+    const region = panel.closest('section')!;
+
+    expect(region).toHaveTextContent(/18 of this day's 24 hours/i);
+    expect(region.textContent).not.toMatch(/NCEP\s*—\s*measured across/i);
+  });
+
   it('renders swell direction as a compass arc rather than a numeric interval', async () => {
     // Bearings wrap. A swell the models put between 355 and 5 degrees spans 10 degrees of
     // compass, and rendering the pair as a minimum and a maximum would name the wrong 350.
@@ -382,6 +431,31 @@ describe('how much the forecasters agree', () => {
 
     expect(panel).toHaveTextContent(`${compassPoint(355)} to ${compassPoint(5)}`);
     expect(panel).toHaveTextContent('355° to 5°');
+  });
+
+  it('reads a bearing from the backend flag, not from the unit the provider spelled', async () => {
+    // Whether a pair is an arc or an interval decides arithmetic, not just presentation, and
+    // the unit is the provider's own text. Sniffing it for a degree sign leaves the wrong
+    // three-quarters of the compass one respelling away — so the same 355-to-5 arc must
+    // survive the unit arriving as "deg".
+    const respelled = {
+      ...BIG,
+      model_spread: {
+        ...BIG.model_spread,
+        swell_direction: {
+          ...BIG.model_spread.swell_direction!,
+          unit: 'deg',
+          spread: 10,
+          lowest: 355,
+          highest: 5,
+        },
+      },
+    };
+    serveDays([respelled]);
+
+    const panel = await agreementFor(BIG.date);
+
+    expect(panel).toHaveTextContent(`${compassPoint(355)} to ${compassPoint(5)}`);
   });
 
   it('shows nothing at all for a day the backend sent no spread for', async () => {

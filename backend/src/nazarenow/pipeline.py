@@ -449,6 +449,27 @@ def failure_detail(error: BaseException) -> str:
     return f"{type(error).__name__}: {error}"
 
 
+ENSEMBLE_UNAVAILABLE = "open-meteo-ensemble-unavailable"
+"""The `raw_response` source naming a run that could not reach the ensemble at all.
+
+Its own source rather than a flag on `open-meteo-ensemble`, so "which runs lost their second
+opinion" is one query and no row under the real source is anything but a real response.
+"""
+
+
+def attempted_url(error: httpx.HTTPError, fallback: str) -> str:
+    """The URL a failed request was aimed at, as far as the exception knows it.
+
+    `httpx.HTTPError` splits here: a `RequestError` carries the request it failed on, while a
+    bare error raised before one was built does not. The endpoint is used as the fallback so
+    the record always names where we were looking — a blank URL beside a transport failure
+    would lose the one detail that distinguishes "the ensemble was unreachable" from a fault
+    somewhere else in the run.
+    """
+    request = getattr(error, "request", None)
+    return str(request.url) if request is not None else fallback
+
+
 def run_pipeline(store: Store, client: httpx.Client, sleep=time.sleep) -> None:
     """Execute one Pipeline Run against the given store, recording the run either way.
 
@@ -528,15 +549,32 @@ def fetch_spread_members(store: Store, client: httpx.Client, sleep, run_id: int)
     plausible and is wrong, and a changed contract read as "everybody happens to be quiet
     today" is precisely that.
 
-    The degradation leaves a record rather than a silence: `derive_spreads` still writes a row
-    for every date, carrying no value and `hours_measured` of zero, and `model_forecast_hour`
-    holds nothing for the run. Both are read back as "the ensemble did not answer", which is
-    what happened.
+    **The degradation is recorded, not merely survived.** #8 requires an unavailable provider
+    to be *recorded*, and the all-null spread rows alone do not say what happened: a row with
+    no value is identical whether the endpoint was unreachable or answered cleanly with every
+    member quiet. Those are different facts — one is our sight of the models failing, the
+    other is the models having nothing to say — and #11 scores calls against the inputs that
+    were actually available when they were issued.
+
+    So the failure is written to `raw_response` under its own source name, carrying the same
+    `failure_kind`/`failure_detail` vocabulary a failed run would use. A separate source
+    rather than the real one because this is not a response: nothing was received, and a
+    synthesised body filed under `open-meteo-ensemble` would be a fabricated provider reply
+    sitting in the table that exists to hold genuine ones.
+
+    Alongside it, `derive_spreads` still writes a row for every date carrying no value and
+    `hours_measured` of zero, and `model_forecast_hour` holds nothing for the run.
     """
     models = list(spread.PROVIDERS)
     try:
         body, url = open_meteo.fetch_ensemble(client, models, sleep)
-    except httpx.HTTPError:
+    except httpx.HTTPError as error:
+        store.record_raw_response(
+            run_id,
+            ENSEMBLE_UNAVAILABLE,
+            attempted_url(error, open_meteo.MARINE_URL),
+            {"failure_kind": failure_kind(error).value, "failure_detail": failure_detail(error)},
+        )
         return {}
     store.record_raw_response(run_id, "open-meteo-ensemble", url, body)
     return collect_ensemble(body, models)
