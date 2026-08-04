@@ -188,6 +188,18 @@ footer p {
   margin-left: auto;
 }
 
+/* How much was checked, not how much it moved. Deliberately the quietest thing on the card:
+   it qualifies the call above rather than competing with it, and it carries no number, so it
+   cannot be scanned as a second height beside the peak. */
+.day-agreement {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  border-top: 1px dotted var(--rule, rgba(128, 128, 128, 0.35));
+  padding-top: 0.3rem;
+}
+
 .hint {
   color: var(--muted);
   font-size: 0.9rem;

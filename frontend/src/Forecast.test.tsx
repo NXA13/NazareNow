@@ -473,6 +473,85 @@ describe('how much the forecasters agree', () => {
   });
 });
 
+describe('the day card says how much was checked', () => {
+  // The panel only exists once a day is selected, so a reader scanning the range sees a call
+  // with nothing to say how much stood behind it. What can honestly go on a card is whether
+  // the check happened, not how wide it came out: a width needs a threshold nobody has
+  // calibrated, and the range itself is the median hour's while the card's height is the
+  // peak's.
+
+  it('marks a day whose agreement rests on less than a full read', async () => {
+    const degraded = {
+      ...BIG,
+      model_spread: {
+        swell_height: { ...BIG.model_spread.swell_height!, providers: ['DWD'], degraded: true },
+      },
+    };
+    serveDays([degraded]);
+
+    render(<ForecastRange />);
+
+    expect(await screen.findByTestId(`day-agreement-${BIG.date}`)).toHaveTextContent(
+      /partly checked/i,
+    );
+  });
+
+  it('marks a day nothing could be checked against at all', async () => {
+    // The strongest case and the easiest to miss: a call with no second opinion behind it.
+    serveDays([{ ...BIG, model_spread: { swell_height: unmeasurableSpread } }]);
+
+    render(<ForecastRange />);
+
+    expect(await screen.findByTestId(`day-agreement-${BIG.date}`)).toHaveTextContent(/unchecked/i);
+  });
+
+  it('says nothing on a day that got a full read', async () => {
+    // Silence is the honest default. A "fully checked" badge on every ordinary card would
+    // train the eye to skip the row, which is where the two that matter live.
+    render(<ForecastRange />);
+    await screen.findByTestId(`day-peak-${BIG.date}`);
+
+    expect(screen.queryByTestId(`day-agreement-${BIG.date}`)).not.toBeInTheDocument();
+  });
+
+  it('says nothing for a day the backend sent no spread for', async () => {
+    // Never measured is not the same as measured and found thin. A date stored before Model
+    // Spread existed must not acquire a caveat about a check that was never attempted.
+    serveDays([{ ...BIG, model_spread: {} }]);
+
+    render(<ForecastRange />);
+    await screen.findByTestId(`day-peak-${BIG.date}`);
+
+    expect(screen.queryByTestId(`day-agreement-${BIG.date}`)).not.toBeInTheDocument();
+  });
+
+  it('carries no number, so it cannot be read as a margin on the height beside it', async () => {
+    const degraded = {
+      ...BIG,
+      model_spread: {
+        swell_height: { ...BIG.model_spread.swell_height!, providers: ['DWD'], degraded: true },
+      },
+    };
+    serveDays([degraded]);
+
+    render(<ForecastRange />);
+    const marker = await screen.findByTestId(`day-agreement-${BIG.date}`);
+
+    expect(marker.textContent).not.toMatch(/[\d±]/);
+  });
+
+  it('reaches a screen reader, which is given the label instead of the card', async () => {
+    // `aria-label` overrides the card's content (#25). A marker living only in the markup
+    // would be dropped for exactly the readers least able to go and find the panel.
+    serveDays([{ ...BIG, model_spread: { swell_height: unmeasurableSpread } }]);
+
+    render(<ForecastRange />);
+    const card = await screen.findByRole('button', { name: new RegExp(BIG.date) });
+
+    expect(card).toHaveAccessibleName(/no second opinion/i);
+  });
+});
+
 describe('the forecast range', () => {
   it('marks the standout day so the overview can be scanned, not read', async () => {
     // Asserted through the rendered class, not by calling the helper: the agreed seam

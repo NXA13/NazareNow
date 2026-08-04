@@ -93,6 +93,39 @@ function dayLabel(date: string): string {
   return parsed.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
+/** What a day card says about the agreement behind it, or null when there is nothing to flag.
+ *
+ * **A marker, never a measurement.** The panel below carries the range, the contributing
+ * organisations and the hour they belong to; none of that can come up here. A width on a card
+ * needs a narrow/wide threshold nobody has calibrated, and printing the range itself would put
+ * a *median-hour* pair beside the card's *peak-hour* height — two numbers a reader would
+ * reasonably expect to match, which never will.
+ *
+ * What does belong here is the thing a reader who never clicks would otherwise miss: that the
+ * agreement behind this call was measured against less than the full roster, or could not be
+ * measured at all. That is a fact about how much was checked, not a quantity, so it needs no
+ * threshold and cannot be misread as a margin on the height beside it.
+ *
+ * A day the backend sent no spread for gets nothing rather than "unchecked" — that is a date
+ * stored before Model Spread existed, and inventing a caveat for it would claim something
+ * about a measurement that was never attempted.
+ */
+function agreementFlag(day: ForecastDay): string | null {
+  const height = day.model_spread?.swell_height;
+  if (!height) return null;
+  if (height.spread === null) return 'unchecked';
+  return height.degraded ? 'partly checked' : null;
+}
+
+/** The same fact spelled out, for the label a screen reader hears instead of the card.
+ *
+ * `aria-label` overrides the card's content, so a marker that lived only in the markup would
+ * be silently dropped for exactly the readers least able to go looking for the panel (#25). */
+const FLAG_MEANINGS: Record<string, string> = {
+  unchecked: 'no second opinion — nothing was available to check this day against',
+  'partly checked': 'checked against fewer forecasters than usual',
+};
+
 function DaySummary({
   day,
   largest,
@@ -104,6 +137,8 @@ function DaySummary({
   selected: boolean;
   onSelect: () => void;
 }) {
+  const flag = agreementFlag(day);
+
   return (
     <button
       type="button"
@@ -123,7 +158,8 @@ function DaySummary({
         `${day.date} — peak swell ${formatReading(day.peak_swell_height)}, ` +
         `period ${formatReading(day.swell_period_at_peak)}, ` +
         `from ${compassPoint(day.swell_direction_at_peak.value)}, ` +
-        `longest period ${formatReading(day.longest_swell_period)}`
+        `longest period ${formatReading(day.longest_swell_period)}` +
+        (flag ? `, ${FLAG_MEANINGS[flag]}` : '')
       }
       onClick={onSelect}
     >
@@ -148,6 +184,11 @@ function DaySummary({
         <span className="unit">{day.swell_period_at_peak.unit}</span>
         <span className="bearing">{compassPoint(day.swell_direction_at_peak.value)}</span>
       </span>
+      {flag && (
+        <span className="day-agreement" data-testid={`day-agreement-${day.date}`}>
+          {flag}
+        </span>
+      )}
     </button>
   );
 }
