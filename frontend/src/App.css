@@ -392,3 +392,179 @@ footer p {
 .agreement p:last-child {
   margin-bottom: 0;
 }
+
+/* ---------------------------------------------------------------------------
+ * The track record (#16).
+ *
+ * Same restraint as the rest of the sheet, with one deliberate exception: the
+ * caveats are styled to be read rather than skipped. A limitation set in small
+ * grey type below a table of confident figures is a limitation the page can
+ * claim to have stated and a reader will never take in.
+ * ------------------------------------------------------------------------ */
+
+.track-record .lead {
+  font-size: 1.05rem;
+  margin-bottom: 0.75rem;
+}
+
+.track-record h3 {
+  font-size: 1.05rem;
+  margin: 2rem 0 0.5rem;
+}
+
+.track-record h4 {
+  margin: 0 0 0.15rem;
+  font-size: 1rem;
+}
+
+/* Not muted, not small, and given a border that makes it a block rather than a
+   footnote. This is the sentence that stops every figure below being read as an
+   operating history. */
+.caveat {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin: 0 0 1rem;
+}
+
+.panel {
+  margin: 1rem 0 1.5rem;
+}
+
+.panel-caption {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin: 0 0 0.5rem;
+}
+
+.tiers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 0.75rem;
+}
+
+.tier {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+}
+
+.tier-meaning {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0 0 0.6rem;
+}
+
+.tier dl {
+  margin: 0;
+}
+
+.tier dl > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.3rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.tier dt {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.tier dd {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.aside {
+  color: var(--muted);
+  font-size: 0.8rem;
+  display: block;
+}
+
+/* Both record tables are wider than a phone, and scroll inside their own box for
+   the reason `.hours-scroll` does. The day table also caps its height: 150 rows
+   pushes every caveat below it off the end of the page. */
+.record-table {
+  overflow-x: auto;
+  margin: 0.75rem 0 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--surface);
+}
+
+.record-table.days {
+  max-height: 26rem;
+  overflow-y: auto;
+}
+
+.record-table table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 24rem;
+  font-size: 0.9rem;
+}
+
+.record-table caption {
+  text-align: left;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.record-table th,
+.record-table td {
+  padding: 0.35rem 0.75rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.record-table thead th,
+.record-table tbody th {
+  text-align: left;
+  font-weight: 600;
+}
+
+.record-table thead th {
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+}
+
+.record-table tbody tr + tr th,
+.record-table tbody tr + tr td {
+  border-top: 1px solid var(--line);
+}
+
+.record-table tr.gold th {
+  font-weight: 700;
+}
+
+/* Colour is a second signal, never the only one — the sign is already in the text,
+   so a reader who cannot distinguish these loses nothing. */
+.better {
+  color: #1c6b3f;
+}
+
+.worse {
+  color: #96431c;
+}
+
+.limitations {
+  margin: 0.5rem 0 1rem;
+  padding-left: 1.1rem;
+}
+
+.limitations li {
+  margin-bottom: 0.6rem;
+}
