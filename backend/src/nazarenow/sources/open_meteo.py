@@ -333,9 +333,21 @@ def fetch_weather(client: httpx.Client, sleep=time.sleep) -> tuple[dict[str, Any
     return fetch(client, WEATHER_URL, WEATHER_VARIABLES, sleep)
 
 
-# The variables Model Spread is measured on: the three the Heuristic Baseline decides a day
+# The readings Model Spread is measured on: the three the Heuristic Baseline decides a day
 # by. Spread in anything else would be measuring doubt no tier consults.
-SPREAD_VARIABLES = ["swell_wave_height", "swell_wave_period", "swell_wave_direction"]
+#
+# A mapping in the same shape as `MARINE_READINGS` and for the same reason — one place says
+# which provider variable stands behind each name — and because everything downstream of the
+# fetch works in this system's own vocabulary. `forecast_hour` already stores `swell_height`
+# rather than `swell_wave_height`; a Model Spread stored under the provider's spelling would
+# have made the store speak two languages and left something in the read path translating.
+SPREAD_READINGS = {
+    "swell_height": "swell_wave_height",
+    "swell_period": "swell_wave_period",
+    "swell_direction": "swell_wave_direction",
+}
+
+SPREAD_VARIABLES = sorted(set(SPREAD_READINGS.values()))
 
 
 def fetch_ensemble(
@@ -432,11 +444,29 @@ def validate_ensemble(body: dict[str, Any], models: list[str]) -> None:
             "member absent is a contract change, not an unavailable provider"
         )
 
+    # A series must line up with the time axis it is read against. Length is not checked to
+    # be strict about completeness — a member is entirely free to answer for none of these
+    # hours — but a series that is *present* and short does not report less, it reports the
+    # wrong hours: every reading past the gap is attributed to a timestamp it does not
+    # belong to, and a date's spread is then measured across two different moments. That is
+    # a payload that has changed shape, which fails a run here as it does everywhere else.
+    axis = len(hourly["time"])
+    ragged = {key: len(hourly[key]) for key, _ in present if len(hourly[key]) != axis}
+    if ragged:
+        raise ValueError(
+            f"Open-Meteo ensemble series disagree in length with the time axis "
+            f"({axis} hours): {ragged}"
+        )
+
+    # Every series that answered must say what it answered in. The check was previously
+    # skipped for a series carrying no declared unit at all, which is the one case where the
+    # scale is genuinely unknown — so the reading most in need of checking was the one
+    # exempt from it, and it would have been stored under this system's assumed unit.
     units = body.get("hourly_units") or {}
     wrong = {
-        key: units[key]
+        key: units.get(key)
         for key, variable in present
-        if key in units and units[key] != EXPECTED_UNITS[variable]
+        if units.get(key) != EXPECTED_UNITS[variable]
     }
     if wrong:
         raise ValueError(

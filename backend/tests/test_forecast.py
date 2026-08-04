@@ -11,6 +11,7 @@ import sqlite3
 import httpx
 import pytest
 
+from helpers import ensemble_body_from, is_ensemble_request
 from nazarenow.api import ForecastHour, Reading
 from nazarenow.pipeline import run_pipeline
 from nazarenow.sources.open_meteo import (
@@ -124,8 +125,11 @@ def weather_with_hourly() -> dict:
 def forecasting_provider(marine=None, weather=None):
     marine = marine or marine_with_hourly()
     weather = weather or weather_with_hourly()
+    ensemble = ensemble_body_from(marine)
 
     def handle(request: httpx.Request) -> httpx.Response:
+        if is_ensemble_request(request):
+            return httpx.Response(200, json=ensemble)
         return httpx.Response(200, json=marine if "marine" in request.url.host else weather)
 
     return httpx.MockTransport(handle)
@@ -232,20 +236,33 @@ def test_current_conditions_still_work_alongside_the_forecast(store, client) -> 
     assert client.get("/api/conditions/current").status_code == 200
 
 
-def test_the_pipeline_still_takes_one_request_per_provider(store) -> None:
-    """Current and hourly arrive in the same response, so adding the forecast must not
-    double the load on a free API."""
+def test_the_pipeline_takes_one_request_per_endpoint_and_one_for_the_whole_ensemble(
+    store,
+) -> None:
+    """Three requests, and the third is the one that could easily have been five.
+
+    Current and hourly arrive in the same response, so adding the forecast did not double
+    the load on a free API. Model Spread added the third: Open-Meteo takes a comma-separated
+    `models` list, so all five wave models arrive in one response rather than one apiece.
+    That is not only a request budget — every member is then read at a single instant, so
+    none of the measured disagreement is our own sampling drifting between calls.
+    """
     seen: list[httpx.Request] = []
 
     def handle(request: httpx.Request) -> httpx.Response:
         seen.append(request)
+        if is_ensemble_request(request):
+            return httpx.Response(200, json=ensemble_body_from(marine_with_hourly()))
         marine = "marine" in request.url.host
         return httpx.Response(200, json=marine_with_hourly() if marine else weather_with_hourly())
 
     with httpx.Client(transport=httpx.MockTransport(handle)) as http:
         run_pipeline(store, http, sleep=lambda _: None)
 
-    assert len(seen) == 2
+    assert len(seen) == 3
+    ensemble = [request for request in seen if is_ensemble_request(request)]
+    assert len(ensemble) == 1
+    assert len(ensemble[0].url.params["models"].split(",")) == 5
 
 
 def test_hours_the_provider_could_not_model_are_dropped(store, client) -> None:
@@ -346,6 +363,8 @@ def test_the_provider_is_asked_for_the_whole_range_hour_by_hour(store) -> None:
 
     def handle(request: httpx.Request) -> httpx.Response:
         asked.append(request.url)
+        if is_ensemble_request(request):
+            return httpx.Response(200, json=ensemble_body_from(marine_with_hourly()))
         marine = "marine" in request.url.host
         return httpx.Response(200, json=marine_with_hourly() if marine else weather_with_hourly())
 
@@ -358,7 +377,15 @@ def test_the_provider_is_asked_for_the_whole_range_hour_by_hour(store) -> None:
         # regression this test names — passed.
         assert url.params.get("forecast_days") == "16"
         assert url.params.get("hourly"), "the hourly block must be requested"
-        assert url.params.get("current"), "current conditions must still be requested"
+
+    # Current conditions are asked of the two endpoints that serve them and deliberately
+    # not of the ensemble: Model Spread is about dates ahead, and requesting a `current`
+    # block per model would add a second way for that call to fail for something nothing
+    # reads. Asserted separately rather than dropped, or the ensemble's exemption would
+    # have quietly excused the other two.
+    for url in asked:
+        if "models" not in url.params:
+            assert url.params.get("current"), "current conditions must still be requested"
 
 
 def test_every_ingested_hourly_reading_is_served_by_the_api() -> None:
@@ -458,7 +485,15 @@ def test_a_failure_partway_through_a_write_leaves_nothing_changed(store, client)
     ]
     with pytest.raises(sqlite3.IntegrityError):
         store.record_run(
-            "2026-03-01T00:00", 1.0, 2.0, {"nonsense": {}}, duplicated, [], run_id=store.begin_run()
+            "2026-03-01T00:00",
+            1.0,
+            2.0,
+            {"nonsense": {}},
+            duplicated,
+            [],
+            [],
+            [],
+            run_id=store.begin_run(),
         )
 
     assert client.get("/api/conditions/current").json() == conditions_before
@@ -474,6 +509,8 @@ def test_a_failure_partway_through_a_write_leaves_nothing_changed(store, client)
             2.0,
             {"nonsense": {}},
             [{"at": "2026-03-02T00:00", "readings": hour}],
+            [],
+            [],
             [],
             run_id=store.begin_run(),
         )  # type: ignore[arg-type]

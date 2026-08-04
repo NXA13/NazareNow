@@ -12,7 +12,7 @@
 
 import { http, HttpResponse } from 'msw';
 
-import type { Calibration, CallStatus, CurrentConditions, Forecast } from '../api';
+import type { Calibration, CallStatus, CurrentConditions, DaySpread, Forecast } from '../api';
 
 export const currentConditions: CurrentConditions = {
   observed_at: '2026-02-13T09:00',
@@ -74,6 +74,47 @@ function hoursFor(date: string, peak: number, longestPeriod: number, direction: 
   });
 }
 
+/** Every organisation on the backend's roster, in the order the API sorts them. */
+export const ALL_PROVIDERS = ['DWD', 'MeteoFrance', 'NCEP'];
+
+/** The Model Spread the backend sends for a date, built around the day's middle hour.
+ *
+ * `lowest` and `highest` bracket `spread` exactly, because on the backend they are one real
+ * hour's real measurement rather than three numbers assembled separately — a fixture whose
+ * ends did not bracket its own gap could not catch a component that rendered them
+ * inconsistently.
+ */
+function spreadFor(
+  middle: number,
+  gap: number,
+  unit: string,
+  providers = ALL_PROVIDERS,
+): DaySpread {
+  return {
+    unit,
+    spread: gap,
+    lowest: Number((middle - gap / 2).toFixed(2)),
+    highest: Number((middle + gap / 2).toFixed(2)),
+    providers,
+    degraded: providers.length < ALL_PROVIDERS.length,
+    hours_measured: 24,
+    hours_total: 24,
+  };
+}
+
+/** A date nobody could measure: recorded, with nothing in it. Distinct from an absent key,
+ * which would read as agreement. */
+export const unmeasurableSpread: DaySpread = {
+  unit: 'm',
+  spread: null,
+  lowest: null,
+  highest: null,
+  providers: [],
+  degraded: true,
+  hours_measured: 0,
+  hours_total: 24,
+};
+
 /** A day whose summary is derived from its own hours, so the two cannot contradict.
  *
  * `call` of null is a day the backend holds no call for, which the API returns as
@@ -87,8 +128,12 @@ export function dayFrom(
   direction: number,
   call: CallStatus | null = 'none',
   leadTime = 0,
+  modelSpread?: Record<string, DaySpread>,
 ) {
   const hours = hoursFor(date, peak, longestPeriod, direction);
+  // The hour the backend's median-hour rule would land on for a 24-hour day. Named rather
+  // than indexed inline so the fixture and the comment explaining it cannot drift.
+  const middleHour = hours[12]!;
   const peakHour = hours.reduce((a, b) => (b.swell_height.value > a.swell_height.value ? b : a));
   const longestHour = hours.reduce((a, b) => (b.swell_period.value > a.swell_period.value ? b : a));
   return {
@@ -120,6 +165,14 @@ export function dayFrom(
     swell_period_at_peak: peakHour.swell_period,
     swell_direction_at_peak: peakHour.swell_direction,
     longest_swell_period: longestHour.swell_period,
+    // Built from the day's middle hour, not its peak, because that is what the backend
+    // derives it from — the median hour's spread. A fixture centred on the peak would let a
+    // component claim the two describe the same hour and go unnoticed.
+    model_spread: modelSpread ?? {
+      swell_height: spreadFor(middleHour.swell_height.value, 0.3, 'm'),
+      swell_period: spreadFor(middleHour.swell_period.value, 1.2, 's'),
+      swell_direction: spreadFor(middleHour.swell_direction.value, 14, '°'),
+    },
     hours,
   };
 }

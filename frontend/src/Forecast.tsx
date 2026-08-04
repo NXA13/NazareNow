@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
 
-import { fetchForecast, type CallStatus, type Forecast, type ForecastDay } from './api';
+import {
+  fetchForecast,
+  type CallStatus,
+  type DaySpread,
+  type Forecast,
+  type ForecastDay,
+} from './api';
 import { compassPoint, formatReading, formatTimestamp, formatValue } from './format';
 
 type LoadState =
@@ -217,6 +223,106 @@ function CallDetail({ day, model }: { day: ForecastDay; model: string | null }) 
   );
 }
 
+/** How many independent forecasters the backend's full roster holds.
+ *
+ * Used only to say "two of three" rather than "two", so a reader can tell a degraded read
+ * from a normal one. Derived from the day's own numbers where possible — see `Agreement` —
+ * because this layer knowing the roster's size independently is exactly how the two drift. */
+const FULL_ROSTER = 3;
+
+/** A spread rendered in the reading's own terms.
+ *
+ * Swell direction is a compass arc, not an interval: it runs clockwise from `lowest` to
+ * `highest`, and across north the second number is the smaller one. Printing "5 to 355"
+ * would name the wrong three-quarters of the compass on precisely the swells the canyon
+ * focuses best, so direction gets its own sentence rather than the shared one. */
+function spreadRange(spread: DaySpread): string {
+  if (spread.lowest === null || spread.highest === null) return '';
+  if (spread.unit === '°') {
+    return (
+      `${compassPoint(spread.lowest)} to ${compassPoint(spread.highest)} ` +
+      `(${formatValue(spread.lowest)}° to ${formatValue(spread.highest)}°)`
+    );
+  }
+  return `${formatValue(spread.lowest)}${spread.unit} to ${formatValue(spread.highest)}${spread.unit}`;
+}
+
+/** What the independent wave models make of this day, and how much to lean on it.
+ *
+ * Deliberately worded as *models disagreeing*, never as a margin on the forecast. The
+ * backend's own docstrings are explicit that this is an upper bound on disagreement rather
+ * than a calibrated uncertainty — the members' run ages cannot be read from the provider, so
+ * some of the gap is our sampling of their publication schedules rather than genuine doubt.
+ * Rendering it as "8.1m ± 0.3m" would turn a bound into a confidence interval in one
+ * typographic stroke, which is the overclaim this project keeps having to undo.
+ *
+ * The numbers are the day's *middle* hour, and the copy says so. They are not the peak hour
+ * the card above summarises, so presenting them without that word would leave two swell
+ * heights on screen that a reader would reasonably expect to match and which never will. */
+function Agreement({ day }: { day: ForecastDay }) {
+  const height = day.model_spread?.swell_height;
+  const period = day.model_spread?.swell_period;
+  const direction = day.model_spread?.swell_direction;
+
+  if (!height) {
+    return null;
+  }
+
+  return (
+    /* A region rather than a note, so it does not compete with the call detail above it
+       for the note role. The two say different kinds of thing — that one explains the call,
+       this one says how much to lean on it — and a reader landing on "note" wants the call. */
+    <section
+      className="agreement"
+      aria-label={`How much the forecasters agree about ${dayLabel(day.date)}`}
+    >
+      <h4>How much the forecasters agree</h4>
+      {height.spread === null ? (
+        <p data-testid={`spread-${day.date}`}>
+          Fewer than two independent forecasters covered this day, so there is no agreement to
+          report. That is missing information, not a settled forecast — the day below is a single
+          model's opinion with nothing to check it against.
+        </p>
+      ) : (
+        <>
+          <p data-testid={`spread-${day.date}`}>
+            {height.providers.length} independent forecasters, and at this day's middle hour they
+            are{' '}
+            <strong>
+              {formatValue(height.spread)}
+              {height.unit}
+            </strong>{' '}
+            apart on the swell — {spreadRange(height)}.
+            {period?.spread !== null && period !== undefined && (
+              <>
+                {' '}
+                They differ by {formatValue(period.spread)}
+                {period.unit} on the period.
+              </>
+            )}
+            {direction?.spread !== null && direction !== undefined && (
+              <> On the direction they span {spreadRange(direction)}.</>
+            )}
+          </p>
+          <p className="provenance">
+            {height.providers.join(', ')} — measured across {height.hours_measured} of this day's{' '}
+            {height.hours_total} hours. A narrow gap means they are describing the same weather; a
+            wide one means the forecast has not settled and the day could still change. It is an
+            upper bound on how far apart they are, not a margin on the height above: the models
+            publish on different schedules, which widens the gap rather than narrowing it.
+          </p>
+        </>
+      )}
+      {height.degraded && (
+        <p role="status" className="alert" data-testid={`spread-degraded-${day.date}`}>
+          Only {height.providers.length} of {FULL_ROSTER} independent forecasters answered for this
+          day, so this rests on less than a full read.
+        </p>
+      )}
+    </section>
+  );
+}
+
 function HourTable({ day }: { day: ForecastDay }) {
   return (
     <div className="hours-scroll">
@@ -309,6 +415,7 @@ export function ForecastRange() {
       {open ? (
         <>
           <CallDetail day={open} model={state.forecast.amplification_model} />
+          <Agreement day={open} />
           <HourTable day={open} />
         </>
       ) : (

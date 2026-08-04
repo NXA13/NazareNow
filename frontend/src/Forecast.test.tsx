@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { ForecastRange } from './Forecast';
 import { compassPoint } from './format';
-import { calibration, dayFrom, forecast } from './test/handlers';
+import { calibration, dayFrom, forecast, unmeasurableSpread } from './test/handlers';
 import { server } from './test/server';
 
 const QUIET = forecast.days[0]!;
@@ -182,8 +182,10 @@ describe('calls', () => {
   });
 
   it('does not claim the forecast has converged', async () => {
-    // Nothing measures convergence. ADR 0003 has the tiers driven by Model Spread, which
-    // ticket #8 introduces; until then a claim of convergence is an invented assurance.
+    // Model Spread now exists (#8), so the interface *does* say how far apart the models
+    // are — but in its own panel, and never here. The tiers are still decided by Lead Time
+    // alone until Model Spread reaches the Decision Model, so a call explaining itself with
+    // a claim of convergence would be describing a rule that did not judge it.
     render(<ForecastRange />);
 
     await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
@@ -266,6 +268,134 @@ describe('calls', () => {
 
     await screen.findByTestId(`call-${BIG.date}`);
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+});
+
+describe('how much the forecasters agree', () => {
+  /** Open a day and return the agreement panel. */
+  async function agreementFor(date: string) {
+    render(<ForecastRange />);
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(date) }));
+    return screen.findByTestId(`spread-${date}`);
+  }
+
+  it('states the disagreement as a range, not as a bare number', async () => {
+    // #8 asks for Model Spread "in terms they can interpret". A lone "0.3" says nothing
+    // about a day; the two heights the forecasters actually gave say what it is a gap
+    // between. Asserted against the fixture so it cannot pass on static copy.
+    const spread = BIG.model_spread.swell_height!;
+
+    const panel = await agreementFor(BIG.date);
+
+    expect(panel).toHaveTextContent(`${spread.spread}${spread.unit}`);
+    expect(panel).toHaveTextContent(
+      `${spread.lowest}${spread.unit} to ${spread.highest}${spread.unit}`,
+    );
+  });
+
+  it('says how many independent forecasters stand behind it', async () => {
+    // A gap between two organisations and one between three are not comparable, and the
+    // number alone cannot say which happened.
+    const spread = BIG.model_spread.swell_height!;
+
+    render(<ForecastRange />);
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
+    const panel = await screen.findByRole('region', { name: /how much the forecasters agree/i });
+
+    for (const provider of spread.providers) {
+      expect(panel).toHaveTextContent(provider);
+    }
+  });
+
+  it('does not present the disagreement as a margin on the predicted height', async () => {
+    // The backend's own docstrings call this an upper bound on disagreement rather than a
+    // calibrated uncertainty: some of the gap is the models' publication schedules, not
+    // doubt about the weather. Rendering it as "± 0.3m" would turn a bound into a
+    // confidence interval in one typographic stroke.
+    const panel = await agreementFor(BIG.date);
+    const region = panel.closest('section')!;
+
+    expect(region.textContent).not.toMatch(/±/);
+    expect(region).toHaveTextContent(/upper bound/i);
+  });
+
+  it('names the hour the range was measured at, so it cannot be read against the peak', async () => {
+    // The backend measures a day's spread at its median hour, and the card above shows the
+    // day's peak. Two swell heights on screen that a reader would expect to match and never
+    // will, unless the copy says which hour each belongs to.
+    const panel = await agreementFor(BIG.date);
+
+    expect(panel).toHaveTextContent(/middle hour/i);
+  });
+
+  it('says outright when too few forecasters answered, rather than showing a zero', async () => {
+    // A zero here is indistinguishable from perfect agreement and would read as certainty
+    // at exactly the moment the system knows least.
+    const bare = { ...BIG, model_spread: { swell_height: unmeasurableSpread } };
+    serveDays([bare]);
+
+    const panel = await agreementFor(BIG.date);
+
+    expect(panel).toHaveTextContent(/fewer than two independent forecasters/i);
+    expect(panel).not.toHaveTextContent(/\b0m\b/);
+  });
+
+  it('flags a day resting on less than a full read', async () => {
+    const degraded = {
+      ...BIG,
+      model_spread: {
+        swell_height: {
+          ...BIG.model_spread.swell_height!,
+          providers: ['DWD', 'NCEP'],
+          degraded: true,
+        },
+      },
+    };
+    serveDays([degraded]);
+
+    render(<ForecastRange />);
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
+
+    expect(await screen.findByTestId(`spread-degraded-${BIG.date}`)).toHaveTextContent(
+      /2 of 3 independent forecasters/i,
+    );
+  });
+
+  it('renders swell direction as a compass arc rather than a numeric interval', async () => {
+    // Bearings wrap. A swell the models put between 355 and 5 degrees spans 10 degrees of
+    // compass, and rendering the pair as a minimum and a maximum would name the wrong 350.
+    const acrossNorth = {
+      ...BIG,
+      model_spread: {
+        ...BIG.model_spread,
+        swell_direction: {
+          ...BIG.model_spread.swell_direction!,
+          spread: 10,
+          lowest: 355,
+          highest: 5,
+        },
+      },
+    };
+    serveDays([acrossNorth]);
+
+    const panel = await agreementFor(BIG.date);
+
+    expect(panel).toHaveTextContent(`${compassPoint(355)} to ${compassPoint(5)}`);
+    expect(panel).toHaveTextContent('355° to 5°');
+  });
+
+  it('shows nothing at all for a day the backend sent no spread for', async () => {
+    // A day stored before the backend derived any. Inventing a reassuring sentence for it
+    // would be the interface answering a question nothing has measured.
+    serveDays([{ ...BIG, model_spread: {} }]);
+
+    render(<ForecastRange />);
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
+    await screen.findByRole('note');
+
+    expect(
+      screen.queryByRole('region', { name: /how much the forecasters agree/i }),
+    ).not.toBeInTheDocument();
   });
 });
 

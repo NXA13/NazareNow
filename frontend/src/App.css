@@ -348,3 +348,35 @@ footer p {
   color: var(--muted);
   font-size: 0.9rem;
 }
+
+/* How much the forecasters agree.
+ *
+ * Styled as a companion to the call detail rather than as an alert. It qualifies the call
+ * above it — how much to lean on it — and giving it the failure styling would make every
+ * ordinary day look like something had gone wrong. The degraded notice inside it still uses
+ * `.alert`, because that one genuinely is a shortfall. */
+.agreement {
+  margin-top: 0.6rem;
+  padding: 0.9rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line);
+  border-radius: 0.5rem;
+}
+
+.agreement h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.agreement p {
+  margin: 0 0 0.5rem;
+}
+
+.agreement p:last-child {
+  margin-bottom: 0;
+}

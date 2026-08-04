@@ -525,6 +525,8 @@ class TestCallsArePersisted:
             readings={},
             hours=stub_hours(SOON, GIANT),
             calls=[],
+            model_hours=[],
+            spreads=[],
             run_id=store.begin_run(),
         )
 
@@ -559,6 +561,8 @@ class TestCallsArePersisted:
                     "calibrated": False,
                 }
             ],
+            model_hours=[],
+            spreads=[],
             run_id=store.begin_run(),
         )
 
@@ -644,6 +648,8 @@ class TestCallsSurviveTheNextRun:
                         "calibrated": calibrated,
                     }
                 ],
+                model_hours=[],
+                spreads=[],
                 run_id=store.begin_run(),
             )
 

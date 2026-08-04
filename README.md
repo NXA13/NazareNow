@@ -42,7 +42,7 @@ weather services separate a *watch* from a *warning*.
 
 | | |
 |---|---|
-| **Inputs** | Open-Meteo Marine API — swell height, period, direction, wind. One model today. ADR 0003 calls for several independent wave models per date, using their disagreement as the uncertainty estimate; ticket #8 introduces that, so **no uncertainty estimate exists yet**. |
+| **Inputs** | Open-Meteo Marine API — swell height, period, direction, wind. Since #8 the marine forecast is fetched a second time across **five wave models in one request**, and their disagreement is the uncertainty estimate ADR 0003 calls for. Five identifiers are three independent organisations — EWAM and GWAM are both DWD, the two GFS Wave resolutions both NCEP — and each votes once. The result is displayed per day and **is an upper bound on disagreement, not a calibrated uncertainty**: the members' run ages cannot be read from the provider, which inflates the gap by roughly 6% one day out and 29% at six. That error runs toward caution, never toward a Go Call that should not have been issued. Model Spread does not yet reach the Decision Model. |
 | **Training target** | *Built.* Significant wave height from Monican02, the Instituto Hidrográfico mooring 15km off Nazaré near the canyon head. Hourly from 2010, via the Copernicus Marine In Situ TAC. Coverage is uneven and two winters are missing entirely. No buoy data reaches the running system: it is analysed in `analysis/buoy_coverage/` and became a dataset in #9 — **73,601 hours paired with the Hindcast across 14 seasons**, in [`analysis/training_dataset/`](./analysis/training_dataset/). |
 | **Calibration** | *Applied.* A hand-verified set of days confirmed as genuinely giant — contest days, ratified records — establishing what a predicted height actually means. Thirty-eight are sourced in `analysis/gold_days/`, and since #36 verified and #39 ingested the Copernicus wave reanalysis, all thirty-eight carry a real Swell partition rather than only the 9 since 2022. [`analysis/calibration/`](./analysis/calibration/) fits the thresholds against them, split on Big-Wave Season boundaries: **25 to choose them, 13 held back to check them**. The interface states that number rather than implying a precision the record cannot support. |
 | **Learned model** | *Shipped, and it does not win everywhere.* A least-squares fit on the training dataset, active since #13 and selected by `NAZARENOW_MODEL`. Held out on 2020/21–2025/26 it is **worse across all hours** (0.207m against 0.196m of mean absolute error) and **better in every band above 3m**, reaching 0.621m against 1.031m above 6m and 0.564m against 0.885m on Gold Day hours. It corrects a systematic under-read rather than adding scale: the Hindcast sits about 0.86m below the buoy on the biggest held-out days. It changes the predicted height only — every Watch and Go Call is still the rule's — and what it learned is the difference between a reanalysis and a buoy, **not** the canyon's Amplification. [`analysis/amplification_model/`](./analysis/amplification_model/). |
@@ -158,7 +158,7 @@ downloaded data, so CI checks them statically:
 .venv/Scripts/python.exe -m ruff format --check analysis/
 ```
 
-Eight exceptions, all fully runnable because they need no credentials:
+Nine exceptions, all fully runnable because they need no credentials:
 
 ```bash
 .venv/Scripts/python.exe analysis/gold_days/build.py --check
@@ -169,6 +169,7 @@ Eight exceptions, all fully runnable because they need no credentials:
 .venv/Scripts/python.exe analysis/amplification_model/train.py --check
 .venv/Scripts/python.exe analysis/amplification_model/served_path.py --check
 .venv/Scripts/python.exe analysis/forecast_error/profile.py --check
+.venv/Scripts/python.exe analysis/model_spread/alignment.py --check
 ```
 
 The Gold Day list is hand-written in `analysis/gold_days/README.md` and built from it into
@@ -188,11 +189,11 @@ strictest affordable bar instead — throwing away the recall each tier exists f
 reporting a rate comfortably inside budget, which is exactly the shape of mistake that looks
 correct in a report.
 
-The fourth self-tests how Model Spread would be computed from disagreeing forecasters — in
-particular that each *provider* votes once. Five model identifiers at Praia do Norte are three
-organisations, and counting them as five makes the ensemble look twice as corroborated as it
-is. See [`analysis/model_spread/`](./analysis/model_spread/), which is groundwork for #8 rather
-than anything the running system uses.
+The fourth self-tests which model identifiers the provider actually serves at Praia do Norte,
+and that each *organisation* votes once. Five identifiers are three organisations, and counting
+them as five makes the ensemble look twice as corroborated as it is. It also established what
+#8 could not have worked around: run age cannot be read from the provider at all. See
+[`analysis/model_spread/`](./analysis/model_spread/).
 
 The fifth self-tests how the training dataset joins its sources: that an hour missing either
 the Proxy Target or the Hindcast is dropped rather than filled from its neighbour, that the
@@ -222,6 +223,14 @@ missed, flattering exactly the failure the profile exists to find. It also pins 
 the marine archive for variables held on another host, which shipped wrong once: wind is
 archived elsewhere and carries no wave height, so deciding its subset from its own response
 emptied it without erroring. See [`analysis/forecast_error/`](./analysis/forecast_error/).
+
+The ninth self-tests the arithmetic behind the run-staleness measurement ADR 0003 demanded
+before Model Spread could be differenced: the growth exponent fitted across measured intervals
+rather than assumed, and the extrapolation below that range being reported as extrapolation.
+The finding is that staleness accounts for about 6% of the spread one day out and 29% at six —
+real, growing with Lead Time, and safe to leave uncorrected only because it inflates the
+spread rather than hiding agreement. See
+[`analysis/model_spread/`](./analysis/model_spread/).
 
 **The backtest and the calibration** read only free Open-Meteo data, so they run too, though
 the first downloads about 10 MB the first time:
