@@ -146,28 +146,38 @@ correctly placed bar disagrees with the fit's intent on about 13% of hours. Tran
 where the bar sits, not how noisy the reading it is applied to is.
 
 **Whether the wave translation is the right shape outside the regime it was fitted in. #52
-measured that it is not, and left the fix open.** The consequence recorded above keeps the fit
-in native units
-and inverts the translation at inference. It says nothing about where that translation is
-fitted. It is fitted on hours at or above 3 m, in the regime the *thresholds* operate in, and
+measured that it is not; #58 fixed it.** The consequence recorded above keeps the fit in native
+units and inverts the translation at inference. It says nothing about where that translation is
+fitted. It *was* fitted on hours at or above 3 m, in the regime the *thresholds* operate in, and
 then applied by the Amplification Model to every hour served — 84% of which sit below 3 m of
 Combined Sea. Measured on the 35,064 hours where both products reported
-(`analysis/amplification_model/README.md`, "Is the Translation the right shape?"), the shipped
-height transform **over-predicts the operational Combined Sea by 0.22–0.27 m below 2 m**, and
-`LearnedAmplification._restate` inverts that error into the model's dominant feature on the
+(`analysis/amplification_model/README.md`, "Is the Translation the right shape?"), that height
+transform **over-predicted the operational Combined Sea by 0.22–0.27 m below 2 m**, and
+`LearnedAmplification._restate` inverted that error into the model's dominant feature on the
 majority of hours a Pipeline Run touches.
 
-Two things follow that this ADR did not anticipate. The first is that the *thresholds* are
+Two things followed that this ADR did not anticipate. The first is that the *thresholds* were
 unaffected — they are applied at size, inside the fitted range, which is why the bar was set
 there. The second is that the Amplification Model and the calibration have different needs from
-one transform and currently share it, because `fit_translations()` returns one object to both.
-Refitting the height transform where the model uses it would move the shipped Watch and Go Call
-bars, and #52 measured that too: the two candidates that fix the height error also drop the Go
-Call bar by 0.3 s, on the strength of a swell-period fit that is *worse* in the regime that bar
-operates in. Fixing this properly means separating the two consumers, not moving the bar.
+one transform and shared it, because `fit_translations()` returned one object to both. Refitting
+the height transform by moving that shared subset would move the shipped Watch and Go Call bars,
+and #52 measured that too: the two candidates that fix the height error also drop the Go Call
+bar by 0.3 s, on the strength of a swell-period fit that is *worse* in the regime that bar
+operates in. Fixing it properly meant separating the two consumers, not moving the bar.
 
-Left open rather than decided. #52's brief put reshipping out of scope, and #39's rule applies
-to any threshold that moves — it moves by being rewritten by the fit, never by hand.
+**That is what #58 did.** `fit_translations()` now fits each quantity on its own subset and
+still returns one `dict[str, Translation]`, so the height line moved to all 35,064 overlapping
+hours while the swell period line stayed on its 4,366. The height bias below 2 m is now +0.004
+and +0.003; no shipped bar moved; #39's rule was not strained because nothing was moved by hand.
+The whole-record backtest flags fewer days for the same Gold Days caught (574 → 530 Watch,
+128 → 110 Go), because the height bar restated into reanalysis units is no longer pulled down by
+a spurious intercept.
+
+**One part is still open, and it is now #60.** The swell period subset is selected on Open-Meteo's
+*Swell* height while `train.py`, `amplification.json` and #52's own body all describe it as
+Combined Sea — the same 3 m bar read against two different quantities, and a different 4,941
+hours if read the second way. Changing it moves the period line and so moves a shipped bar, so it
+is a decision for a human rather than something to settle in passing.
 
 **Whether the training set should be extended to IBI's real reach.** It could go back to 1980;
 it stops at 2011-01-01 for a reason that belonged to a different module. Extending it means a

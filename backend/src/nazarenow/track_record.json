@@ -117,7 +117,7 @@
           "hours": 4473,
           "baseline_mae_m": 0.4278,
           "learned_mae_m": 0.4053,
-          "caveat": "Not robust to the reconstruction assumption: under a residual that grows with the sea this aggregate falls from +0.022 to +0.006. The per-band rows below it hold their sign under all three assumptions; this one does not."
+          "caveat": "Not robust to the reconstruction assumption: under a residual that grows with the sea this aggregate falls from +0.022 to +0.006, keeping its sign but losing most of its size. It should not be quoted without this beside it."
         },
         {
           "name": "under 2 m",

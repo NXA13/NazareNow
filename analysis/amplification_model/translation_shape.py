@@ -417,19 +417,18 @@ def shipped_candidate(hours: list[measure.Paired]) -> Candidate:
     """
     shapes: dict[str, Shape] = {}
     for fitting in measure.FITTINGS:
-        subset = [h for h in hours if fitting.select(h)]
+        subset = fitting.hours(hours)
         if len(subset) < 2:
             raise RuntimeError(
                 f"{fitting.variable}: {len(subset)} hours match {fitting.regime}, which is not "
                 "enough to fit the line that ships"
             )
-        source, target, _ = PAIRINGS[fitting.variable]
         shapes[fitting.variable] = fit_line(
             fitting.variable,
             "shipped",
             fitting.regime,
-            [source(h) for h in subset],
-            [target(h) for h in subset],
+            [fitting.reanalysis_side(h) for h in subset],
+            [fitting.operational_side(h) for h in subset],
         )
     return Candidate(
         name="shipped",
@@ -459,10 +458,17 @@ PAIRINGS: dict[
 }
 """The two quantities a Translation is fitted between, and where each lives.
 
-Named once because three places need it and they must not drift: the fitting, the error
-measurement in section 2, and the restatement at scoring time. Two of them reading the pairing
-differently is exactly the class of defect `served_path.check` exists to catch between the two
-feature encodings.
+Named once because several places here need it and they must not drift: the alternative
+candidates' fitting, the error measurement in section 2, and the restatement at scoring time.
+Two of them reading the pairing differently is exactly the class of defect `served_path.check`
+exists to catch between the two feature encodings.
+
+**The `shipped` candidate does not use this table**, and deliberately so: since #58 it is built
+from `measure.FITTINGS`, which carries the same two accessors for the two shipped quantities
+alongside the subset each is fitted on. The accessors agree today, and pinning `shipped` to the
+source of truth rather than to a local copy is what makes `pin_against_shipped` able to detect
+it if they ever stop agreeing. The duplication is the point; this table exists to describe
+*alternatives*, which `measure.py` knows nothing about.
 """
 
 
@@ -875,7 +881,7 @@ def build(generator_name: str, trials: int) -> int:
     # #58 that selector admits every hour, and a hardcoded big-swell filter would report a floor
     # the shipped line no longer has.
     height_fitting = next(f for f in measure.FITTINGS if f.variable == "significant_wave_height_m")
-    fitted_hours = [h for h in hours if height_fitting.select(h)]
+    fitted_hours = height_fitting.hours(hours)
     fitted_floor = float(np.percentile([h.reanalysis_combined_sea for h in fitted_hours], 1))
 
     print(f"Overlap hours: {len(hours):,}   held-out rows: {len(frame):,}\n")

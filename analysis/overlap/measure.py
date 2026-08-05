@@ -311,7 +311,7 @@ class Translation:
     n: int
     residual_rmse: float
     source: str = "reanalysis"
-    regime: str = "hours, subset unrecorded"
+    regime: str = "hours from an unrecorded subset"
     """What the line maps *from*, and the subset it was fitted on.
 
     The light-wind exemption is translated from a different pairing — ERA5 against the
@@ -377,8 +377,23 @@ class Fitting:
     variable: str
     regime: str
     select: Callable[[Paired], bool]
-    candidate: Callable[[Paired], float]
-    actual: Callable[[Paired], float]
+    reanalysis_side: Callable[[Paired], float]
+    operational_side: Callable[[Paired], float]
+    """The two readings the line is fitted between, named for the series each comes from.
+
+    Not `candidate`/`actual`: `translation_shape.py` uses *Candidate* for a whole transform
+    shape under test, and one word meaning two things across two modules that import each
+    other is how a reader ends up fitting the wrong pair.
+    """
+
+    def hours(self, hours: list[Paired]) -> list[Paired]:
+        """The hours this quantity is fitted on, out of a paired set.
+
+        On `Fitting` rather than at each call site because three of them want it —
+        `translations_from`, and two in `translation_shape.py` — and a subset rule that lives
+        in one place cannot be applied inconsistently in another.
+        """
+        return [hour for hour in hours if self.select(hour)]
 
 
 FITTINGS: tuple[Fitting, ...] = (
@@ -386,15 +401,15 @@ FITTINGS: tuple[Fitting, ...] = (
         variable="significant_wave_height_m",
         regime="overlapping hours",
         select=lambda _: True,
-        candidate=lambda h: h.reanalysis_combined_sea,
-        actual=lambda h: h.operational_combined_sea,
+        reanalysis_side=lambda h: h.reanalysis_combined_sea,
+        operational_side=lambda h: h.operational_combined_sea,
     ),
     Fitting(
         variable="swell_period_s",
         regime=f"hours >= {BIG_SWELL_HEIGHT_M:g} m",
         select=lambda h: h.operational_height >= BIG_SWELL_HEIGHT_M,
-        candidate=lambda h: h.combined_period,
-        actual=lambda h: h.operational_period,
+        reanalysis_side=lambda h: h.combined_period,
+        operational_side=lambda h: h.operational_period,
     ),
 )
 """The subset each quantity is fitted on, and why the two are not the same one (#58).
@@ -419,11 +434,9 @@ for **swell period** and fails for **height**, and the difference is not a matte
 The height subset is a `select` that admits everything rather than an absent filter, so that
 both quantities are described the same way and neither can quietly acquire the other's hours.
 
-**The swell period filter reads `operational_height`, which is Open-Meteo's Swell height, not
-Combined Sea** — while every prose description of it says Combined Sea. That discrepancy is
-real, it is #60, and it is deliberately left alone here: changing which hours are selected
-moves shipped bars, so it needs a human. #58 does not touch it, and can afford not to,
-because height no longer has a filter for the question to apply to.
+The swell period filter reads `operational_height` — Open-Meteo's Swell height, not Combined
+Sea — while the prose around it says Combined Sea. That discrepancy is real and is #60; it is
+left alone here because changing which hours are selected moves a shipped bar.
 """
 
 
@@ -436,15 +449,15 @@ def translations_from(hours: list[Paired]) -> dict[str, Translation]:
     """
     fitted: dict[str, Translation] = {}
     for fitting in FITTINGS:
-        selected = [h for h in hours if fitting.select(h)]
+        selected = fitting.hours(hours)
         if not selected:
             raise RuntimeError(
                 f"no overlapping hours match {fitting.regime}, so {fitting.variable} cannot "
                 "be fitted on the subset its measurement supports"
             )
         slope, intercept, rmse = least_squares(
-            [fitting.candidate(h) for h in selected],
-            [fitting.actual(h) for h in selected],
+            [fitting.reanalysis_side(h) for h in selected],
+            [fitting.operational_side(h) for h in selected],
         )
         fitted[fitting.variable] = Translation(
             variable=fitting.variable,

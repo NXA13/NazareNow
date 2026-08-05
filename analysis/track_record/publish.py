@@ -123,15 +123,22 @@ was the alternative, and it is the row #16 most asks for.
 
 SENSITIVITY_CAVEAT = (
     "Not robust to the reconstruction assumption: under a residual that grows with the sea "
-    "this aggregate falls from {flat:+.3f} to {proportional:+.3f}. The per-band rows below "
-    "it hold their sign under all three assumptions; this one does not."
+    "this aggregate falls from {flat:+.3f} to {proportional:+.3f}, keeping its sign but "
+    "losing most of its size. It should not be quoted without this beside it."
 )
 """#52's explicit warning, attached to the one row it applies to.
 
 "Do not quote the ≥ 3 m aggregate as robust to the reconstruction assumption" — and it is
-the *shipped* fit that fails there, not an alternative. Both numbers are read from
+the *shipped* fit that is fragile there, not an alternative. Both numbers are read from
 `translation_shapes.csv` rather than typed, so the caveat cannot drift from the table it
 qualifies.
+
+**Reworded by #58, because the old wording is now false.** It used to end "The per-band rows
+below it hold their sign under all three assumptions; this one does not" — true when the
+shipped fit read +0.027 flat and -0.004 proportional. Refitting the height Translation moved
+those to +0.022 and +0.006, so the row now does hold its sign and the sentence contradicted
+the numbers printed immediately before it. What survives is the collapse in magnitude, which
+is the part that should stop anyone quoting the figure bare.
 """
 
 SENSITIVITY_BAND = "Combined Sea >= 3 m"
