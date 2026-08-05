@@ -30,6 +30,7 @@ Run:
 from __future__ import annotations
 
 import csv
+import json
 import math
 import statistics
 import sys
@@ -381,6 +382,107 @@ def write_csv(rows: list[Summary], name: str, reference: str) -> Path:
     return path
 
 
+PROFILE_JSON = ROOT / "backend" / "src" / "nazarenow" / "forecast_error.json"
+"""Where the running system reads this profile from (#15).
+
+The same idiom `thresholds.json` and `amplification.json` already use: measurement happens
+here, against archives the running system cannot reach, and ships as data the backend
+validates on load. #15 perturbs an incoming forecast by these numbers, so they have to travel
+with the release rather than be re-derived at serving time.
+"""
+
+INJECTABLE_VARIABLE = "wave_height"
+"""The only variable exported, and the reason the others are not.
+
+#15 builds a Predictive Distribution over Significant Wave Height. Wave period and direction
+have measured drift too, and injecting them would mean perturbing inputs the Amplification
+Model weights at a standardised coefficient of 0.09 or less against Combined Sea's 1.09
+(`analysis/amplification_model/output/feature_reliance.csv`) — cost in complexity, nothing in
+width. Wind is not exported for a second reason on top: its drift is measurable only to four
+days, so exporting it would hand #15 a profile that runs out three days before this one does.
+"""
+
+
+def write_profile_json(drift: list[Summary]) -> Path:
+    """Export the drift profile the backend injects, per Lead Time.
+
+    **Drift, not total error against the buoy**, and the distinction decides whether #15 is
+    right. Finding 1 in `README.md` sets it out: the product's standing offset from the
+    Hindcast the model was fitted on is already removed by the Translations in
+    `amplification.json`, so a profile measured against the Proxy Target would carry that
+    offset a second time and #15 would inject it twice. What is wanted here is how much the
+    forecast *moves* as the date approaches, which is what this reference measures.
+
+    `noise` rather than `rmse` is the width, because it is the part of the error a constant
+    correction cannot remove. At every Lead Time here the bias share is under 1%, so the two
+    are nearly equal and the centre needs no correction — but exporting the field that stays
+    correct if that ever stops being true is cheaper than exporting the one that does not.
+
+    **This is one of three terms and the file says so.** The Translation residual and the
+    Amplification Model's own error are the other two, both larger at short Lead Time, and
+    both already recorded in `amplification.json`. `only_term` is written into the file so a
+    consumer reading it cannot mistake the part for the whole — the failure Finding 1 names
+    explicitly, which would make the distribution roughly three times too narrow exactly
+    where a user is most likely to act on it.
+    """
+    rows = {
+        (row.lead, row.subset): row
+        for row in drift
+        if row.variable == INJECTABLE_VARIABLE and row.subset in ("all hours", "big swell")
+    }
+    leads = sorted({lead for lead, _ in rows})
+    if not leads:
+        raise RuntimeError(
+            f"no {INJECTABLE_VARIABLE} drift rows to export; the profile the backend reads "
+            "would ship empty and #15 would silently fall back to no spread at all"
+        )
+
+    payload = {
+        "quantity": "significant_wave_height_m",
+        "reference": "open-meteo day 0",
+        "measured_through_lead_days": max(leads),
+        "only_term": (
+            "Forecast drift alone. The Translation residual and the Amplification Model's "
+            "own error are the other two terms and are larger at short Lead Time; see "
+            "analysis/forecast_error/README.md, Finding 1. A distribution built from this "
+            "field alone is roughly three times too narrow at one day out."
+        ),
+        "by_lead_time": {
+            str(lead): {
+                "all_hours": _term(rows[(lead, "all hours")]),
+                "big_swell": _term(rows[(lead, "big swell")]),
+            }
+            for lead in leads
+            if (lead, "all hours") in rows and (lead, "big swell") in rows
+        },
+        "method": {
+            "ticket": 14,
+            "serves": 15,
+            "archive_begins": f"{WAVE_ARCHIVE_START:%Y-%m-%d}",
+            "big_swell_m": BIG_SWELL_M,
+            "source": "analysis/forecast_error/profile.py",
+        },
+    }
+    PROFILE_JSON.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    return PROFILE_JSON
+
+
+def _term(row: Summary) -> dict[str, float | int]:
+    """One Lead Time's injectable width, rounded to where the measurement is real.
+
+    Four decimals on a metre is a tenth of a millimetre of sea, which no archive resolves.
+    It is kept because these are variances that get added in quadrature downstream, and
+    rounding before squaring is how a width acquires a bias nobody can trace.
+    """
+    return {
+        "noise": round(row.noise, 4),
+        "bias": round(row.bias, 4),
+        "p5": round(row.p5, 4),
+        "p95": round(row.p95, 4),
+        "hours": row.hours,
+    }
+
+
 def print_table(title: str, rows: list[Summary], subset: str) -> None:
     chosen = [row for row in rows if row.subset == subset]
     if not chosen:
@@ -655,9 +757,11 @@ def main() -> int:
     drift_path = write_csv(drift, "drift_by_lead_time.csv", "open-meteo day 0")
     total_path = write_csv(total, "total_error_by_lead_time.csv", "proxy target")
     stability_path = write_stability_csv(blocks)
+    profile_path = write_profile_json(drift)
     print(f"\nWrote {drift_path.relative_to(ROOT)}")
     print(f"Wrote {total_path.relative_to(ROOT)}")
     print(f"Wrote {stability_path.relative_to(ROOT)}")
+    print(f"Wrote {profile_path.relative_to(ROOT)}  — the profile #15 injects")
     return 0
 
 
