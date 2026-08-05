@@ -460,6 +460,8 @@ Amplification Model change. From the fitted 2.75 m / 12.0 s / 13.5 s (`output/tr
 | Candidate | Height | Watch bar | Go Call bar | Expressible as a Translation |
 |---|---|---|---|---|
 | shipped (since #58) | 2.75 m | 11.5 s | 12.9 s | yes |
+| period-sea-3m (#60) | 2.75 m | 11.4 s | 12.9 s | yes |
+| period-op-sea-3m (#60) | 2.75 m | 11.4 s | 12.9 s | yes |
 | swell-3m (pre-#58) | 2.75 m | 11.5 s | 12.9 s | yes |
 | all-hours | 2.75 m | **11.2 s** | **12.6 s** | yes |
 | combined-sea-3m | 2.75 m | 11.4 s | 12.9 s | yes |
@@ -485,6 +487,54 @@ panel is scored in reanalysis units natively and never inverts anything.
 operates in. That is the trap #58 avoided by splitting the subsets rather than moving the shared
 one. The light-wind exemption cannot move here at all: its transform is fitted on wind against a
 different pairing.
+
+### 5a. Moving the period subset alone costs the Go Call bar nothing (#60)
+
+#60 asks which quantity should gate the **swell period** subset: the code filters Open-Meteo's
+Swell height while `train.py`, `amplification.json` and #52's body all describe it as Combined
+Sea. The table above could not answer it, and reading `combined-sea-3m` as the answer overstates
+the cost — that row also drags *height* back onto a narrow subset, which is exactly what #58
+removed. `period-sea-3m` and `period-op-sea-3m` hold height at the shipped fit and move the
+period line alone, so any movement is attributable to the subset and nothing else.
+
+**The Go Call bar does not move.** Watch falls 11.5 s → 11.4 s; the height bar cannot move by
+construction. The −0.3 s drop to 12.6 s belongs to `all-hours` and `regime-aware`, which are
+different changes.
+
+"Combined Sea ≥ 3 m" does not name a product, so both readings are measured. They select
+different hours and land on the same two bars:
+
+| Period subset | Hours | Line | Bias, all hours | RMSE, all hours |
+|---|---|---|---|---|
+| operational Swell ≥ 3 m (shipped) | 4,366 | `0.9307x + 0.2924` | +0.202 | 0.951 |
+| reanalysis Combined Sea ≥ 3 m | 4,941 | `0.9622x − 0.1291` | **+0.064** | **0.934** |
+| operational Combined Sea ≥ 3 m | 5,501 | `0.9535x − 0.0083` | +0.106 | 0.937 |
+
+4,941 is the count #60's body cites, so the reading it has in mind is the **reanalysis** one —
+which is also the quantity `train.py` defines its own big-swell regime on (`combined_sea_m` is
+the hindcast's `hindcast_combined_sea_height_m`).
+
+Against the reading each line claims to produce, on the fixed input bands of
+`output/translation_pairing_error.csv`, `period-sea-3m` is **better or equal on RMSE in all
+seven bands** and better on bias in six:
+
+| Input band | shipped bias / RMSE | period-sea-3m bias / RMSE |
+|---|---|---|
+| 0–1 m | +0.231 / 1.181 | **+0.045 / 1.169** |
+| 1–2 m | +0.222 / 1.024 | **+0.066 / 1.006** |
+| 2–3 m | +0.221 / 0.827 | **+0.102 / 0.803** |
+| 3–4 m | +0.091 / 0.691 | **+0.005 / 0.684** |
+| 4–5 m | **−0.015** / 0.624 | −0.077 / **0.623** |
+| 5–6 m | +0.171 / 0.509 | **+0.128 / 0.496** |
+| 6 m and above | +0.084 / 0.410 | **+0.058** / 0.410 |
+
+The fitted line's own residual RMSE rises 0.508 → 0.652, and that is **not** a worsening: it is
+measured on a different, wider set of hours. The table above is the comparable one, because
+every candidate is scored on the same fixed bands.
+
+The served gain is untouched — −0.0145 against the shipped −0.0144 over all hours, inside the
+5–95% interval. **This section measures; it does not decide.** #60 is the decision, and the
+4–5 m bias is the one place the shipped subset is better.
 
 `regime-aware` is also **not expressible as a `Translation`** — it is two lines and a knot, so
 adopting it would change the type `fit_translations()` returns, which both the serving path and
@@ -642,7 +692,7 @@ either way, but the 0.013 m cost should not be quoted as if it held under both r
 | `output/feature_reliance.csv` | Standardised coefficients and ablation costs. |
 | `served_path.py` | Both models scored on the path `run_pipeline` takes, not the one the fit was scored on. `--check` reproduces the published scored table from its own feature construction. |
 | `output/served_path_scores.csv` | Scored against served, per subset, with a 5–95% interval. |
-| `translation_shape.py` | #52. Alternative shapes of Translation, fitted and scored on every band, with the generator separated from the transform under test. `--check` self-tests the fitting and the shipped-bar arithmetic offline. |
+| `translation_shape.py` | #52, extended by #60. Alternative shapes of Translation, fitted and scored on every band, with the generator separated from the transform under test. Carries the period-only candidates that isolate #60's subset question from #58's height refit. `--check` self-tests the fitting and the shipped-bar arithmetic offline. |
 | `output/translation_support.csv` | How much of each band's *input* sits below the range the shipped Translation was fitted on. |
 | `output/translation_pairing_error.csv` | Each transform's bias and RMSE against the reading it claims to produce, on hours where both products reported. The one table here that assumes nothing. |
 | `output/translation_shapes.csv` | Every candidate on every band under every reconstruction, with a 5–95% interval. |

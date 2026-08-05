@@ -176,8 +176,20 @@ a spurious intercept.
 **One part is still open, and it is now #60.** The swell period subset is selected on Open-Meteo's
 *Swell* height while `train.py`, `amplification.json` and #52's own body all describe it as
 Combined Sea — the same 3 m bar read against two different quantities, and a different 4,941
-hours if read the second way. Changing it moves the period line and so moves a shipped bar, so it
-is a decision for a human rather than something to settle in passing.
+hours if read the second way.
+
+This paragraph previously said that changing it "moves the period line and so moves a shipped
+bar", and the bar it had in mind was the Go Call bar's 0.3 s drop recorded above. **That was
+wrong, and #60 has now measured it.** The 0.3 s belongs to the candidates that move the *height*
+subset as well — the thing #58 removed. Moving the period subset alone, with height held at
+#58's all-hours fit, leaves the **Go Call bar at 12.9 s** and the height bar untouched; only the
+Watch bar moves, by 0.1 s. It holds under either reading of "Combined Sea", reanalysis or
+operational, which select 4,941 and 5,501 hours and land on the same two bars.
+
+On the pairing it claims to produce, the Combined Sea subset is better or equal on RMSE in all
+seven input bands and better on bias in six; the one exception is 4–5 m, where bias goes −0.015
+→ −0.077. See `analysis/amplification_model/README.md`, section 5a. So #60 is still a human
+decision — but it is a decision about coherence and a 4–5 m bias, not about a Go Call bar.
 
 **Whether the training set should be extended to IBI's real reach.** It could go back to 1980;
 it stops at 2011-01-01 for a reason that belonged to a different module. Extending it means a
