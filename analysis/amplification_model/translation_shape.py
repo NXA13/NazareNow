@@ -35,6 +35,12 @@ The threshold movement each alternative *would* cause is still reported here as 
 5. **What each alternative would do to the shipped Watch and Go Call bars**, because
    `calibrate.py` restates them through this same fit.
 
+**#60 extended this with the period-only candidates.** Every candidate #52 built moves both
+transforms onto one subset, so none of them isolates the question #60 actually asks — which
+quantity should gate the *swell period* subset — from the height refit #58 already made.
+`PERIOD_SUBSETS` holds height at the shipped fit and moves period alone. This module still
+ships nothing; #60 owns the decision.
+
 **The generator is a choice, and it decides the answer.** The served path reconstructs what
 Open-Meteo would have read, because no operational archive exists here. `served_path.py`
 generates that series with the shipped Translation and lets the learned model invert the
@@ -368,6 +374,19 @@ class Candidate:
         return self.height.as_translation() is not None and self.period.as_translation() is not None
 
 
+REANALYSIS_SEA_3M = (
+    f"reanalysis Combined Sea >= {KNOT_M:g} m",
+    lambda h: h.reanalysis_combined_sea >= KNOT_M,
+)
+"""The one subset that appears in both tables below, named once so it cannot drift.
+
+`SUBSETS` applies it to both quantities (`combined-sea-3m`) and `PERIOD_SUBSETS` applies it to
+period alone (`period-sea-3m`). The difference between those two rows is exactly the height
+refit #58 made, and that difference is only readable if the subset itself is identical — two
+copies of the predicate would leave the comparison resting on them staying in step.
+"""
+
+
 SUBSETS: tuple[tuple[str, str, Callable[[measure.Paired], bool]], ...] = (
     (
         "swell-3m",
@@ -375,11 +394,7 @@ SUBSETS: tuple[tuple[str, str, Callable[[measure.Paired], bool]], ...] = (
         lambda h: h.operational_height >= measure.BIG_SWELL_HEIGHT_M,
     ),
     ("all-hours", "every overlapping hour", lambda h: True),
-    (
-        "combined-sea-3m",
-        f"reanalysis Combined Sea >= {KNOT_M:g} m",
-        lambda h: h.reanalysis_combined_sea >= KNOT_M,
-    ),
+    ("combined-sea-3m", *REANALYSIS_SEA_3M),
     (
         "band-fitted",
         f"reanalysis Combined Sea {BAND_M[0]:g}-{BAND_M[1]:g} m",
@@ -403,6 +418,41 @@ rather than a transcription slip — the swell period fitting in `measure.FITTIN
 bar read the way `train.py`, `amplification.json` and #52's own body all describe it, and it is
 a different 4,941 hours. CONTEXT.md keeps Combined Sea and Swell apart for exactly this reason,
 and #60 owns settling which of the two should gate the period subset.
+"""
+
+
+PERIOD_SUBSETS: tuple[tuple[str, str, Callable[[measure.Paired], bool]], ...] = (
+    ("period-sea-3m", *REANALYSIS_SEA_3M),
+    (
+        "period-op-sea-3m",
+        f"operational Combined Sea >= {KNOT_M:g} m",
+        lambda h: h.operational_combined_sea >= KNOT_M,
+    ),
+)
+"""The subset each candidate fits **swell period** on, holding height at the shipped fit (#60).
+
+`SUBSETS` cannot answer #60 on its own. Every row of it moves both transforms together, so its
+`combined-sea-3m` row confounds two changes: the period subset #60 is asking about, and a height
+line dragged back onto a narrow subset — which is precisely what #58 removed.
+
+**On the bars specifically, `combined-sea-3m` was already right**, and this table does not
+overturn it: the Watch and Go Call bars are restated through the *period* line alone, and
+`period-sea-3m` fits the identical line on the identical hours, so the two rows agree to the
+fourth decimal before rounding. What they cannot share is attribution — read from
+`combined-sea-3m` alone, unmoved bars are as consistent with two changes cancelling as with one
+change costing nothing. Everything else that row reports (pairing error on height, served gain)
+really does mix the two.
+
+These two move the period line alone. Height comes from `shipped_candidate`, so the height bar
+cannot move, and any movement in the Watch or Go Call bar is attributable to the period subset
+and nothing else.
+
+**There are two candidates because "Combined Sea >= 3 m" does not name a product.** The shipped
+filter reads `operational_height`, Open-Meteo's `swell_wave_height` — an *operational* quantity.
+`train.py` defines its own big-swell regime on `combined_sea_m`, which is the hindcast's
+`hindcast_combined_sea_height_m` — a *reanalysis* quantity. So the prose #60 wants the code to
+match is itself ambiguous between two different subsets, and both are measured here rather than
+one being assumed. `period-sea-3m` is the reading that matches `train.py`'s regime.
 """
 
 
@@ -483,6 +533,11 @@ def _columns(hours: list[measure.Paired]) -> dict[str, tuple[list[float], list[f
 def build_candidates(hours: list[measure.Paired]) -> list[Candidate]:
     """Every shape under test, fitted on the same overlap hours.
 
+    Three families, and they answer different questions. `PERIOD_SUBSETS` holds height at the
+    shipped fit and moves the period subset alone — that is #60's question, and no `SUBSETS`
+    row answers it. `SUBSETS` moves both transforms together onto one subset. The regime-aware
+    candidate is a shape change rather than a subset change.
+
     The regime-aware candidate hinges the **height** transform only, and takes the all-hours
     line for period. Hinging the period transform on its own period has no principled knot,
     and hinging it on Combined Sea — the regime that actually matters — would make the
@@ -490,12 +545,27 @@ def build_candidates(hours: list[measure.Paired]) -> list[Candidate]:
     fixed. Combined Sea is also where the question lives: it carries a standardised
     coefficient of 1.089 against swell period's 0.057 (`output/feature_reliance.csv`).
     """
-    candidates: list[Candidate] = [shipped_candidate(hours)]
-    for name, regime, predicate in SUBSETS:
+
+    def fittable(name: str, predicate: Callable[[measure.Paired], bool]) -> list[measure.Paired]:
+        """The hours a candidate is fitted on, refused loudly if a line cannot be drawn."""
         subset = [h for h in hours if predicate(h)]
         if len(subset) < 2:
             raise RuntimeError(f"{name}: {len(subset)} hours is not enough to fit a line")
-        columns = _columns(subset)
+        return subset
+
+    shipped = shipped_candidate(hours)
+    candidates: list[Candidate] = [shipped]
+    for name, regime, predicate in PERIOD_SUBSETS:
+        columns = _columns(fittable(name, predicate))
+        candidates.append(
+            Candidate(
+                name=name,
+                height=shipped.height,
+                period=fit_line("swell_period_s", name, regime, *columns["swell_period_s"]),
+            )
+        )
+    for name, regime, predicate in SUBSETS:
+        columns = _columns(fittable(name, predicate))
         candidates.append(
             Candidate(
                 name=name,
@@ -1200,6 +1270,80 @@ def check() -> int:
     raises(
         "a hinge needs hours on both sides",
         lambda: fit_hinge("h", "one-sided", "hours", [4.0, 5.0, 6.0], [4.0, 5.0, 6.0], knot=3.0),
+    )
+
+    # --- the period-only candidates (#60) --------------------------------------------------
+    # #60 asks which quantity gates the *swell period* subset. Every entry in `SUBSETS` moves
+    # both transforms at once, so none of them answers it: the shipped-bar row for
+    # `combined-sea-3m` also drags height back onto a narrow subset, which is the thing #58
+    # removed. `PERIOD_SUBSETS` holds height at the shipped fit and moves period alone.
+    #
+    # The synthetic hours below separate the three predicates that could gate the subset, so
+    # the fitted `n` alone says which one ran: operational Swell >= 3 m takes 2 hours,
+    # reanalysis Combined Sea >= 3 m takes 5, operational Combined Sea >= 3 m takes 4.
+    # Combined Sea is kinked at 3 m so that a height line fitted on a subset genuinely differs
+    # from the all-hours one — otherwise "height is the shipped line" would hold vacuously.
+    def paired(sea: float) -> measure.Paired:
+        operational_sea = 0.8 * sea + 0.4 + (0.5 * (sea - 3.0) if sea >= 3.0 else 0.0)
+        period = 8.0 + sea
+        return measure.Paired(
+            at=f"synthetic-{sea}",
+            operational_height=0.6 * sea,
+            operational_period=1.2 * period - 1.0,
+            operational_direction=300.0,
+            operational_combined_sea=operational_sea,
+            sw1_height=0.6 * sea,
+            sw1_period=period,
+            sw1_direction=300.0,
+            sw2_height=0.0,
+            sw2_period=0.0,
+            sw2_direction=0.0,
+            reanalysis_combined_sea=sea,
+        )
+
+    seas = (1.0, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0)
+    by_name = {c.name: c for c in build_candidates([paired(s) for s in seas])}
+
+    expect(
+        "the period-only candidates are built",
+        sorted(n for n in by_name if n.startswith("period-")),
+        ["period-op-sea-3m", "period-sea-3m"],
+    )
+    expect(
+        "shipped period keeps operational Swell >= 3 m", by_name["shipped"].period.segments[0].n, 2
+    )
+    expect(
+        "period-sea-3m fits period on reanalysis Combined Sea >= 3 m",
+        by_name["period-sea-3m"].period.segments[0].n,
+        5,
+    )
+    expect(
+        "period-op-sea-3m fits period on operational Combined Sea >= 3 m",
+        by_name["period-op-sea-3m"].period.segments[0].n,
+        4,
+    )
+
+    # The whole point of these two: height is left exactly where #58 put it, so any bar
+    # movement they report belongs to the period line alone.
+    for name in ("period-sea-3m", "period-op-sea-3m"):
+        expect(
+            f"{name} holds height at the shipped fit",
+            round(by_name[name].height.segments[0].slope, 12),
+            round(by_name["shipped"].height.segments[0].slope, 12),
+        )
+        expect(
+            f"{name} leaves the shipped height bar unmoved",
+            shipped_bars(by_name[name])["minimum_significant_wave_height_m"],
+            shipped_bars(by_name["shipped"])["minimum_significant_wave_height_m"],
+        )
+    # ...and that assertion has teeth only because fitting height on a subset really does
+    # move it. `combined-sea-3m` is the same period subset with height moved too, so if the
+    # two height lines agreed here, "height is the shipped line" would be passing vacuously.
+    expect(
+        "a subset-fitted height line is distinguishable from the shipped one",
+        round(by_name["combined-sea-3m"].height.segments[0].slope, 12)
+        != round(by_name["shipped"].height.segments[0].slope, 12),
+        True,
     )
 
     # --- the rounding the shipped bars go through -----------------------------------------

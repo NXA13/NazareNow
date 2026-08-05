@@ -176,8 +176,29 @@ a spurious intercept.
 **One part is still open, and it is now #60.** The swell period subset is selected on Open-Meteo's
 *Swell* height while `train.py`, `amplification.json` and #52's own body all describe it as
 Combined Sea — the same 3 m bar read against two different quantities, and a different 4,941
-hours if read the second way. Changing it moves the period line and so moves a shipped bar, so it
-is a decision for a human rather than something to settle in passing.
+hours if read the second way.
+
+This paragraph previously said that changing it "moves the period line and so moves a shipped
+bar". **That part was right — the Watch bar does move.** What was wrong was the bar it had in
+mind: #60's body reads the 0.3 s Go Call drop recorded above as the cost of this change, and
+that 0.3 s belongs to the candidates that move the *height* subset as well, which is the thing
+#58 removed.
+
+**#60 has now measured the period subset in isolation.** With height held at #58's all-hours
+fit, moving the period subset to Combined Sea ≥ 3 m leaves the **Go Call bar at 12.9 s** and the
+height bar untouched; the Watch bar reads 11.4 s against 11.5 s. Before rounding both moves are
+smaller than they look — Watch shifts 0.044 s across a rounding boundary, and the Go Call bar
+moves 0.004 s *away* from one. This holds under either reading of "Combined Sea", reanalysis or
+operational, which select 4,941 and 5,501 hours and land on the same two bars.
+
+On the pairing it claims to produce, the **reanalysis** reading is better or equal on RMSE in all
+seven input bands and better on bias in six; the one exception is 4–5 m, where bias goes −0.015
+→ −0.077. The operational reading is worse than shipped at 6 m and above, so the two readings are
+not interchangeable on accuracy even though they agree on the bars. See
+`analysis/amplification_model/README.md`, section 5a.
+
+So #60 is still a human decision — but it is a decision about coherence and a 4–5 m bias, not
+about a Go Call bar.
 
 **Whether the training set should be extended to IBI's real reach.** It could go back to 1980;
 it stops at 2011-01-01 for a reason that belonged to a different module. Extending it means a
