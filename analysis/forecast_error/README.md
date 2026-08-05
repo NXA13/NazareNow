@@ -153,13 +153,19 @@ the first:
 | Source | Size | Where it is measured |
 |---|---|---|
 | forecast drift at 1 day | 0.095 m | this table |
-| the Translation's residual | 0.217 m | `amplification.json`, `residual_rmse` |
+| the Translation's residual | 0.130 m | `amplification.json`, `residual_rmse` |
 | the Amplification Model's own big-swell error | 0.356 m | `feature_reliance.csv` |
 
-At one day out the drift is the **smallest** of the three by some margin. A Predictive
-Distribution built from drift alone would be roughly four times too narrow at short Lead Time,
-and it would be narrow in exactly the situation a user is most likely to act on — a Go Call
-issued close in. #15 has to carry all three; #14 measures one of them.
+At one day out the drift is still the **smallest** of the three. A Predictive Distribution built
+from drift alone would be roughly three times too narrow at short Lead Time, and it would be
+narrow in exactly the situation a user is most likely to act on — a Go Call issued close in.
+#15 has to carry all three; #14 measures one of them.
+
+**The Translation's residual was 0.217 m until #58**, which refitted the height transform on
+every overlapping hour rather than the big-swell subset alone. That is a real narrowing of the
+middle term rather than a re-measurement of it, and it moves the drift term from roughly a
+quarter of the Translation residual to roughly three quarters. The Amplification Model's own
+error still dominates all three and is the term #15 should size first.
 
 ## Finding 2 — at size, long-range forecasts under-read the sea
 

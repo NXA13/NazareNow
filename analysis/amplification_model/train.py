@@ -98,7 +98,14 @@ BIG_SWELL_M = 3.0
 Defined on the *input* Combined Sea rather than on the measured target, because that is what
 is knowable at serving time — selecting on the target would tune the model against a subset it
 cannot identify when it runs. It is the same 3 m `analysis/overlap/measure.py` fits its
-translations on, and for the same reason: the relationship is not the same at 1 m.
+**swell period** translation on, and for the same reason: the relationship is not the same at
+1 m. It is no longer the bar the *height* translation is fitted on — since #58 that one is
+fitted on every overlapping hour, because the argument above holds for a transform that
+decides at 3 m and fails for one inverted on every hour the model serves.
+
+Same number, different series, and that part is **not** settled: this bar is applied to
+Combined Sea, while the subset `measure.py` selects reads Open-Meteo's Swell height. #60 owns
+that discrepancy — it moves shipped bars, so it is not resolved in passing here.
 
 Deliberately not the baseline's `minimum_significant_wave_height_m`. That bar is applied to
 offshore swell in a forecast; this is Combined Sea at a mooring, and #9's README calls the
@@ -589,6 +596,11 @@ def exported(
                 "slope": translation.slope,
                 "intercept": translation.intercept,
                 "fitted_on_hours": translation.n,
+                # Which hours those were. Since #58 the two quantities are fitted on
+                # different subsets, so the count alone no longer identifies the subset —
+                # and a reader who found 35064 against 4366 with nothing to explain the gap
+                # would have to go to the source to learn whether that was deliberate.
+                "fitted_on": translation.regime,
                 "residual_rmse": translation.residual_rmse,
             }
             for name, translation in translations.items()

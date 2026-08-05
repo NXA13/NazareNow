@@ -89,9 +89,10 @@ to be low, so #15 inherits an asymmetry this decision did not anticipate.
 
 A second consequence for #15. This decision reads as though the Forecast Error Profile is the
 uncertainty; it is one of three components, and at one day's Lead Time the smallest — 0.095 m
-of drift against a 0.217 m Translation residual and a 0.356 m Amplification error. A Predictive
+of drift against a 0.130 m Translation residual and a 0.356 m Amplification error. A Predictive
 Distribution built from the profile alone would be far too narrow exactly where a Go Call is
-issued.
+issued. (The Translation residual was 0.217 m when this was written; #58 refitted that transform
+on every overlapping hour. The ordering is unchanged and the gap to the drift term has closed.)
 
 The ceiling this decision names is confirmed against the archive rather than the
 documentation: seven days, and nothing beyond it.

@@ -26,15 +26,17 @@
   "weighting": "big-swell-weighted",
   "translations": {
     "significant_wave_height_m": {
-      "slope": 0.9412493315117243,
-      "intercept": 0.3434620210371433,
-      "fitted_on_hours": 4366,
-      "residual_rmse": 0.21652401904558438
+      "slope": 1.0126672226295947,
+      "intercept": 0.0192389441511569,
+      "fitted_on_hours": 35064,
+      "fitted_on": "overlapping hours",
+      "residual_rmse": 0.1297112275688123
     },
     "swell_period_s": {
       "slope": 0.930739198196174,
       "intercept": 0.29235347259012023,
       "fitted_on_hours": 4366,
+      "fitted_on": "hours >= 3 m",
       "residual_rmse": 0.508382474684805
     }
   },

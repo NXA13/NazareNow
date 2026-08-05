@@ -10,8 +10,12 @@ that skew differently:
   IBI/Open-Meteo difference uncorrected. Nothing in `train.py` sees this, because there the
   baseline is handed an IBI row.
 - The **learned model** inverts the translation first (`LearnedAmplification._restate`), which
-  is correct in expectation and costs the translation's residual scatter — 0.217 m on Hs,
-  larger than the whole +0.047 m held-out MAE gain at >= 3 m.
+  is correct in expectation and costs the translation's residual scatter — 0.130 m on Hs since
+  #58 refitted it on every overlapping hour (0.217 m before), still larger than the whole
+  +0.047 m held-out MAE gain at >= 3 m. Those two numbers are less comparable than they look:
+  the inversion is unbiased, so symmetric scatter raises both models' error together and
+  mostly cancels in the difference. `translation_shape.py` measures it at 0.002 m in the
+  3-4 m band.
 
 That asymmetry is why the served comparison cannot be assumed to look like the scored one, in
 either direction. A code review of #13 flagged the scored/served gap; this module measures it

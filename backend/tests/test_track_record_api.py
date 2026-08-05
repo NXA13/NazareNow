@@ -82,14 +82,21 @@ class TestWhatItPublishes:
         Pinned here because the failure is invisible: reading the other generator's rows
         publishes eight plausible numbers, and the two wrong ones are the only ones on the
         page that would say the learned model is better on an ordinary day.
+
+        **The values moved in #58 and the pin is weaker for it.** Refitting the height
+        Translation on every overlapping hour removed the distortion at its source, so the two
+        generators now sit 0.002 m apart rather than 0.11 m. The assertion still catches the
+        wiring mistake — 0.002 m is four times the tolerance — but it no longer separates a
+        flattering number from an honest one, because there is no longer a flattering one to
+        separate. `-0.0774` and `-0.1258` were the pre-#58 values.
         """
         served = {
             band["name"]: band
             for band in published_client.get("/api/track-record").json()["served"]
         }
 
-        assert served["all hours"]["gain_m"] == pytest.approx(-0.0774, abs=5e-4)
-        assert served["under 2 m"]["gain_m"] == pytest.approx(-0.1258, abs=5e-4)
+        assert served["all hours"]["gain_m"] == pytest.approx(-0.0162, abs=5e-4)
+        assert served["under 2 m"]["gain_m"] == pytest.approx(-0.0350, abs=5e-4)
         # And the finding that survives it: still decisively better on the days that matter.
         assert served["6 m and above"]["gain_m"] > 0.3
 
