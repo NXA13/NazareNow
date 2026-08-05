@@ -1,15 +1,19 @@
 """Is extrapolating the Translation below its fitted range what costs the 3-4 m band its sign?
 
-Ticket #52. `served_path.py` found the learned Amplification Model **worse than the baseline**
-in the 3-4 m measured-target band once the Translation step is included — +0.030 scored,
--0.043 served, the only band that changes sign against the learned model. The suspect named on
-the ticket is extrapolation: the Translation is fitted on a big-swell subset and applied to
-every hour the system serves.
+Ticket #52, acted on in #58. `served_path.py` found the learned Amplification Model **worse than
+the baseline** in the 3-4 m measured-target band once the Translation step was included —
++0.030 scored, -0.043 served, the only band that changed sign against the learned model. The
+suspect named on the ticket was extrapolation: the Translation was fitted on a big-swell subset
+and applied to every hour the system serves.
 
-This module tests that suspect and reports the answer. It ships nothing. Changing the
-Translation would move shipped decision thresholds through `calibrate.py`, which consumes the
-same fit, so the threshold movement each alternative *would* cause is reported here as a
-number and left there.
+This module tested that suspect and reported the answer. **It still ships nothing itself**, but
+what it measured was acted on: #52 could not adopt any candidate because one shared subset fed
+both the height and the swell period transform, so every fix to height moved the Go Call bar
+through `calibrate.py`. #58 split the subsets instead, took the all-hours *height* line alone,
+and moved no bar. The `shipped` candidate here is therefore read out of `measure.FITTINGS`
+rather than restated, and `swell-3m` is kept as the line that shipped before it.
+
+The threshold movement each alternative *would* cause is still reported here as a number.
 
 **What this measures, in the order the questions have to be asked.**
 
@@ -366,7 +370,7 @@ class Candidate:
 
 SUBSETS: tuple[tuple[str, str, Callable[[measure.Paired], bool]], ...] = (
     (
-        "shipped",
+        "swell-3m",
         f"operational Swell height >= {measure.BIG_SWELL_HEIGHT_M:g} m",
         lambda h: h.operational_height >= measure.BIG_SWELL_HEIGHT_M,
     ),
@@ -382,19 +386,56 @@ SUBSETS: tuple[tuple[str, str, Callable[[measure.Paired], bool]], ...] = (
         lambda h: BAND_M[0] <= h.reanalysis_combined_sea < BAND_M[1],
     ),
 )
-"""The subset each single-line candidate is fitted on.
+"""The subset each single-line candidate is fitted on — one subset applied to *both* quantities.
 
-`shipped` is first and is the shipped fit re-derived here rather than read from
-`amplification.json`, so that every candidate in the table is built by the same code from the
-same hours and any difference between them is the subset and nothing else. `check()` requires
-it to reproduce the shipped constants.
+Every entry here fits height and swell period on the same hours. **The shipped pairing is no
+longer one of them**: since #58 height is fitted on every overlapping hour and period on the
+big-swell subset, so no single row of this table describes what ships. `shipped_candidate()`
+builds that pairing separately, out of `measure.FITTINGS` itself.
 
-**`shipped` selects on operational Swell height, not on Combined Sea**, and that is the code
-rather than a transcription slip — `measure.fit_translations` filters `operational_height`,
-which is Open-Meteo's `swell_wave_height`. `combined-sea-3m` is the same bar read the way
-`train.py:95-101`, `amplification.json` and #52's own body all describe it, and it is a
-different 4,941 hours. CONTEXT.md keeps Combined Sea and Swell apart for exactly this reason.
+`swell-3m` is what shipped *before* #58 — both quantities on the big-swell subset. It is kept
+because it is the line every figure in this module was originally measured against, and
+dropping it would silently rebase the comparison.
+
+**`swell-3m` selects on operational Swell height, not on Combined Sea**, and that is the code
+rather than a transcription slip — the swell period fitting in `measure.FITTINGS` filters
+`operational_height`, which is Open-Meteo's `swell_wave_height`. `combined-sea-3m` is the same
+bar read the way `train.py`, `amplification.json` and #52's own body all describe it, and it is
+a different 4,941 hours. CONTEXT.md keeps Combined Sea and Swell apart for exactly this reason,
+and #60 owns settling which of the two should gate the period subset.
 """
+
+
+def shipped_candidate(hours: list[measure.Paired]) -> Candidate:
+    """The pairing `measure.fit_translations` actually ships, read out of its own table.
+
+    Built from `measure.FITTINGS` rather than restated here as a subset of its own. Since #58
+    the two quantities are fitted on different subsets, so there is no single predicate that
+    reproduces the shipped pairing — and writing one out by hand would reintroduce exactly the
+    drift `pin_against_shipped` exists to catch. Reading the source of truth means this cannot
+    disagree with what ships unless the fitting itself changed.
+    """
+    shapes: dict[str, Shape] = {}
+    for fitting in measure.FITTINGS:
+        subset = [h for h in hours if fitting.select(h)]
+        if len(subset) < 2:
+            raise RuntimeError(
+                f"{fitting.variable}: {len(subset)} hours match {fitting.regime}, which is not "
+                "enough to fit the line that ships"
+            )
+        source, target, _ = PAIRINGS[fitting.variable]
+        shapes[fitting.variable] = fit_line(
+            fitting.variable,
+            "shipped",
+            fitting.regime,
+            [source(h) for h in subset],
+            [target(h) for h in subset],
+        )
+    return Candidate(
+        name="shipped",
+        height=shapes["significant_wave_height_m"],
+        period=shapes["swell_period_s"],
+    )
 
 
 PAIRINGS: dict[
@@ -443,7 +484,7 @@ def build_candidates(hours: list[measure.Paired]) -> list[Candidate]:
     fixed. Combined Sea is also where the question lives: it carries a standardised
     coefficient of 1.089 against swell period's 0.057 (`output/feature_reliance.csv`).
     """
-    candidates: list[Candidate] = []
+    candidates: list[Candidate] = [shipped_candidate(hours)]
     for name, regime, predicate in SUBSETS:
         subset = [h for h in hours if predicate(h)]
         if len(subset) < 2:
@@ -499,10 +540,16 @@ def support(frame, target: np.ndarray, fitted_floor: float) -> list[Support]:
     """Where each band's *input* sits against the range the shipped Translation covers.
 
     Two floors, because the nominal one is not the real one. The nominal floor is the 3 m the
-    ticket and the parameter file both name. The real one is `fitted_floor`: the shipped
-    subset is selected on Swell height, so its Combined Sea coverage reaches lower than 3 m,
-    and an hour at 2.8 m of Combined Sea is inside the fitted cloud rather than extrapolated
-    from it. Reporting only the nominal floor would overstate the suspect.
+    ticket and the parameter file both name. The real one is `fitted_floor`, taken from the
+    height transform's own selector.
+
+    Before #58 the gap between them was the point: the subset was selected on Swell height, so
+    its Combined Sea coverage reached below 3 m, and an hour at 2.8 m was inside the fitted
+    cloud rather than extrapolated from it — reporting only the nominal floor would have
+    overstated the suspect. Since #58 the height transform is fitted on every overlapping hour,
+    so `below_support` collapses towards the 1% the percentile defines and the nominal floor is
+    the only one still describing anything. Kept, because it is the measurement that shows the
+    extrapolation is gone rather than merely asserting it.
     """
     combined = frame["hindcast_combined_sea_height_m"].to_numpy()
     rows: list[Support] = []
@@ -823,7 +870,12 @@ def build(generator_name: str, trials: int) -> int:
     names = [candidate.name for candidate in candidates]
 
     shipped = by_name["shipped"]
-    fitted_hours = [h for h in hours if h.operational_height >= measure.BIG_SWELL_HEIGHT_M]
+    # The floor of the *height* transform's real support, since that is the transform section 1
+    # asks about. Read off its own selector rather than a filter written out again here: since
+    # #58 that selector admits every hour, and a hardcoded big-swell filter would report a floor
+    # the shipped line no longer has.
+    height_fitting = next(f for f in measure.FITTINGS if f.variable == "significant_wave_height_m")
+    fitted_hours = [h for h in hours if height_fitting.select(h)]
     fitted_floor = float(np.percentile([h.reanalysis_combined_sea for h in fitted_hours], 1))
 
     print(f"Overlap hours: {len(hours):,}   held-out rows: {len(frame):,}\n")
@@ -839,10 +891,11 @@ def build(generator_name: str, trials: int) -> int:
     # --- 1 -----------------------------------------------------------------------------------
     print(f"\n{'=' * 98}\n1. How much of each band the shipped Translation was never fitted on\n")
     print(
-        f"The shipped subset is selected on operational Swell height, so measured in Combined "
-        f"Sea it\nreaches down to {fitted_floor:.2f} m at its 1st percentile — the floor of its "
-        f"real support, against\nthe {KNOT_M:g} m the ticket, `train.py` and `amplification.json` "
-        f"all name.\n"
+        f"Since #58 the shipped height Translation is fitted on every overlapping hour, so its "
+        f"support\nreaches down to {fitted_floor:.2f} m at its 1st percentile and no band is "
+        f"extrapolated from a\nhigher one. This table is what that bought: before #58 the line "
+        f"was fitted on the big-swell\nsubset alone, and every figure below the fitted floor was "
+        f"an extrapolation.\n"
     )
     support_rows = support(frame, target, fitted_floor)
     print(f"{'band':<32}{'rows':>8}{'below 3.00 m':>14}{'below support':>15}{'median input':>14}")

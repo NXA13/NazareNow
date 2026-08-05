@@ -53,6 +53,7 @@ from __future__ import annotations
 import csv
 import math
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -297,8 +298,11 @@ class Translation:
     the transform to the 134,160-row series instead would push its error through the fit
     itself; applying it to three numbers keeps it where it can be read.
 
-    Fitted on the **big-swell** subset, because that is the regime the bars operate in and
-    the relationship is not the same at 1 m (`README.md`, finding 1).
+    **Each quantity is fitted on the hours its own measurement supports**, and `regime` says
+    which those were. Swell period is fitted on the big-swell subset, because that is the
+    regime the bars operate in and the relationship genuinely is not the same at 1 m
+    (`README.md`, finding 1). Height is not: see `FITTINGS`, where #58 records why the same
+    reasoning does not survive being applied to it.
     """
 
     variable: str
@@ -307,14 +311,20 @@ class Translation:
     n: int
     residual_rmse: float
     source: str = "reanalysis"
-    regime: str = f"hours >= {BIG_SWELL_HEIGHT_M:g} m"
+    regime: str = "hours, subset unrecorded"
     """What the line maps *from*, and the subset it was fitted on.
 
-    Defaulted to this module's own pairing, which is the only one until #51. The light-wind
-    exemption is translated from a different pairing — ERA5 against the forecast product,
-    fitted in a band of wind speed rather than a band of wave height — and the shipped
-    `method` blurb quotes `describe()` verbatim, so a transform that could not say what it
-    was fitted on would put a sentence about 3 m seas next to a wind speed.
+    The light-wind exemption is translated from a different pairing — ERA5 against the
+    forecast product, fitted in a band of wind speed rather than a band of wave height — and
+    the shipped `method` blurb quotes `describe()` verbatim, so a transform that could not say
+    what it was fitted on would put a sentence about 3 m seas next to a wind speed.
+
+    **The default states nothing rather than guessing.** It used to default to the big-swell
+    subset, which was true of every real caller while both quantities shared one. Since #58
+    they do not, and `train.py` exports this string to `amplification.json` as `fitted_on` —
+    so a defaulted `Translation` would publish a specific claim about hours it was never
+    fitted on. Every production caller passes `regime` explicitly; the default is now reached
+    only by synthetic transforms in self-tests, where saying nothing is the honest answer.
     """
 
     def apply(self, value: float) -> float:
@@ -354,6 +364,99 @@ def least_squares(xs: list[float], ys: list[float]) -> tuple[float, float, float
     return slope, intercept, math.sqrt(sum(r * r for r in residuals) / n)
 
 
+@dataclass(frozen=True)
+class Fitting:
+    """One quantity's transform: which hours it is fitted on, and what it reads from them.
+
+    The subset travels *with* the quantity rather than beside it, because the two are only
+    correct together. Fitting a line on one subset and describing it with another's hour
+    count is precisely the defect #58 was filed about, and a shape that cannot express the
+    two separately makes that defect unavoidable rather than merely possible.
+    """
+
+    variable: str
+    regime: str
+    select: Callable[[Paired], bool]
+    candidate: Callable[[Paired], float]
+    actual: Callable[[Paired], float]
+
+
+FITTINGS: tuple[Fitting, ...] = (
+    Fitting(
+        variable="significant_wave_height_m",
+        regime="overlapping hours",
+        select=lambda _: True,
+        candidate=lambda h: h.reanalysis_combined_sea,
+        actual=lambda h: h.operational_combined_sea,
+    ),
+    Fitting(
+        variable="swell_period_s",
+        regime=f"hours >= {BIG_SWELL_HEIGHT_M:g} m",
+        select=lambda h: h.operational_height >= BIG_SWELL_HEIGHT_M,
+        candidate=lambda h: h.combined_period,
+        actual=lambda h: h.operational_period,
+    ),
+)
+"""The subset each quantity is fitted on, and why the two are not the same one (#58).
+
+Until #58 both were fitted on the big-swell subset, on the reasoning in `Translation` — the
+bars operate at 3 m and up, and the relationship is not the same at 1 m. That reasoning holds
+for **swell period** and fails for **height**, and the difference is not a matter of taste:
+
+* **Height is fitted on every overlapping hour.** Fitted on the narrow high slice instead, the
+  line comes out `0.9412x + 0.3435`; fitted on the whole overlap it is `1.0127x + 0.0192`,
+  very nearly the identity. The +0.34 m intercept is what fitting a line on a narrow high
+  slice does to it, not a property of the two products. That intercept was not harmless,
+  because `LearnedAmplification` **inverts this transform on every hour it serves** and the
+  majority of served hours sit below 2 m, where the shipped line over-predicts Open-Meteo's
+  Combined Sea by 0.22-0.27 m. A transform fitted only where the bars decide, but applied
+  everywhere, is a transform fitted on the wrong hours.
+
+* **Swell period keeps the big-swell subset**, because for it the regime dependence is real
+  and measured. Refitted on all hours it gets *worse where it matters*: -0.232 s at 4-5 m
+  against the shipped -0.015 s. #52 measured this; it is not an assumption.
+
+The height subset is a `select` that admits everything rather than an absent filter, so that
+both quantities are described the same way and neither can quietly acquire the other's hours.
+
+**The swell period filter reads `operational_height`, which is Open-Meteo's Swell height, not
+Combined Sea** — while every prose description of it says Combined Sea. That discrepancy is
+real, it is #60, and it is deliberately left alone here: changing which hours are selected
+moves shipped bars, so it needs a human. #58 does not touch it, and can afford not to,
+because height no longer has a filter for the question to apply to.
+"""
+
+
+def translations_from(hours: list[Paired]) -> dict[str, Translation]:
+    """The transforms, from an already-paired set of hours.
+
+    Split from `fit_translations` so the subset logic can be exercised on hours built to
+    order, without the cache or the network — the two subsets being genuinely independent is
+    the whole of #58, and it should be testable without needing a decade of real sea.
+    """
+    fitted: dict[str, Translation] = {}
+    for fitting in FITTINGS:
+        selected = [h for h in hours if fitting.select(h)]
+        if not selected:
+            raise RuntimeError(
+                f"no overlapping hours match {fitting.regime}, so {fitting.variable} cannot "
+                "be fitted on the subset its measurement supports"
+            )
+        slope, intercept, rmse = least_squares(
+            [fitting.candidate(h) for h in selected],
+            [fitting.actual(h) for h in selected],
+        )
+        fitted[fitting.variable] = Translation(
+            variable=fitting.variable,
+            slope=slope,
+            intercept=intercept,
+            n=len(selected),
+            residual_rmse=rmse,
+            regime=fitting.regime,
+        )
+    return fitted
+
+
 def fit_translations(product: reanalysis.Product = reanalysis.IBI) -> dict[str, Translation]:
     """The reanalysis-to-operational transform for each quantity a threshold is named in.
 
@@ -361,36 +464,18 @@ def fit_translations(product: reanalysis.Product = reanalysis.IBI) -> dict[str, 
     *verified* rather than fitted by `calibrate.py`, and the measured direction offset is
     1-3° against an arc 75° wide — far below the resolution at which that condition decides
     anything. Translating it would be arithmetic dressed up as precision.
+
+    Each quantity is fitted on its own subset (`FITTINGS`). Callers get the same
+    `dict[str, Translation]` they always did and none of them has to know which hours went
+    into which line — the line carries that itself, in `regime` and `n`.
     """
-    hours = [h for h in pair_hours(product) if h.operational_height >= BIG_SWELL_HEIGHT_M]
+    hours = pair_hours(product)
     if not hours:
         raise RuntimeError(
-            f"{product.name}: no overlapping hours at or above {BIG_SWELL_HEIGHT_M:g} m, so "
-            "the transform cannot be fitted in the regime the thresholds operate in"
+            f"{product.name}: no overlapping hours with the operational feed, so no "
+            "transform can be fitted at all"
         )
-
-    fitted: dict[str, Translation] = {}
-    for variable, candidate, actual in (
-        (
-            "significant_wave_height_m",
-            [h.reanalysis_combined_sea for h in hours],
-            [h.operational_combined_sea for h in hours],
-        ),
-        (
-            "swell_period_s",
-            [h.combined_period for h in hours],
-            [h.operational_period for h in hours],
-        ),
-    ):
-        slope, intercept, rmse = least_squares(candidate, actual)
-        fitted[variable] = Translation(
-            variable=variable,
-            slope=slope,
-            intercept=intercept,
-            n=len(hours),
-            residual_rmse=rmse,
-        )
-    return fitted
+    return translations_from(hours)
 
 
 SUBSETS = (
@@ -484,6 +569,63 @@ def check() -> int:
     expect("a high-reading series translates downward", high.apply(15.0), 13.5)
     expect("inverting undoes applying", round(high.invert(high.apply(15.0)), 9), 15.0)
     expect("...and the other way round", round(high.apply(high.invert(13.5)), 9), 13.5)
+
+    # Each quantity is fitted on the hours its own measurement supports, and #58 turns on the
+    # two subsets really being independent. Built from synthetic hours rather than the real
+    # pairing so this runs without the cache, and so the discriminating case can be made
+    # sharp: the small hours carry a period reading wildly off the line the big hours sit on,
+    # so a period transform that leaked them in could not still recover 3x - 2.
+    def hour(
+        at: str, height: float, sea: float, operational_sea: float, sw1: float, period: float
+    ) -> Paired:
+        return Paired(
+            at=at,
+            operational_height=height,
+            operational_period=period,
+            operational_direction=300.0,
+            operational_combined_sea=operational_sea,
+            sw1_height=height,
+            sw1_period=sw1,
+            sw1_direction=300.0,
+            sw2_height=0.0,
+            sw2_period=0.0,
+            sw2_direction=0.0,
+            reanalysis_combined_sea=sea,
+        )
+
+    # Combined Sea sits on operational = 2x + 1 in every hour, big or small. Swell period
+    # sits on operational = 3x - 2 in the big hours only.
+    below = [
+        hour(f"small-{i}", 1.0, x, 2.0 * x + 1.0, 10.0, 0.0) for i, x in enumerate((1.0, 2.0, 3.0))
+    ]
+    above = [
+        hour(f"big-{i}", 4.0, x, 2.0 * x + 1.0, p, 3.0 * p - 2.0)
+        for i, (x, p) in enumerate(((4.0, 1.0), (5.0, 2.0), (6.0, 3.0)))
+    ]
+    mixed = translations_from(below + above)
+
+    height, period = mixed["significant_wave_height_m"], mixed["swell_period_s"]
+    expect("height is fitted on every overlapping hour", height.n, 6)
+    expect("swell period keeps the big-swell subset", period.n, 3)
+    expect(
+        "height recovers the line every hour sits on",
+        (round(height.slope, 9), round(height.intercept, 9)),
+        (2.0, 1.0),
+    )
+    expect(
+        "swell period recovers the line only the big hours sit on",
+        (round(period.slope, 9), round(period.intercept, 9)),
+        (3.0, -2.0),
+    )
+    # The counts above could both be right by accident if the two transforms shared a subset
+    # that happened to be everything. They must genuinely differ.
+    expect("the two quantities are fitted on different subsets", height.n != period.n, True)
+    expect("...and each says which subset that was", height.regime != period.regime, True)
+    expect(
+        "height says so in the prose the shipped file quotes",
+        "overlapping hours" in height.describe(),
+        True,
+    )
 
     try:
         least_squares([2.0, 2.0], [1.0, 3.0])

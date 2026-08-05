@@ -1,9 +1,9 @@
 band,rows,input_below_3m,input_below_fitted_support,fitted_support_floor_m,median_input_combined_sea_m
-all hours,28426,0.8426,0.7838,2.71,1.82
-Combined Sea >= 3 m,4473,0.0,0.0,2.71,3.63
-measured target under 2 m,15665,0.9999,0.9998,2.71,1.37
-measured target 2-3 m,7511,0.9591,0.8382,2.71,2.32
-measured target 3-4 m,3383,0.3187,0.0949,2.71,3.2
-measured target 4-5 m,1127,0.0062,0.0,2.71,4.04
-measured target 5-6 m,415,0.0,0.0,2.71,4.73
-measured target 6 m and above,325,0.0,0.0,2.71,6.18
+all hours,28426,0.8426,0.0092,0.59,1.82
+Combined Sea >= 3 m,4473,0.0,0.0,0.59,3.63
+measured target under 2 m,15665,0.9999,0.0167,0.59,1.37
+measured target 2-3 m,7511,0.9591,0.0,0.59,2.32
+measured target 3-4 m,3383,0.3187,0.0,0.59,3.2
+measured target 4-5 m,1127,0.0062,0.0,0.59,4.04
+measured target 5-6 m,415,0.0,0.0,0.59,4.73
+measured target 6 m and above,325,0.0,0.0,0.59,6.18

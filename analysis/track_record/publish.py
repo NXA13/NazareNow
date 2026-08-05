@@ -18,16 +18,27 @@ re-derives. So the inputs are the committed reports, each cited on the field it 
 | served height accuracy | `analysis/amplification_model/output/translation_shapes.csv` | #52 |
 | Gold Day split | `backend/src/nazarenow/thresholds.json` | #12 |
 
-**The served figures are #52's, not `served_path.py`'s.** `output/served_path_scores.csv`
-reconstructs the operational series using the shipped Translation, which extrapolates about
-0.34 m below the range it was fitted on and hands that error to the baseline as a free upward
-shift. Its `all hours` and `under 2 m` rows therefore read +0.035 and +0.074 — in the learned
-model's favour — where a generator tracking the measured pairing reads **-0.077** and
-**-0.126**. Publishing the first pair would put the most flattering number on the page and
-have it be an artefact of the transform under test. The rows taken here are
-`translation_shapes.csv` filtered to the shipped candidate under the `regime-aware` generator
-with a flat residual, which is what `analysis/amplification_model/README.md` prints as the
-*fair generator* column.
+**The served figures are #52's, not `served_path.py`'s** — though since #58 the two nearly
+agree. `output/served_path_scores.csv` reconstructs the operational series using the shipped
+Translation and then scores a model that inverts that same Translation, so any error in the
+transform is partly measured against itself.
+
+Before #58 that was worth 0.11 m. The shipped Translation was fitted on the big-swell subset
+alone and extrapolated about 0.34 m below its fitted range, handing that error to the baseline
+as a free upward shift; its `all hours` and `under 2 m` rows read +0.035 and +0.074 — in the
+learned model's favour — where a generator tracking the measured pairing read **-0.077** and
+**-0.126**. Publishing the first pair would have put the most flattering number on the page and
+had it be an artefact of the transform under test.
+
+#58 refitted the height Translation on all 35,064 overlapping hours, so the shipped line now
+nearly *is* a generator that tracks the measured pairing: `served_path.py` reads -0.014 and
+-0.033 against this module's -0.016 and -0.035. The indirection is kept anyway, because it costs
+nothing and the guarantee it provides — that the published number is not scored against its own
+generator — should not depend on the two happening to agree.
+
+The rows taken here are `translation_shapes.csv` filtered to the shipped candidate under the
+`regime-aware` generator with a flat residual, which is what
+`analysis/amplification_model/README.md` prints as the *fair generator* column.
 
 **Rates are not written.** The file carries counts and the backend divides, so a recall on
 the page cannot disagree with the counts beside it. See `backend/src/nazarenow/track_record.py`.
@@ -439,11 +450,17 @@ def check() -> int:
 
     # 3. The served rows must come from the fair generator. Reading them from the shipped
     #    generator is not an error that shows up as a missing file — it publishes eight
-    #    plausible numbers, two of which flatter the learned model by more than the whole
-    #    effect being reported.
+    #    plausible numbers.
+    #
+    #    **This pin is weaker since #58 and deliberately kept.** It used to separate -0.0774
+    #    from the shipped generator's +0.035, a margin of 0.11 m. #58 refitted the height
+    #    Translation so the shipped generator no longer flatters anything, and the two now sit
+    #    0.002 m apart — still four times the tolerance below, but no longer a gap anyone would
+    #    notice by eye. It catches the same wiring mistake; it no longer proves the mistake
+    #    would have mattered.
     served = served_bands(rows(SHAPES))
     by_name = {band["name"]: band for band in served}
-    for name, expected_gain in (("all hours", -0.0774), ("under 2 m", -0.1258)):
+    for name, expected_gain in (("all hours", -0.0162), ("under 2 m", -0.0350)):
         band = by_name.get(name)
         if band is None:
             failures.append(f"served table has no {name!r} band")

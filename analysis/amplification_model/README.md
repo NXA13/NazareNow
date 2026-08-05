@@ -230,27 +230,38 @@ reanalysis units, and incoming Open-Meteo readings are restated into those units
 parameter file, so the backend applies them without importing analysis code:
 
 ```
-significant_wave_height_m: operational = 0.9412 x reanalysis + 0.3435
-swell_period_s:            operational = 0.9307 x reanalysis + 0.2924
+significant_wave_height_m: operational = 1.0127 x reanalysis + 0.0192   (35,064 hours)
+swell_period_s:            operational = 0.9307 x reanalysis + 0.2924   ( 4,366 hours)
 ```
 
-Both fitted on 4,366 overlapping hours at or above 3 m — the regime the model operates in, and
-the regime `analysis/overlap/README.md` measured the relationship is *not* constant across.
+**The two are fitted on different subsets, and each records its own under `fitted_on`.** Swell
+period is fitted on the 4,366 overlapping hours at or above 3 m — the regime the model operates
+in, and the regime `analysis/overlap/README.md` measured the relationship is *not* constant
+across. Height is fitted on every overlapping hour, because since #58 the same argument is known
+to fail for it: the transform is inverted on every hour served, 84% of which sit below 3 m. It
+read `0.9412 x reanalysis + 0.3435` until then. See "Is the Translation the right shape?" below.
 
-**That subset is selected on Open-Meteo's *Swell* height, not on Combined Sea**, and the
+**The period subset is selected on Open-Meteo's *Swell* height, not on Combined Sea**, and the
 distinction is not cosmetic. `measure.fit_translations` filters `operational_height`, which is
 `swell_wave_height`; this README, `train.py:95-101` and `amplification.json` all describe the
 same bar as Combined Sea. Read the way it is written the subset is 4,941 hours, not 4,366. #52
 measured the consequence and it is recorded below.
 
-## Is the Translation the right shape? (#52)
+## Is the Translation the right shape? (#52, acted on in #58)
 
 `translation_shape.py`. #52 asked whether extrapolating the Translation below its fitted range
 is what costs the 3–4 m band its sign on the served path, and if so what shape does better
 without giving up accuracy at size. **The answer to the first question is no, the answer to the
-second is "nothing worth shipping", and the measurement turned up something larger than either
-question asked about.** Nothing here is shipped: the Translation is shared with `calibrate.py`,
-so changing it moves shipped decision thresholds, and that is a separate decision.
+second is "nothing worth shipping *as a pair*", and the measurement turned up something larger
+than either question asked about.**
+
+#52 itself shipped nothing, because the Translation was shared with `calibrate.py` and every
+candidate that fixed the height line dragged the period line with it, moving a shipped decision
+threshold. **#58 removed that constraint** rather than accepting it: the two quantities are now
+fitted on their own subsets, so the height line could be refitted on all 35,064 overlapping
+hours while the period line stayed exactly where it was. No shipped bar moved. The tables below
+are re-derived under the transform that now ships, with `swell-3m` kept as the line that shipped
+before it so the comparison is not silently rebased.
 
 ```bash
 .venv/Scripts/python.exe analysis/amplification_model/translation_shape.py
@@ -262,13 +273,20 @@ so changing it moves shipped decision thresholds, and that is a separate decisio
 ### 1. Extrapolation cannot be the cause, because the band is barely extrapolated
 
 A measured target of 3–4 m is not an input Combined Sea of 3 m and above. Of the 3,383 held-out
-hours in that band, **31.9%** have an input below the 3 m everyone quotes — and only **9.5%**
-fall below 2.71 m, which is where the fitted subset's Combined Sea coverage actually reaches at
-its 1st percentile. Nine tenths of the band is served from inside the fitted cloud. Whatever
-costs it its sign, it is not that the line was never fitted there.
+hours in that band, **31.9%** have an input below the 3 m everyone quotes — but when this was
+measured against the pre-#58 line, only **9.5%** fell below 2.71 m, where that line's Combined
+Sea coverage actually reached at its 1st percentile. Nine tenths of the band was served from
+inside the fitted cloud even then. Whatever costs it its sign, it was never that the line had
+not been fitted there.
+
+Since #58 the question is closed rather than answered: the height line is fitted on every
+overlapping hour, its support reaches down to **0.59 m**, and **0.0%** of the 3–4 m band now
+sits below it. Across all held-out hours only 0.9% do, and 1.7% of the sub-2 m band — which is
+the 1st percentile the floor is defined as, not a residual defect.
 
 The same table says something the ticket did not ask: **84.3% of all held-out hours** have an
-input below 3 m. The band under investigation is one of the least extrapolated in the set.
+input below 3 m. The band under investigation is one of the least extrapolated in the set, and
+that 84.3% is why fitting the height line only above 3 m was the wrong restriction.
 
 ### 2. The extrapolation defect is real, large, and somewhere else
 
@@ -277,34 +295,44 @@ all 35,064 overlap hours, so a transform's error between them is observed rather
 reconstructed. Bias and RMSE of the shipped height Translation against what Open-Meteo actually
 read, against the best alternative shape:
 
-| Input Combined Sea | Hours | Shipped bias / RMSE | Regime-aware bias / RMSE |
-|---|---|---|---|
-| 0–1 m | 3,911 | **+0.271** / 0.277 | −0.007 / **0.060** |
-| 1–2 m | 16,929 | **+0.220** / 0.240 | +0.001 / **0.094** |
-| 2–3 m | 9,283 | +0.142 / 0.201 | +0.002 / **0.141** |
-| 3–4 m | 3,409 | +0.078 / 0.212 | +0.005 / 0.196 |
-| 4–5 m | 984 | −0.033 / 0.259 | −0.060 / 0.263 |
-| 5–6 m | 359 | +0.042 / 0.270 | +0.063 / 0.276 |
-| 6 m and above | 189 | −0.031 / **0.265** | +0.043 / 0.265 |
-| all hours | 35,064 | +0.181 / 0.234 | −0.000 / **0.129** |
+| Input Combined Sea | Hours | Pre-#58 bias / RMSE | Shipped since #58 | Regime-aware bias / RMSE |
+|---|---|---|---|---|
+| 0–1 m | 3,911 | **+0.271** / 0.277 | **+0.004** / **0.059** | −0.007 / 0.060 |
+| 1–2 m | 16,929 | **+0.220** / 0.240 | **+0.003** / 0.094 | +0.001 / **0.093** |
+| 2–3 m | 9,283 | +0.142 / 0.201 | −0.008 / **0.141** | +0.003 / **0.141** |
+| 3–4 m | 3,409 | +0.078 / 0.212 | −0.002 / **0.196** | +0.005 / **0.196** |
+| 4–5 m | 984 | −0.033 / **0.260** | −0.042 / **0.260** | −0.059 / 0.263 |
+| 5–6 m | 359 | **+0.042** / **0.270** | +0.105 / 0.289 | +0.063 / 0.276 |
+| 6 m and above | 189 | **−0.031** / **0.265** | +0.113 / 0.285 | +0.043 / 0.265 |
+| all hours | 35,064 | +0.181 / 0.234 | −0.000 / 0.130 | −0.000 / **0.129** |
 
-**The shipped Translation over-predicts the operational Combined Sea by 0.22–0.27 m below 2 m**,
-which is 59% of the overlap, and its RMSE there is 0.277 against the alternative's 0.060 at
-0–1 m and 0.240 against 0.094 at 1–2 m. In the 3–4 m band it is only mildly worse than the best
-shape available — +0.078 m of bias, against +0.271 m at 0–1 m. **The extrapolation error #52
-suspected is real and about three and a half times larger outside the band it was opened about
-than inside it.**
+**The pre-#58 Translation over-predicted the operational Combined Sea by 0.22–0.27 m below 2 m**,
+which is 59% of the overlap, and its RMSE there was 0.277 against 0.059 at 0–1 m and 0.240
+against 0.094 at 1–2 m. **The extrapolation error #52 suspected is real and was about three and
+a half times larger outside the band it was opened about than inside it.**
 
-At serving time `LearnedAmplification._restate` **inverts** this transform on every reading. An
-Open-Meteo Combined Sea of 1.80 m is restated to **1.55 m** before the coefficients see it,
-where the best-fitting transform puts the reanalysis-equivalent at **1.76 m**. That is a 0.21 m
-understatement of the Amplification Model's dominant feature, on the great majority of hours the
-system serves.
-
-Range restriction is the mechanism and it is ordinary: fitting a line on a narrow high slice of
-a noisy pairing flattens its slope and lifts its intercept. The shipped line reads
+Range restriction was the mechanism and it is ordinary: fitting a line on a narrow high slice of
+a noisy pairing flattens its slope and lifts its intercept. The old line read
 `0.9412x + 0.3435`; fitted on every hour the same pairing reads `1.0127x + 0.0192`, which is
-very nearly the identity. The two cross at 4.54 m, and below that the shipped line reads high.
+very nearly the identity. The two cross at 4.54 m, and below that the old line read high.
+
+#58 shipped the second line. Below 5 m the bias is now within 0.008 m everywhere, and the
+all-hours RMSE falls from 0.234 to 0.130 — within 0.001 of the two-line regime-aware shape,
+which is not expressible as a `Translation` at all.
+
+**It is not free, and the cost lands in the bands the project exists for.** At 5–6 m the bias
+goes from +0.042 to +0.105 and at 6 m and above from −0.031 to +0.113, with RMSE rising 0.270 →
+0.289 and 0.265 → 0.285. A single line fitted on 35,064 hours is pulled by the 33,000 of them
+below 4 m, so it fits the 189 hours above 6 m less well than a line fitted only on big seas did.
+That trade was accepted because the transform is *inverted on every hour served* and 84% of
+those sit below 3 m, while the bars that decide at 6 m are period bars, which #58 did not touch —
+but it is a real cost and section 4 tracks what it does to the served figures.
+
+At serving time `LearnedAmplification._restate` **inverts** this transform on every reading.
+Under the old line an Open-Meteo Combined Sea of 1.80 m was restated to **1.55 m** before the
+coefficients saw it, where the best-fitting transform puts the reanalysis-equivalent at
+**1.76 m** — a 0.21 m understatement of the Amplification Model's dominant feature, on the great
+majority of hours the system serves. Under the line that ships now it is restated to 1.76 m.
 
 ### 3. Which means the published served table is partly measuring its own generator
 
@@ -320,29 +348,39 @@ six ways. Positive means the learned model is closer to the buoy:
 
 | Held-out band | scored | published served | fair generator | best | no scatter | scatter grown with size | which was best |
 |---|---|---|---|---|---|---|---|
-| all hours | −0.011 | **+0.035** | **−0.077** | −0.016 | −0.014 | −0.019 | regime-aware |
-| Combined Sea ≥ 3 m | +0.047 | +0.014 | +0.027 | +0.027 | +0.045 | **−0.004** | *shipped* |
-| measured target under 2 m | −0.046 | **+0.074** | **−0.126** | −0.034 | −0.035 | −0.035 | regime-aware |
-| measured target 2–3 m | −0.012 | −0.032 | −0.054 | −0.024 | −0.022 | −0.023 | regime-aware |
-| **measured target 3–4 m** | **+0.030** | **−0.043** | **−0.022** | **+0.003** | +0.005 | +0.003 | band-fitted |
-| measured target 4–5 m | +0.146 | +0.042 | +0.057 | +0.088 | +0.110 | +0.058 | band-fitted |
-| measured target 5–6 m | +0.252 | +0.167 | +0.161 | +0.192 | +0.212 | +0.142 | all-hours |
-| measured target 6 m and above | +0.410 | +0.396 | +0.356 | +0.357 | +0.375 | +0.259 | regime-aware |
+| all hours | −0.011 | −0.014 | −0.016 | −0.016 | −0.014 | −0.019 | regime-aware |
+| Combined Sea ≥ 3 m | +0.047 | +0.022 | +0.022 | +0.027 | +0.045 | **−0.004** | *swell-3m* |
+| measured target under 2 m | −0.045 | −0.033 | −0.035 | −0.034 | −0.035 | −0.035 | regime-aware |
+| measured target 2–3 m | −0.012 | −0.025 | −0.027 | −0.024 | −0.022 | −0.023 | regime-aware |
+| **measured target 3–4 m** | **+0.030** | **+0.003** | **+0.001** | **+0.003** | +0.005 | +0.003 | band-fitted |
+| measured target 4–5 m | +0.146 | +0.093 | +0.085 | +0.087 | +0.110 | +0.058 | band-fitted |
+| measured target 5–6 m | +0.252 | +0.189 | +0.190 | +0.192 | +0.211 | +0.142 | all-hours |
+| measured target 6 m and above | +0.410 | +0.322 | +0.342 | +0.357 | +0.375 | +0.259 | regime-aware |
 
-The last four columns are the best candidate **for that band**, which is not always an
-alternative — on the `Combined Sea ≥ 3 m` row nothing beat the shipped fit, so those columns
-describe the shipped transform. Per-candidate figures for every band are in section 4 below and
-in `output/translation_shapes.csv`.
+**`published served` and `fair generator` now agree to within 0.002 m on every band.** That is
+the measure of what #58 fixed: the published column is generated by the shipped line and the
+fair column by a line that fits every sea, and before #58 those two disagreed by 0.112 m on
+`all hours` and 0.200 m below 2 m. The published served table is no longer meaningfully
+measuring its own generator.
 
-Read the 3–4 m row left to right. The 0.073 m separating the scored gain from the published
-served one is four things, and only one of them is what #52 set out to fix:
+The last four columns are the best candidate **for that band**, which is not always the one that
+ships — on the `Combined Sea ≥ 3 m` row nothing beat the pre-#58 `swell-3m` fit. Per-candidate
+figures for every band are in section 4 below and in `output/translation_shapes.csv`.
 
-| Step | Worth |
-|---|---|
-| the reconstruction's own generator | 0.022 m |
-| **the shipped transform's shape** | **0.025 m** |
-| the real IBI/Open-Meteo offset, which genuinely helps the baseline here | 0.025 m |
-| the Translation's residual scatter | 0.002 m |
+Read the 3–4 m row left to right. Before #58 the 0.073 m separating the scored gain from the
+published served one was four things, and only one of them is what #52 set out to fix:
+
+| Step | Worth | Still there after #58? |
+|---|---|---|
+| the reconstruction's own generator | 0.022 m | no — the generator is now the refitted line |
+| **the shipped transform's shape** | **0.025 m** | no — this is what #58 refitted |
+| the real IBI/Open-Meteo offset, which genuinely helps the baseline here | 0.025 m | yes, and it cannot be removed |
+| the Translation's residual scatter | 0.002 m | yes |
+
+The band now reads **+0.003** served against +0.030 scored. The two pieces #58 could remove are
+gone; the 0.027 m that remains is the product offset and the scatter, which no choice of
+transform can take back. Note how narrow the recovery is: the 5–95% interval is +0.000 to
++0.005, so the band has regained its *sign* and almost nothing else.
 
 The third is not a defect and cannot be removed. Open-Meteo really does read a little above IBI
 at this size, and the baseline's error in this band is an under-read, so the product boundary
@@ -350,51 +388,61 @@ hands the baseline a free bias correction. It survives a perfect transform and n
 which is what the `no scatter` column shows, at +0.005 against the scored +0.030.
 
 **The scatter is worth 0.002 m in this band.** `served_path.py`'s docstring reaches for it as
-the explanation, on the grounds that its 0.217 m RMSE is larger than the whole +0.047 m gain at
+the explanation, on the grounds that its residual RMSE is larger than the whole +0.047 m gain at
 size. Those two numbers are not comparable: the inversion is unbiased, so symmetric scatter
 raises both models' mean absolute error together and mostly cancels in the difference between
-them.
+them. (The RMSE that docstring quotes was 0.217 m; since #58 it is 0.130 m, and the argument is
+unchanged either way.)
 
-**The `all hours` and `under 2 m` rows are the bigger finding.** Item 7 below reports those two
-bands reversing *in the learned model's favour* once the served path is measured, and reads that
-as the baseline paying for carrying an Open-Meteo number against an IBI-fitted expectation. Under
-a generator that tracks the real pairing at every size, both reverse again and land **below** the
-scored figure: +0.035 becomes −0.077, and +0.074 becomes −0.126. That reversal was the shipped
-Translation's own extrapolation error being fed to the baseline as though it were the world.
-Item 7 has been corrected accordingly.
+**The `all hours` and `under 2 m` rows were the bigger finding, and #58 resolved them.** Item 7
+used to report those two bands reversing *in the learned model's favour* once the served path was
+measured — +0.035 and +0.074 — and read that as the baseline paying for carrying an Open-Meteo
+number against an IBI-fitted expectation. It was not: it was the old Translation's own
+extrapolation error being fed to the baseline as though it were the world. #52 estimated that a
+generator tracking the real pairing would put those rows at −0.077 and −0.126. Measured under the
+line #58 actually shipped they read **−0.014** and **−0.033** — the same side of zero #52
+predicted, and much closer to it, because the shipped line now nearly *is* the fair generator.
+Item 7 has been re-derived rather than corrected.
 
 ### 4. No alternative is worth shipping, and one is worth not shipping
 
-Five shapes were fitted on the same overlap hours and scored on every band: the shipped subset,
-every hour, the subset read as Combined Sea, the 3–4 m band alone, and a regime-aware pair of
-lines joined at 3 m. Every candidate on every band, under the fair generator and a flat
-residual (`output/translation_shapes.csv` carries all four reconstructions):
+Six shapes were fitted on the same overlap hours and scored on every band: what ships since #58,
+the pre-#58 subset (`swell-3m`), every hour, the subset read as Combined Sea, the 3–4 m band
+alone, and a regime-aware pair of lines joined at 3 m. Every candidate on every band, under the
+fair generator and a flat residual (`output/translation_shapes.csv` carries all four
+reconstructions):
 
-| Held-out band | Rows | shipped | all-hours | combined-sea-3m | band-fitted | regime-aware |
-|---|---|---|---|---|---|---|
-| all hours | 28,426 | −0.077 | −0.017 | −0.020 | −0.017 | −0.016 |
-| Combined Sea ≥ 3 m | 4,473 | +0.027 | +0.021 | +0.021 | +0.023 | +0.020 |
-| measured target under 2 m | 15,665 | −0.126 | −0.036 | −0.039 | −0.036 | −0.034 |
-| measured target 2–3 m | 7,511 | −0.054 | −0.028 | −0.027 | −0.027 | −0.024 |
-| **measured target 3–4 m** | 3,383 | **−0.022** | **+0.000** | **−0.006** | **+0.003** | **−0.003** |
-| measured target 4–5 m | 1,127 | +0.057 | +0.086 | +0.076 | +0.088 | +0.078 |
-| measured target 5–6 m | 415 | +0.161 | +0.192 | +0.186 | +0.191 | +0.188 |
-| **measured target 6 m and above** | 325 | **+0.356** | **+0.344** | **+0.356** | **+0.336** | **+0.357** |
+| Held-out band | Rows | shipped | swell-3m | all-hours | combined-sea-3m | band-fitted | regime-aware |
+|---|---|---|---|---|---|---|---|
+| all hours | 28,426 | −0.016 | −0.077 | −0.017 | −0.020 | −0.017 | −0.016 |
+| Combined Sea ≥ 3 m | 4,473 | +0.022 | +0.027 | +0.021 | +0.021 | +0.023 | +0.020 |
+| measured target under 2 m | 15,665 | −0.035 | −0.126 | −0.036 | −0.039 | −0.036 | −0.034 |
+| measured target 2–3 m | 7,511 | −0.027 | −0.053 | −0.028 | −0.026 | −0.027 | −0.024 |
+| **measured target 3–4 m** | 3,383 | **+0.001** | **−0.022** | **+0.000** | **−0.005** | **+0.003** | **−0.003** |
+| measured target 4–5 m | 1,127 | +0.085 | +0.057 | +0.086 | +0.076 | +0.087 | +0.077 |
+| measured target 5–6 m | 415 | +0.190 | +0.161 | +0.192 | +0.185 | +0.191 | +0.188 |
+| **measured target 6 m and above** | 325 | **+0.342** | **+0.355** | **+0.344** | **+0.356** | **+0.336** | **+0.357** |
 
-- **The 6 m and above constraint holds for all of them**, +0.336 to +0.357 against the shipped
-  +0.356. Nothing here buys the middle by selling the top.
-- **No candidate fixes the 2–3 m band.** Every one of them is negative there, −0.024 at best
-  against the shipped −0.054. That band was already negative on the scored path (−0.012), so
-  unlike 3–4 m it is not something the Translation introduced, and nothing here removes it.
+- **The shipped column is now within 0.002 m of the best available shape on every band except
+  6 m and above.** That is what #58 bought, and it is why no further shape change is worth
+  making: the remaining headroom is smaller than the interval on the measurement.
+- **The 6 m and above constraint holds for all of them**, +0.336 to +0.357. The shipped line is
+  at +0.342, below the pre-#58 +0.355 — this is the cost named in section 2 arriving on the
+  served path. It is 0.013 m against a gain of 0.342 m, and every candidate sits inside the same
+  narrow range, so nothing here buys the middle by selling the top.
+- **No candidate fixes the 2–3 m band.** Every one is negative there, −0.024 at best. That band
+  was already negative on the scored path (−0.012), so unlike 3–4 m it is not something the
+  Translation introduced, and nothing here removes it.
 - **Nothing meaningfully buys the middle either.** The best 3–4 m result any shape reaches is
-  +0.003, against +0.030 scored. The band is recovered to roughly zero rather than to its scored
-  value, because the largest single piece of what it lost is the real product offset handing the
-  baseline a free bias correction, and no choice of transform can take that back.
-- **`refit on all hours` — the ticket's first-named candidate — is the one to avoid.** Its
-  *height* line is excellent, but the shared subset drags the **period** line with it, and the
-  period relationship really is regime-dependent: fitted on all hours it reads −0.232 s at 4–5 m
-  and −0.140 s at 6 m and above, against the shipped line's −0.015 s and +0.084 s. It would
-  degrade the swell period exactly where the Go Call bar operates.
+  +0.003 against +0.030 scored, and the shipped line is at +0.001. The band is recovered to
+  roughly zero rather than to its scored value, because the largest single piece of what it lost
+  is the real product offset handing the baseline a free bias correction.
+- **`refit on all hours` — the ticket's first-named candidate — is still the one to avoid, and
+  #58 is not it.** Its *height* line is excellent, which is why #58 adopted that line; but as a
+  *pair* it drags the **period** line onto the same subset, and the period relationship really is
+  regime-dependent: fitted on all hours it reads −0.232 s at 4–5 m and −0.140 s at 6 m and above,
+  against the shipped line's −0.015 s and +0.084 s. #58 took the height line without the period
+  line, which is exactly the option the old shared-subset fitting could not express.
 
 ### 5. What each would do to the shipped bars
 
@@ -403,50 +451,81 @@ Amplification Model change. From the fitted 2.75 m / 12.0 s / 13.5 s (`output/tr
 
 | Candidate | Height | Watch bar | Go Call bar | Expressible as a Translation |
 |---|---|---|---|---|
-| shipped | 2.75 m | 11.5 s | 12.9 s | yes |
+| shipped (since #58) | 2.75 m | 11.5 s | 12.9 s | yes |
+| swell-3m (pre-#58) | 2.75 m | 11.5 s | 12.9 s | yes |
 | all-hours | 2.75 m | **11.2 s** | **12.6 s** | yes |
 | combined-sea-3m | 2.75 m | 11.4 s | 12.9 s | yes |
 | band-fitted | 2.75 m | 11.4 s | 12.8 s | yes |
 | regime-aware | 2.75 m | **11.2 s** | **12.6 s** | **no — two lines** |
 
-**The two candidates that fix the height extrapolation both drop the Go Call bar by 0.3 s**, on
-the strength of a period fit that section 4 shows is worse in the regime that bar operates in.
-The height bar does not move under any of them. The light-wind exemption cannot move here at
-all: its transform is fitted on wind against a different pairing.
+**The shipped row is identical to the pre-#58 row: 2.75 m / 11.5 s / 12.9 s.** That is the
+demonstration that #58 moved no decision threshold. It works because the bars are restated
+through the *period* transform and a height transform that both survive the change — the period
+line is untouched, and the height bar floors to the same 0.25 m step under either line
+(`0.9412 × 2.75 + 0.3435 = 2.932` and `1.0127 × 2.75 + 0.0192 = 2.804` both floor to 2.75).
+
+**The two candidates that refit height by moving the shared subset both drop the Go Call bar by
+0.3 s**, on the strength of a period fit that section 4 shows is worse in the regime that bar
+operates in. That is the trap #58 avoided by splitting the subsets rather than moving the shared
+one. The light-wind exemption cannot move here at all: its transform is fitted on wind against a
+different pairing.
 
 `regime-aware` is also **not expressible as a `Translation`** — it is two lines and a knot, so
 adopting it would change the type `fit_translations()` returns, which both the serving path and
-the calibration consume. That is a contract change, not a constant change.
+the calibration consume. That is a contract change, not a constant change, and it is why the
+shipped line is a single all-hours fit rather than the marginally better hinged pair.
 
 ### The conclusion, and what it inherits
 
-**Extrapolation below the fitted range is not what costs the 3–4 m band its sign. It is worth
-0.025 m of the 0.073 m gap; the reconstruction's own generator is worth another 0.022 m, and the
+**Extrapolation below the fitted range is not what costs the 3–4 m band its sign. It was worth
+0.025 m of the 0.073 m gap; the reconstruction's own generator was worth another 0.022 m, and the
 largest remaining piece is the real difference between the two products, which hands the
-baseline a free bias correction in this band and which no change of shape can take back. No
-alternative recovers the band to its scored value, and the two that come closest move a shipped
-decision threshold on the strength of a swell period fit measurably worse where that threshold
-operates. The band is therefore documented rather than fixed.**
+baseline a free bias correction in this band and which no change of shape can take back. #58
+removed the first two. The band now reads +0.003 served against +0.030 scored — recovered to its
+sign, not to its value, and the 0.027 m still missing is not a defect anything can fix.**
 
-The finding that outlived the question is section 2: **the shipped Translation carries 0.22–0.27 m
+The finding that outlived the question is section 2: **the pre-#58 Translation carried 0.22–0.27 m
 of bias below 2 m of Combined Sea, and the Amplification Model inverts it on every hour it
-serves — 57% of which sit below 2 m, and 84% below the 3 m the fit was restricted to.** That is
-an observation, not a bound, and it is not what #52 was opened about. It argues
-for a follow-up that refits the height transform without touching the period one — which the
-shared return type of `fit_translations()` does not currently allow.
+serves — 57% of which sit below 2 m, and 84% below the 3 m the fit was restricted to.** That was
+an observation, not a bound, and it is not what #52 was opened about. It argued for a follow-up
+that refits the height transform without touching the period one — which the shared return type
+of `fit_translations()` did not allow.
+
+**#58 is that follow-up.** `fit_translations()` now fits each quantity on its own subset and
+returns the same type, so the height line could move to all 35,064 overlapping hours while the
+period line stayed on its 4,366. The bias below 2 m is now +0.004 and +0.003. No shipped bar
+moved. What it cost is named in section 2 and tracked in section 4: the single all-hours line
+fits the largest seas slightly worse, and the 6 m and above served gain falls from +0.396 to
++0.322.
+
+**One thing #58 deliberately did not settle.** The period subset is selected on Open-Meteo's
+*Swell* height while `train.py`, `amplification.json` and #52's own body all describe it as
+Combined Sea — the same 3 m bar read against two different quantities, and a different 4,941
+hours if read the second way. Changing which hours are selected moves the period line and so
+moves a shipped bar, which is a decision for a human. It is #60.
 
 **Everything except section 2 inherits `served_path.py`'s reconstruction assumption**, item 7
 below: the operational series is generated from a measured transform plus noise at its measured
 residual RMSE, assumed independent of sea state. The default run scores every candidate under a
 residual grown with the sea as well as a flat one, and the conclusion above holds under both —
-the 3–4 m column moves by 0.000 m between them. **One figure does not survive the swap, and it
-is the shipped transform's**: the aggregate `Combined Sea ≥ 3 m` gain falls from +0.027 to
-**−0.004** under a size-weighted residual, because that residual costs the learned model most
-exactly where it inverts the largest readings. Every alternative stays positive there
-(band-fitted +0.008, all-hours +0.005, regime-aware +0.001), so the sign change belongs to the
-shipped fit rather than to the aggregate. The 6 m and above band stays firmly positive under the
-swap for every candidate (+0.259 for the best), so the project's central claim is unaffected —
-but **the ≥ 3 m aggregate should not be quoted as robust to this assumption.**
+the 3–4 m column moves by 0.000 m between them.
+
+**#58 removed the one sign that did not survive the swap.** The aggregate `Combined Sea ≥ 3 m`
+gain used to fall from +0.027 to **−0.004** under a size-weighted residual, because that residual
+costs the learned model most exactly where it inverts the largest readings, and that sign change
+belonged to the shipped fit rather than to the aggregate — every alternative stayed positive.
+Under the line that ships since #58 it reads **+0.006**, positive under both assumptions.
+
+**That is not the same as robust, and the figure still should not be quoted bare.** +0.022 under
+a flat residual becoming +0.006 under a size-weighted one is a collapse of two thirds; what
+changed is that it no longer crosses zero. The honest statement is that the ≥ 3 m aggregate is
+small and assumption-sensitive, not that it is established.
+
+**The 6 m and above cost is assumption-sensitive in the other direction.** Under a flat residual
+the shipped line reads +0.342 against the pre-#58 +0.355, which is the cost named in section 2.
+Under a size-weighted one it reads **+0.254 against +0.240** — better, not worse. The band stays
+firmly positive for every candidate under both, so the project's central claim is unaffected
+either way, but the 0.013 m cost should not be quoted as if it held under both reconstructions.
 
 ## What this does not settle
 
@@ -480,45 +559,49 @@ but **the ≥ 3 m aggregate should not be quoted as robust to this assumption.**
    enough to change two bands' sign. Every score above is measured on Copernicus IBI reanalysis
    rows, in reanalysis units. In a Pipeline Run the learned model first inverts the translation
    on every Open-Meteo reading (`LearnedAmplification._restate`), at the cost of that
-   translation's residual scatter (0.217 m on Hs, larger than the whole +0.047 m gain at
+   translation's residual scatter (0.130 m on Hs, still larger than the whole +0.047 m gain at
    ≥ 3 m), while the baseline carries its Open-Meteo reading through uncorrected.
 
    `served_path.py` measures both, and the asymmetry cuts both ways:
 
    | Held-out subset | Scored gain | Served gain | Served 5–95% |
    |---|---|---|---|
-   | all hours | −0.011 | **+0.035** | +0.034 to +0.037 |
-   | Combined Sea ≥ 3 m | +0.047 | +0.014 | +0.010 to +0.017 |
-   | measured target under 2 m | −0.046 | **+0.074** | +0.071 to +0.076 |
-   | measured target 2–3 m | −0.012 | −0.032 | −0.034 to −0.030 |
-   | measured target 3–4 m | +0.030 | **−0.043** | −0.046 to −0.040 |
-   | measured target 4–5 m | +0.146 | +0.042 | +0.033 to +0.050 |
-   | measured target 5–6 m | +0.252 | +0.167 | +0.153 to +0.184 |
-   | measured target 6 m and above | +0.410 | +0.396 | +0.373 to +0.417 |
+   | all hours | −0.011 | −0.014 | −0.015 to −0.014 |
+   | Combined Sea ≥ 3 m | +0.047 | +0.022 | +0.019 to +0.025 |
+   | measured target under 2 m | −0.045 | −0.033 | −0.034 to −0.032 |
+   | measured target 2–3 m | −0.012 | −0.025 | −0.027 to −0.023 |
+   | measured target 3–4 m | +0.030 | +0.003 | +0.000 to +0.005 |
+   | measured target 4–5 m | +0.146 | +0.093 | +0.086 to +0.099 |
+   | measured target 5–6 m | +0.252 | +0.189 | +0.180 to +0.199 |
+   | measured target 6 m and above | +0.410 | +0.322 | +0.308 to +0.335 |
 
    Positive means the learned model is closer to the buoy. Read it as three findings. The
-   translation step **costs real ground in the middle**: 3–4 m flips from +0.030 to −0.043, and
-   2–3 m gets worse. It **costs almost nothing at size**: 6 m and above holds +0.396, because
-   there the baseline's under-reading dwarfs the scatter. And the aggregate and sub-2 m rows
-   **reverse in the learned model's favour**, for a reason the scored table cannot show — the
-   baseline serves an Open-Meteo number against an IBI-fitted expectation and carries the full
-   offset, roughly +0.34 m at small seas, while the learned model corrects for it.
+   translation step **costs real ground in the middle**: 3–4 m falls from +0.030 to +0.003 and
+   2–3 m from −0.012 to −0.025. It **costs least at size**: 6 m and above holds +0.322, because
+   there the baseline's under-reading dwarfs the scatter. And the model is **behind the baseline
+   on ordinary days** — −0.014 over all hours, −0.033 below 2 m — which is the plain reading of
+   a fit that must invert a transform the baseline never touches.
 
-   > **Corrected by #52, and the third finding above is wrong.** That +0.34 m offset is not
-   > what Open-Meteo does; it is what the shipped Translation *predicts* Open-Meteo does when
-   > extrapolated 2 m below the range it was fitted on. Measured against the hours where both
-   > products really reported, the offset at small seas is near zero and the shipped line
-   > over-predicts by 0.22–0.27 m. The two reversing rows are that error being handed to the
-   > baseline by the reconstruction that generated them. Under a generator that tracks the real
-   > pairing at every size, `all hours` reads **−0.077** rather than +0.035 and `under 2 m`
-   > reads **−0.126** rather than +0.074 — both worse than the scored figures rather than
-   > better. The first two findings survive. See "Is the Translation the right shape? (#52)"
-   > above; the served figures in the table are otherwise reproduced exactly by
-   > `translation_shape.py`, which pins itself against them.
+   > **Re-derived by #58.** Until then this table was generated by a Translation fitted on the
+   > big-swell subset alone and applied to every hour, which handed the baseline a free +0.34 m
+   > upward shift at small seas and made `all hours` and `under 2 m` read **+0.035** and
+   > **+0.074** — reversing *in the learned model's favour*. #52 caught that the reversal was an
+   > artifact of the generator and estimated the corrected figures at −0.077 and −0.126; #58
+   > refitted the height Translation on all 35,064 overlapping hours, so the generator no longer
+   > needs correcting and the table above is measured rather than adjusted. The measured values
+   > are −0.014 and −0.033: still worse than the scored figures rather than better, which was
+   > #52's conclusion, but a good deal less bad than its estimate. The estimate assumed a
+   > generator tracking the real pairing at every size; the shipped line now nearly does.
 
    So the honest reading is not "the fit is better than reported" or "worse", but *differently*
-   better: **worse** than reported on ordinary days, and still decisively better on the big ones
+   better: **behind the baseline** on ordinary days, and still decisively ahead on the big ones
    the project exists for.
+
+   **What the refit cost.** Removing the intercept improved the pairing everywhere below 5 m —
+   the height bias below 2 m falls from +0.27 and +0.22 to +0.004 and +0.003 — but the all-hours
+   line fits the largest seas slightly worse than the big-swell line did, and 6 m and above pays
+   for it: +0.396 becomes +0.322. That is the band the project exists for, so it is named rather
+   than averaged away. It remains the largest gain in the table by a factor of three.
 
    **This is a bound, not an observation.** Open-Meteo has no historical archive here, so what
    it would have read is generated from the measured translation plus noise at its measured
@@ -528,8 +611,10 @@ but **the ≥ 3 m aggregate should not be quoted as robust to this assumption.**
    that must invert it, while the baseline's exposure is a fixed offset no noise assumption
    changes.
 
-   Note also that the translations were fitted on ≥ 3 m hours only (`fitted_on_hours: 4366`) and
-   are applied to every hour served.
+   Note also that the **swell period** translation is fitted on ≥ 3 m hours only
+   (`fitted_on_hours: 4366`) and applied to every hour served. Since #58 the height translation
+   is not: it is fitted on all 35,064 overlapping hours, which is what removed the offset above.
+   Each line records its own subset in `amplification.json` under `fitted_on`.
 
 ## Files
 

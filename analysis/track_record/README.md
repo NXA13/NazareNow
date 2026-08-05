@@ -33,9 +33,12 @@ This is the one join where taking the obvious file would publish a wrong number,
 worth stating plainly.
 
 `analysis/amplification_model/output/served_path_scores.csv` reconstructs the operational
-series **using the shipped Translation**, which extrapolates about +0.34 m below the range it
-was fitted on and hands that error to the Heuristic Baseline as a free upward shift. Its two
-most flattering rows are artefacts of the transform under test:
+series **using the shipped Translation** and then scores a model that inverts the same
+Translation, so any error in the transform is partly measured against itself.
+
+Until #58 that mattered a great deal. The shipped Translation extrapolated about +0.34 m below
+the range it was fitted on and handed that error to the Heuristic Baseline as a free upward
+shift, making its two most flattering rows artefacts of the transform under test:
 
 | Held-out band | `served_path_scores.csv` | fair generator |
 |---|---|---|
@@ -45,6 +48,12 @@ most flattering rows are artefacts of the transform under test:
 Positive means the learned Amplification Model is closer to the Proxy Target. Published
 unchecked, the page would have claimed the learned model beats the rule of thumb on ordinary
 days, on the strength of an error the measurement was supposed to be independent of.
+
+**#58 removed the distortion at its source** by refitting the height Translation on all 35,064
+overlapping hours. The same two rows now read −0.014 and −0.033 from `served_path_scores.csv`
+against −0.016 and −0.035 from the fair generator — a 0.002 m gap where there was a 0.11 m one.
+The published figures are the fair-generator ones either way; the indirection is kept because
+the guarantee should not depend on the two happening to agree.
 
 What is taken instead is `translation_shapes.csv` filtered to the shipped candidate under the
 `regime-aware` generator with a flat residual — the *fair generator* column of
