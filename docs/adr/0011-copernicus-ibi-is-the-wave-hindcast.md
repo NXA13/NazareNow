@@ -173,10 +173,13 @@ The whole-record backtest flags fewer days for the same Gold Days caught (574 �
 128 → 110 Go), because the height bar restated into reanalysis units is no longer pulled down by
 a spurious intercept.
 
-**One part is still open, and it is now #60.** The swell period subset is selected on Open-Meteo's
-*Swell* height while `train.py`, `amplification.json` and #52's own body all describe it as
-Combined Sea — the same 3 m bar read against two different quantities, and a different 4,941
-hours if read the second way.
+**That part was #60, and it is now settled: the subset is selected on reanalysis Combined Sea.**
+It had been selected on Open-Meteo's *Swell* height while `train.py`, `amplification.json` and
+#52's own body all described it as Combined Sea — the same 3 m bar read against two different
+quantities, and a different 4,941 hours read the second way. The code now names the quantity
+every description already named, and the swell period Translation reads
+`0.9622 x reanalysis - 0.1291` on 4,941 hours against the `0.9307x + 0.2924` on 4,366 it shipped
+before. What follows records how that was decided, because the reasoning is the decision.
 
 This paragraph previously said that changing it "moves the period line and so moves a shipped
 bar". **That part was right — the Watch bar does move.** What was wrong was the bar it had in
@@ -197,8 +200,34 @@ seven input bands and better on bias in six; the one exception is 4–5 m, where
 not interchangeable on accuracy even though they agree on the bars. See
 `analysis/amplification_model/README.md`, section 5a.
 
-So #60 is still a human decision — but it is a decision about coherence and a 4–5 m bias, not
-about a Go Call bar.
+So #60 was a human decision about coherence and a 4–5 m bias, not about a Go Call bar. **It was
+put to a human on those terms and taken: ship the Combined Sea subset and accept the Watch bar
+at 11.4 s.** Three things carried it.
+
+*One concept, one definition.* `train.py` defines its big-swell regime on `combined_sea_m`;
+the Translation now selects on the same quantity. "The regime the system calls in" means one
+thing across the two modules instead of two. `CONTEXT.md` calls the Face Height / Significant
+Wave Height family of distinctions load-bearing and says conflating them silently invalidates
+the model's evaluation — this was that conflation, in shipped code, and it is now gone.
+
+*It is more accurate where it is measurable.* Better or equal RMSE in all seven input bands,
+better bias in six.
+
+*The bar it moves is the one that can afford to move.* The Go Call bar — the one a traveller
+books a flight on — is unchanged at 12.9 s.
+
+**What it cost, stated rather than averaged away.** Two things got worse. Bias at 4–5 m goes
+−0.015 → −0.077 s, against 0.62 s of RMSE in that band. And on the whole-record backtest the
+Watch tier flags 553 days against 530 for the *same* 33 Gold Days caught — 23 extra Watch days
+across roughly fifteen seasons that buy no additional recall, taking the tier from 35.3 to 36.9
+days per Big-Wave Season. That stays inside ADR 0010's budget of 40, which is the test that
+budget exists to apply; had it breached, the decision would have had to be made differently
+rather than explained differently.
+
+The **reanalysis** reading rather than the operational one, though both land on the same two
+bars, because a fitting subset is a statement about which hours the relationship is
+characterised on — a question the truth side answers. The operational reading is additionally
+worse than the pre-#60 subset at 6 m and above.
 
 **Whether the training set should be extended to IBI's real reach.** It could go back to 1980;
 it stops at 2011-01-01 for a reason that belonged to a different module. Extending it means a

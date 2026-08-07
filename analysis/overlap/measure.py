@@ -406,8 +406,8 @@ FITTINGS: tuple[Fitting, ...] = (
     ),
     Fitting(
         variable="swell_period_s",
-        regime=f"hours >= {BIG_SWELL_HEIGHT_M:g} m",
-        select=lambda h: h.operational_height >= BIG_SWELL_HEIGHT_M,
+        regime=f"reanalysis Combined Sea >= {BIG_SWELL_HEIGHT_M:g} m",
+        select=lambda h: h.reanalysis_combined_sea >= BIG_SWELL_HEIGHT_M,
         reanalysis_side=lambda h: h.combined_period,
         operational_side=lambda h: h.operational_period,
     ),
@@ -434,9 +434,37 @@ for **swell period** and fails for **height**, and the difference is not a matte
 The height subset is a `select` that admits everything rather than an absent filter, so that
 both quantities are described the same way and neither can quietly acquire the other's hours.
 
-The swell period filter reads `operational_height` — Open-Meteo's Swell height, not Combined
-Sea — while the prose around it says Combined Sea. That discrepancy is real and is #60; it is
-left alone here because changing which hours are selected moves a shipped bar.
+**The swell period filter reads reanalysis Combined Sea, and #60 settled that it should.**
+Until then it read `operational_height` — Open-Meteo's *Swell* height — while `train.py`, the
+shipped `amplification.json`, `thresholds.json`'s `method` string and #52's own body all
+described it as Combined Sea. The same 3 m bar against two different quantities, selecting
+4,366 hours one way and 4,941 the other, with the shipped artifact's `fitted_on_hours: 4366`
+proving which one ran. `CONTEXT.md` calls that distinction load-bearing and says conflating the
+two silently invalidates the model's evaluation; this was that conflation, in shipped code.
+
+Three things decided it, and the third is why it was a judgement call rather than a bug fix:
+
+* **One concept, one definition.** `train.py` defines its own big-swell regime on
+  `combined_sea_m`, the hindcast's Combined Sea. The Translation now names the same quantity,
+  so "the regime the system calls in" means one thing across the two modules instead of two.
+
+* **It is more accurate where it is measurable.** Against the reading the line claims to
+  produce, on fixed input bands, the Combined Sea subset is better or equal on RMSE in all
+  seven bands and better on bias in six.
+
+* **It cost the Watch bar 0.1 s, and the Go Call bar nothing.** #60 measured the period subset
+  in isolation from #58's height refit before anything moved. The Go Call bar — the one that
+  costs a traveller a flight — is unchanged at 12.9 s. The Watch bar moves 11.5 s to 11.4 s,
+  which before rounding is a shift of 0.044 s that happens to cross the 11.45 boundary.
+
+The **reanalysis** side, not the operational one, because that is the quantity `train.py`
+means and because a fitting subset is a statement about which hours the relationship is
+characterised on — a question the truth side answers. Both were measured and they select 4,941
+and 5,501 hours; they land on the same two bars, and the operational reading is additionally
+worse than the old subset at 6 m and above.
+
+The one place the old subset was better is 4-5 m, where bias goes -0.015 s to -0.077 s against
+0.62 s of RMSE in that band. Named rather than averaged away, because it is the whole cost.
 """
 
 
@@ -588,6 +616,12 @@ def check() -> int:
     # pairing so this runs without the cache, and so the discriminating case can be made
     # sharp: the small hours carry a period reading wildly off the line the big hours sit on,
     # so a period transform that leaked them in could not still recover 3x - 2.
+    #
+    # Since #60 the hours also separate the two *quantities* that could gate the period
+    # subset. `swell-decoy` has a big Swell height and a small Combined Sea, so the pre-#60
+    # filter would have admitted it and the current one excludes it — and its period reading
+    # is one of the off-line ones, so admitting it breaks the recovered line rather than
+    # merely changing a count. Reverting `FITTINGS` to `operational_height` fails here.
     def hour(
         at: str, height: float, sea: float, operational_sea: float, sw1: float, period: float
     ) -> Paired:
@@ -607,10 +641,13 @@ def check() -> int:
         )
 
     # Combined Sea sits on operational = 2x + 1 in every hour, big or small. Swell period
-    # sits on operational = 3x - 2 in the big hours only.
+    # sits on operational = 3x - 2 in the big hours only. The first two columns after the
+    # stamp are Swell height and Combined Sea, and `swell-decoy` is the hour where they
+    # disagree about which side of 3 m it falls.
     below = [
-        hour(f"small-{i}", 1.0, x, 2.0 * x + 1.0, 10.0, 0.0) for i, x in enumerate((1.0, 2.0, 3.0))
+        hour(f"small-{i}", 1.0, x, 2.0 * x + 1.0, 10.0, 0.0) for i, x in enumerate((1.0, 1.5, 2.0))
     ]
+    below.append(hour("swell-decoy", 5.0, 2.5, 2.0 * 2.5 + 1.0, 10.0, 0.0))
     above = [
         hour(f"big-{i}", 4.0, x, 2.0 * x + 1.0, p, 3.0 * p - 2.0)
         for i, (x, p) in enumerate(((4.0, 1.0), (5.0, 2.0), (6.0, 3.0)))
@@ -618,8 +655,8 @@ def check() -> int:
     mixed = translations_from(below + above)
 
     height, period = mixed["significant_wave_height_m"], mixed["swell_period_s"]
-    expect("height is fitted on every overlapping hour", height.n, 6)
-    expect("swell period keeps the big-swell subset", period.n, 3)
+    expect("height is fitted on every overlapping hour", height.n, 7)
+    expect("swell period keeps the Combined Sea subset", period.n, 3)
     expect(
         "height recovers the line every hour sits on",
         (round(height.slope, 9), round(height.intercept, 9)),

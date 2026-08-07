@@ -26,7 +26,7 @@
       "tiers": {
         "watch_or_better": {
           "gold_days_called": 33,
-          "days_flagged": 530
+          "days_flagged": 553
         },
         "go_call": {
           "gold_days_called": 16,
@@ -116,49 +116,49 @@
           "name": "Combined Sea 3 m and above",
           "hours": 4473,
           "baseline_mae_m": 0.4278,
-          "learned_mae_m": 0.4053,
+          "learned_mae_m": 0.4059,
           "caveat": "Not robust to the reconstruction assumption: under a residual that grows with the sea this aggregate falls from +0.022 to +0.006, keeping its sign but losing most of its size. It should not be quoted without this beside it."
         },
         {
           "name": "under 2 m",
           "hours": 15665,
           "baseline_mae_m": 0.1562,
-          "learned_mae_m": 0.1912,
+          "learned_mae_m": 0.191,
           "caveat": null
         },
         {
           "name": "2-3 m",
           "hours": 7511,
           "baseline_mae_m": 0.2116,
-          "learned_mae_m": 0.2383,
+          "learned_mae_m": 0.2387,
           "caveat": null
         },
         {
           "name": "3-4 m",
           "hours": 3383,
           "baseline_mae_m": 0.3215,
-          "learned_mae_m": 0.3203,
+          "learned_mae_m": 0.3206,
           "caveat": null
         },
         {
           "name": "4-5 m",
           "hours": 1127,
           "baseline_mae_m": 0.4553,
-          "learned_mae_m": 0.3699,
+          "learned_mae_m": 0.3698,
           "caveat": null
         },
         {
           "name": "5-6 m",
           "hours": 415,
           "baseline_mae_m": 0.6765,
-          "learned_mae_m": 0.4863,
+          "learned_mae_m": 0.4859,
           "caveat": null
         },
         {
           "name": "6 m and above",
           "hours": 325,
           "baseline_mae_m": 1.0109,
-          "learned_mae_m": 0.6691,
+          "learned_mae_m": 0.6689,
           "caveat": null
         }
       ]
