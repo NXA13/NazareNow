@@ -1,7 +1,7 @@
 panel,span,days_scored,gold_days_in_span,tier,gold_days_called,recall,days_flagged,flagged_that_are_gold,precision_lower_bound
-reanalysis,2011-2025,5479,38,watch_or_better,33,0.868,530,33,0.0623
+reanalysis,2011-2025,5479,38,watch_or_better,33,0.868,553,33,0.0597
 reanalysis,2011-2025,5479,38,go_call,16,0.421,110,16,0.1455
-operational (diagnostic),2022-2025,1461,9,watch_or_better,9,1.000,140,9,0.0643
+operational (diagnostic),2022-2025,1461,9,watch_or_better,9,1.000,145,9,0.0621
 operational (diagnostic),2022-2025,1461,9,go_call,7,0.778,40,7,0.1750
-reconstructed (superseded),2011-2021,4018,29,watch_or_better,26,0.897,438,26,0.0594
+reconstructed (superseded),2011-2021,4018,29,watch_or_better,26,0.897,462,26,0.0563
 reconstructed (superseded),2011-2021,4018,29,go_call,11,0.379,108,11,0.1019

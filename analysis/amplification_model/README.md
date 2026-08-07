@@ -231,21 +231,24 @@ parameter file, so the backend applies them without importing analysis code:
 
 ```
 significant_wave_height_m: operational = 1.0127 x reanalysis + 0.0192   (35,064 hours)
-swell_period_s:            operational = 0.9307 x reanalysis + 0.2924   ( 4,366 hours)
+swell_period_s:            operational = 0.9622 x reanalysis - 0.1291   ( 4,941 hours)
 ```
 
 **The two are fitted on different subsets, and each records its own under `fitted_on`.** Swell
-period is fitted on the 4,366 overlapping hours at or above 3 m — the regime the model operates
-in, and the regime `analysis/overlap/README.md` measured the relationship is *not* constant
-across. Height is fitted on every overlapping hour, because since #58 the same argument is known
-to fail for it: the transform is inverted on every hour served, 84% of which sit below 3 m. It
-read `0.9412 x reanalysis + 0.3435` until then. See "Is the Translation the right shape?" below.
+period is fitted on the 4,941 overlapping hours at or above 3 m of **reanalysis Combined Sea** —
+the regime the model operates in, and the regime `analysis/overlap/README.md` measured the
+relationship is *not* constant across. Height is fitted on every overlapping hour, because since
+#58 the same argument is known to fail for it: the transform is inverted on every hour served,
+84% of which sit below 3 m. It read `0.9412 x reanalysis + 0.3435` until then. See "Is the
+Translation the right shape?" below.
 
-**The period subset is selected on Open-Meteo's *Swell* height, not on Combined Sea**, and the
-distinction is not cosmetic. `measure.fit_translations` filters `operational_height`, which is
-`swell_wave_height`; this README, `train.py:95-101` and `amplification.json` all describe the
-same bar as Combined Sea. Read the way it is written the subset is 4,941 hours, not 4,366. #52
-measured the consequence and it is recorded below.
+**Which quantity gates the period subset was #60, and it is now settled.** Until then
+`measure.fit_translations` filtered `operational_height` — Open-Meteo's `swell_wave_height` —
+while this README, `train.py`, `thresholds.json`'s `method` string and `amplification.json` all
+described the same bar as Combined Sea. The shipped artifact recorded `fitted_on_hours: 4366`,
+which is the Swell answer; Combined Sea gives 4,941. `CONTEXT.md` calls that distinction
+load-bearing, and the code now names the quantity every description already named. The period
+line moved from `0.9307x + 0.2924` as a result, and §5a below has what that cost.
 
 ## Is the Translation the right shape? (#52, acted on in #58)
 
@@ -531,8 +534,8 @@ different hours and land on the same two bars:
 
 | Period subset | Hours | Line | Bias, all hours | RMSE, all hours |
 |---|---|---|---|---|
-| operational Swell ≥ 3 m (shipped) | 4,366 | `0.9307x + 0.2924` | +0.202 | 0.951 |
-| reanalysis Combined Sea ≥ 3 m | 4,941 | `0.9622x − 0.1291` | **+0.064** | **0.934** |
+| operational Swell ≥ 3 m (shipped before #60) | 4,366 | `0.9307x + 0.2924` | +0.202 | 0.951 |
+| reanalysis Combined Sea ≥ 3 m (**shipped**) | 4,941 | `0.9622x − 0.1291` | **+0.064** | **0.934** |
 | operational Combined Sea ≥ 3 m | 5,501 | `0.9535x − 0.0083` | +0.106 | 0.937 |
 
 4,941 is the count #60's body cites, so the reading it has in mind is the **reanalysis** one —
@@ -593,11 +596,14 @@ moved. What it cost is named in section 2 and tracked in section 4: the single a
 fits the largest seas slightly worse, and the 6 m and above served gain falls from +0.396 to
 +0.322.
 
-**One thing #58 deliberately did not settle.** The period subset is selected on Open-Meteo's
-*Swell* height while `train.py`, `amplification.json` and #52's own body all describe it as
-Combined Sea — the same 3 m bar read against two different quantities, and a different 4,941
-hours if read the second way. Changing which hours are selected moves the period line and so
-moves a shipped bar, which is a decision for a human. It is #60.
+**One thing #58 deliberately did not settle, and #60 has now settled it.** The period subset was
+selected on Open-Meteo's *Swell* height while `train.py`, `amplification.json` and #52's own body
+all described it as Combined Sea — the same 3 m bar read against two different quantities, and a
+different 4,941 hours read the second way. Changing which hours are selected moves the period
+line and so moves a shipped bar, which made it a decision for a human rather than a bug fix.
+That decision was taken: the subset is now **reanalysis Combined Sea ≥ 3 m**, the Watch bar
+moved 11.5 s → 11.4 s, and the Go Call bar did not move. Section 5a has the measurement and
+ADR 0011 has the reasoning.
 
 **Everything except section 2 inherits `served_path.py`'s reconstruction assumption**, item 7
 below: the operational series is generated from a measured transform plus noise at its measured
@@ -707,8 +713,9 @@ either way, but the 0.013 m cost should not be quoted as if it held under both r
    changes.
 
    Note also that the **swell period** translation is fitted on ≥ 3 m hours only
-   (`fitted_on_hours: 4366`) and applied to every hour served. Since #58 the height translation
-   is not: it is fitted on all 35,064 overlapping hours, which is what removed the offset above.
+   (`fitted_on_hours: 4941`, reanalysis Combined Sea since #60) and applied to every hour
+   served. Since #58 the height translation is not: it is fitted on all 35,064 overlapping
+   hours, which is what removed the offset above.
    Each line records its own subset in `amplification.json` under `fitted_on`.
 
 ## Files

@@ -103,9 +103,11 @@ cannot identify when it runs. It is the same 3 m `analysis/overlap/measure.py` f
 fitted on every overlapping hour, because the argument above holds for a transform that
 decides at 3 m and fails for one inverted on every hour the model serves.
 
-Same number, different series, and that part is **not** settled: this bar is applied to
-Combined Sea, while the subset `measure.py` selects reads Open-Meteo's Swell height. #60 owns
-that discrepancy — it moves shipped bars, so it is not resolved in passing here.
+Same number and, since #60, the same series. This bar is applied to `combined_sea_m` — the
+hindcast's Combined Sea — and `measure.FITTINGS` now selects the swell period subset on
+reanalysis Combined Sea too. Until #60 it read Open-Meteo's *Swell* height, so the sentence
+above was true of the number and false of the quantity, and the two modules meant different
+things by "the regime". They mean one thing now.
 
 Deliberately not the baseline's `minimum_significant_wave_height_m`. That bar is applied to
 offshore swell in a forecast; this is Combined Sea at a mooring, and #9's README calls the
