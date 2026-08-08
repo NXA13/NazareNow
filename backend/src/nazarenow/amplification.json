@@ -33,11 +33,11 @@
       "residual_rmse": 0.1297112275688123
     },
     "swell_period_s": {
-      "slope": 0.930739198196174,
-      "intercept": 0.29235347259012023,
-      "fitted_on_hours": 4366,
-      "fitted_on": "hours >= 3 m",
-      "residual_rmse": 0.508382474684805
+      "slope": 0.9622210386779289,
+      "intercept": -0.12909138691061806,
+      "fitted_on_hours": 4941,
+      "fitted_on": "reanalysis Combined Sea >= 3 m",
+      "residual_rmse": 0.6516768177772111
     }
   },
   "method": {

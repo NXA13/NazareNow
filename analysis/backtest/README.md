@@ -33,7 +33,11 @@ Ticket #11. The benchmark every later Amplification Model must beat, per ADR 000
 > | | Watch or better | Watch days over the record | Per season | Go Call | Go Calls |
 > |---|---|---|---|---|---|
 > | Before #43 (Watch bar 10.1 s) | 37/38 | 1050 | 65.6 | 16/38 | 128 |
-> | **Now (Watch bar 11.5 s)** | **33/38** | **574** | **35.9** | **16/38** | **128** |
+> | **After #43 (Watch bar 11.5 s)** | **33/38** | **574** | **35.9** | **16/38** | **128** |
+>
+> That row was "now" when #43 shipped and is no longer. #58 restated the height bar and took the
+> Watch count 574 → 530 without moving a bar; #60 moved the Watch bar to **11.4 s** and the count
+> to **553**, for the same 33 Gold Days. `output/summary.csv` is the current figure in every case.
 >
 > Sixteen seasons in the denominator. Four Gold Days for 476 fewer Watch days is the whole
 > trade, and **all four sit in the calibration's fitting split**: on the held-out seasons the

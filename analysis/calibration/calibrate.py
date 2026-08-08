@@ -636,9 +636,14 @@ def describe_watch_binding_constraint(rows: list[SweepRow], watch_bar: float) ->
         else f"{cost:.0f} more Watch days a season and no"
     )
     # The rejected step is named in the fit's own units, which this sentence says out loud.
-    # It has to: the shipped Watch bar is the *translated* number, and on this record the two
-    # collide — the fit chose 12 s and refused 11.5 s, and 12 s translates to a shipped 11.5 s.
-    # Unlabelled, the file would carry 11.5 twice meaning two different bars.
+    # It has to: the shipped Watch bar is the *translated* number, so the file carries two
+    # different quantities a tenth of a second apart — the fit chose 12 s and refused 11.5 s,
+    # and 12 s now translates to a shipped 11.4 s. Until #60 moved the swell period Translation
+    # the two were worse than close, they were equal: 12 s translated to exactly the 11.5 s the
+    # fit had refused, and unlabelled the file would have carried 11.5 twice meaning two
+    # different bars. The label is kept because it was never the collision that made it
+    # necessary — the two units are simply not the same, and a reader cannot see that from the
+    # numbers when they land this near each other.
     return (
         f"the budget of {WATCH_DAYS_PER_SEASON_BUDGET:g} Watch days per Big-Wave Season — the "
         f"next step down the sweep ({below.period:g}s in the reanalysis units the fit ran in) "
