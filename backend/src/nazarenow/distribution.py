@@ -56,6 +56,30 @@ from nazarenow.forecast_error import ForecastError
 from nazarenow.forecast_error import load as load_forecast_error
 from nazarenow.models.base import AmplificationModel
 from nazarenow.models.learned import load_parameters
+from nazarenow.spread import Spread
+
+SEA = "significant_wave_height"
+"""The one quantity a Model Spread may widen this distribution by.
+
+Named because the check that enforces it is the guard on CONTEXT.md's load-bearing
+distinction: a swell-period spread is a number of seconds, and widening a distribution of
+metres by it would produce a confident-looking range nothing downstream could detect as wrong.
+"""
+
+RANGE_TO_SIGMA = {2: 1.128, 3: 1.693}
+"""Expected range of *n* standard normal samples, in sigma — the control-chart `d2` constants.
+
+Model Spread is published as a range across organisations (`spread.spread_of`), and the terms
+it is being combined with are standard deviations. Dividing by the count's own factor is what
+makes them the same kind of number. It matters which count: the same 0.5 m range means more
+disagreement from two organisations than from three, so ignoring the count would read a
+degraded ensemble as a calmer one, at exactly the Lead Times where members drop out.
+
+Keyed on the organisation counts this roster can produce — `spread.MINIMUM_PROVIDERS` is two
+and `spread.ORGANISATIONS` has three. A count outside the table contributes no ensemble term
+rather than guessing a factor, so a roster that grows loses this widening until the table is
+extended, and never invents a width for it.
+"""
 
 DRAWS = 500
 """Evaluations per date.
@@ -184,6 +208,7 @@ class ErrorBudget:
         lead_time_days: int,
         *,
         gold_day_height_m: float | None = None,
+        model_spread: Spread | None = None,
         draws: int = DRAWS,
         seed: int = SEED,
     ) -> PredictiveDistribution:
@@ -193,8 +218,15 @@ class ErrorBudget:
         each perturbed reading, and its own residual is added to each result on the output
         side. That ordering is the whole point: it is how a metre of forecast error becomes
         1.083 metres of uncertainty about the wave a person would fly for.
+
+        `model_spread` is the fourth term and the only one measured live rather than shipped:
+        what the independent wave models said about *this* hour. `_drift_floor` records why it
+        may raise the drift and never lower it. `None` — an unreachable ensemble, too few
+        organisations, or a Hindcast with no ensemble to consult — leaves the distribution
+        exactly as it was, which is ADR 0003's requirement that a missing provider degrade the
+        uncertainty estimate rather than the prediction.
         """
-        sea = float(readings["significant_wave_height"])
+        sea = float(readings[SEA])
         lead = self.forecast.at(lead_time_days)
         measured = lead is not None
 
@@ -204,8 +236,10 @@ class ErrorBudget:
         else:
             drift, bias = self._unmeasured_drift(lead_time_days, sea)
 
-        # Two input-side terms, different quantities, combined where they both live.
-        input_sigma = math.hypot(drift, self.translation_rmse)
+        # Two input-side terms, different quantities, combined where they both live. The
+        # ensemble raises the first rather than joining them, because it and the archive
+        # measure overlapping things — see `_drift_floor`.
+        input_sigma = math.hypot(self._drift_floor(drift, model_spread), self.translation_rmse)
         output_sigma = self.own_error(sea)
 
         # The correction #14 asks for, applied before anything is widened. `bias` is
@@ -232,6 +266,44 @@ class ErrorBudget:
             measured=measured,
             gold_day_probability=built.probability_above(gold_day_height_m),
         )
+
+    def _drift_floor(self, drift: float, model_spread: Spread | None) -> float:
+        """The archive's drift, raised to the ensemble's disagreement where that is larger.
+
+        **Not added, and not substituted.** Adding them in quadrature would double-count:
+        both are answers to "how wrong might this forecast be", and this module claims
+        independence only where it is earned. Substituting would throw away whichever term
+        the other cannot see — the archive measures one provider's own change of mind against
+        its settled analysis, which is blind to an error that provider is consistently wrong
+        about, while the ensemble measures where organisations differ, which is blind to an
+        error they share. Neither bounds the other, so the larger is the honest "at least this
+        uncertain".
+
+        Both sides really do bind, which is what stops this being a rule with one term. From
+        `analysis/model_spread/output/alignment.csv`, the 0.446 m provider range at one day is
+        0.263 m of sigma against 0.130 m of big-swell drift, so the ensemble carries it; by
+        six days the drift is 0.606 m against the ensemble's 0.385 m and the archive does.
+
+        **It may only raise, and that direction is load-bearing.** The ensemble sigma is
+        wrong in both directions and neither error survives a term that could narrow: three
+        deterministic models sharing physics, assimilation and bugs are under-dispersed, so it
+        understates; and their runs are not aligned, which `analysis/model_spread/` measures at
+        6% of the spread at one day and up to 29% at six, so it overstates. `spread.py` ships
+        the second uncorrected on exactly this reasoning — an inflated spread reads as doubt,
+        and doubt makes the system quieter.
+        """
+        if model_spread is None:
+            return drift
+        if model_spread.variable != SEA:
+            raise ValueError(
+                f"a Model Spread on {model_spread.variable!r} cannot widen a distribution of "
+                f"metres of {SEA}; the two are different quantities and the resulting range "
+                "would look measured"
+            )
+        divisor = RANGE_TO_SIGMA.get(len(model_spread.providers))
+        if divisor is None:
+            return drift
+        return max(drift, model_spread.value / divisor)
 
     def _unmeasured_drift(self, lead_time_days: int, sea: float) -> tuple[float, float]:
         """Width past the edge of the archive, and the last correction the archive measured.

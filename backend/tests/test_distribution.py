@@ -27,6 +27,9 @@ import pytest
 
 from nazarenow.distribution import ErrorBudget
 from nazarenow.models.learned import LearnedAmplification
+from nazarenow.spread import ORGANISATIONS, Spread
+
+SEA = "significant_wave_height"
 
 GIANT = {
     "significant_wave_height": 5.0,
@@ -238,6 +241,89 @@ class TestErrorsArePropagatedRatherThanSummed:
         small = GIANT | {"significant_wave_height": 1.2, "swell_height": 1.0}
 
         assert spread_at(7, big) > spread_at(7, small)
+
+
+def disagreement(metres: float, providers: int = 3, variable: str = SEA) -> Spread:
+    """A Model Spread of a given width, in the shape `spread.derive` returns."""
+    return Spread(
+        variable=variable,
+        value=metres,
+        lowest=5.0 - metres / 2,
+        highest=5.0 + metres / 2,
+        providers=tuple(ORGANISATIONS[:providers]),
+        models_reporting=providers,
+    )
+
+
+class TestModelSpreadWidensTheSameDistribution:
+    """#15's third criterion: one distribution, not two numbers reported side by side.
+
+    Model Spread already withheld a Go Call through `Agreement`, which is a gate rather than
+    a width — the range a user read was the same whether the forecasters agreed or not. Here
+    the same disagreement enters the range itself.
+
+    **The archive's drift is a floor the ensemble can raise and never lower.** The two are
+    not added, because they measure overlapping things and this module claims independence
+    only where it is earned. They are not interchangeable either: the archive measures one
+    provider's own change of mind against its settled analysis, which cannot see an error
+    that provider is consistently wrong about, while the ensemble measures where
+    organisations differ, which cannot see an error they share. Neither bounds the other, so
+    the larger of the two is the honest "at least this uncertain".
+
+    Both terms really do bind. Against `analysis/model_spread/output/alignment.csv`, the
+    0.446 m provider range at one day is 0.263 m of sigma against 0.130 m of big-swell
+    drift, so the ensemble carries it; by six days the drift is 0.606 m against the
+    ensemble's 0.385 m and the archive carries it. A rule where one side never bound would
+    be a rule with one term.
+
+    That it may only raise is the same asymmetry `spread.py` ships on. Three deterministic
+    models sharing physics are under-dispersed, so the ensemble sigma understates; run
+    staleness inflates it by 6% at one day and up to 29% at six, so it also overstates. Both
+    errors are survivable in a term that can only widen, and neither is survivable in one
+    that could narrow.
+    """
+
+    def test_a_day_the_forecasters_divide_over_gets_a_wider_range(self) -> None:
+        agreed = BUDGET.distribution(MODEL, GIANT, 3, model_spread=disagreement(0.2))
+        divided = BUDGET.distribution(MODEL, GIANT, 3, model_spread=disagreement(2.0))
+
+        assert (divided.p95 - divided.p5) > (agreed.p95 - agreed.p5)
+
+    def test_close_agreement_cannot_narrow_the_measured_drift(self) -> None:
+        """The floor. Agreement is not evidence of correctness — three models can agree
+        precisely and be wrong together, which is the failure the archive term measures and
+        the ensemble term structurally cannot see."""
+        alone = BUDGET.distribution(MODEL, GIANT, 7)
+        unanimous = BUDGET.distribution(MODEL, GIANT, 7, model_spread=disagreement(0.001))
+
+        assert unanimous.samples == alone.samples
+
+    def test_no_ensemble_at_all_leaves_the_distribution_exactly_as_it_was(self) -> None:
+        """An unreachable ensemble degrades the estimate rather than the prediction (ADR
+        0003), and a Hindcast has no ensemble to consult at all. Asserted on the samples
+        rather than the width, so this cannot pass by being merely close."""
+        assert (
+            BUDGET.distribution(MODEL, GIANT, 5, model_spread=None).samples
+            == BUDGET.distribution(MODEL, GIANT, 5).samples
+        )
+
+    def test_two_organisations_imply_a_wider_sigma_than_three_at_the_same_range(self) -> None:
+        """The range of three samples is expected to be wider than the range of two, so the
+        same measured range means more disagreement when fewer reported it. Ignoring the
+        count would read a degraded ensemble as a calmer one."""
+        two = BUDGET.distribution(MODEL, GIANT, 3, model_spread=disagreement(2.0, providers=2))
+        three = BUDGET.distribution(MODEL, GIANT, 3, model_spread=disagreement(2.0, providers=3))
+
+        assert (two.p95 - two.p5) > (three.p95 - three.p5)
+
+    def test_a_spread_on_the_wrong_quantity_is_refused(self) -> None:
+        """CONTEXT.md's load-bearing distinction, guarded at the seam. A swell-period spread
+        is a number of seconds; widening a distribution of metres by it would produce a
+        confident-looking range nobody could detect as wrong."""
+        with pytest.raises(ValueError, match="swell_period"):
+            BUDGET.distribution(
+                MODEL, GIANT, 3, model_spread=disagreement(2.0, variable="swell_period")
+            )
 
 
 class TestTheProbabilityOfAGiantDay:

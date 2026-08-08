@@ -273,6 +273,10 @@ def ensemble_body_from(
             ("swell_wave_height", offset),
             ("swell_wave_period", offset * 2),
             ("swell_wave_direction", offset * 10),
+            # Combined Sea, which #15 widens the Predictive Distribution by. Offset by the
+            # same step as the Swell partition so the two spreads stay comparable in the
+            # fixtures that assert on both.
+            ("wave_height", offset),
         ):
             if variable not in hourly:
                 continue

@@ -345,6 +345,21 @@ SPREAD_READINGS = {
     "swell_height": "swell_wave_height",
     "swell_period": "swell_wave_period",
     "swell_direction": "swell_wave_direction",
+    # Combined Sea, added by #15. The Swell partition is what the tier conditions are judged
+    # on, and Combined Sea is what the Predictive Distribution perturbs — the Amplification
+    # Model reads it at a standardised coefficient of 1.09 against 0.09 or less for every
+    # other feature. So a distribution widened by the partition's disagreement would leave
+    # its dominant input fixed at one provider's number and report the ensemble as nearly
+    # unanimous whatever it actually said.
+    #
+    # It is also the partition `analysis/model_spread/alignment.py` measured the ensemble on,
+    # because the archive carries `_previous_dayN` for Combined Sea alone — so the figures
+    # that justify combining these terms are measured on the variable being combined, rather
+    # than carried across by argument as finding 4 had to.
+    #
+    # Free at the transport: one more variable on the request `fetch_ensemble` already makes,
+    # not a second request.
+    "significant_wave_height": "wave_height",
 }
 
 SPREAD_VARIABLES = sorted(set(SPREAD_READINGS.values()))
