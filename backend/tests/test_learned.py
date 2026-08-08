@@ -261,6 +261,46 @@ class TestTheShippedParameterFile:
     def test_load_parameters_is_what_the_model_defaults_to(self) -> None:
         assert LearnedAmplification().parameters == load_parameters()
 
+    def test_it_carries_the_models_own_error_as_a_width(self) -> None:
+        """#15's third and largest uncertainty term.
+
+        The other two already shipped — `translations.residual_rmse` here and `noise` in
+        `forecast_error.json` — so a Predictive Distribution could reach the two smaller
+        terms and not the one that dominates them both.
+
+        **The RMSE is the width and the MAE is not**, which is why both are present and why
+        this asserts the order. Every accuracy figure this project publishes is an MAE,
+        because that is the honest thing to judge a model by; a distribution needs a scale
+        parameter to combine with two other RMSEs. On the held-out big-swell rows the two
+        differ by roughly 31% — 0.356 m against 0.465 m — so reaching for the familiar
+        figure would narrow the published range by nearly a third and look like nothing.
+        """
+        residual = json.loads(PARAMETERS_PATH.read_text(encoding="utf-8"))["residual"]
+
+        for regime in ("all_hours", "big_swell"):
+            assert residual[regime]["rows"] > 0
+            assert residual[regime]["rmse"] > residual[regime]["mae"] > 0
+
+        # The model's error grows with the sea, and #15 serves both regimes. A file where
+        # these matched would mean the split had stopped being measured.
+        assert residual["big_swell"]["rmse"] > residual["all_hours"]["rmse"]
+        assert residual["regime_m"] == 3.0
+
+    def test_the_models_own_error_dominates_the_other_two_terms(self) -> None:
+        """`analysis/forecast_error/README.md`: the term #15 should size first.
+
+        Pinned because the ordering is the argument for carrying all three. If this ever
+        inverts, a distribution built from the forecast profile alone stops being three
+        times too narrow and the reasoning in ADR 0004's amendment needs revisiting rather
+        than reciting.
+        """
+        loaded = json.loads(PARAMETERS_PATH.read_text(encoding="utf-8"))
+
+        own = loaded["residual"]["big_swell"]["rmse"]
+        translation = loaded["translations"]["significant_wave_height_m"]["residual_rmse"]
+
+        assert own > translation
+
 
 def test_it_satisfies_the_amplification_model_interface() -> None:
     """The Protocol, checked structurally rather than by inheritance.

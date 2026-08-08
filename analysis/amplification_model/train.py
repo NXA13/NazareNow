@@ -570,10 +570,42 @@ def inference_cost(chosen: Fit, translations: dict[str, measure.Translation]) ->
     }
 
 
+def residual_widths(chosen: Fit, held_out: list[Row]) -> dict[str, Any]:
+    """How wide the model's own error is, on held-out rows, in the units #15 needs.
+
+    **RMSE rather than MAE, and the distinction is the reason this exists.** Every accuracy
+    figure this module publishes is an MAE, because MAE is what a reader should judge the
+    model by — it is in metres and it is not dominated by the worst hours. A Predictive
+    Distribution needs something else: a *width*, to combine with the Translation's
+    `residual_rmse` and the Forecast Error Profile's `noise`, both of which are RMSEs. Mixing
+    an MAE into that sum is an apples-to-oranges error worth roughly 25% on a Gaussian, and
+    it would narrow the published range without appearing anywhere as a mistake.
+
+    Both regimes, because the model's error grows with the sea and #15 serves both. The
+    big-swell figure is the one that matters — it is the dominant term of the three at every
+    Lead Time, which `analysis/forecast_error/README.md` names as the term to size first.
+
+    Held out, not fitted. A residual measured on the rows the coefficients were chosen from
+    would be optimistic exactly in the way ADR 0004 built this separation to avoid.
+    """
+    big = big_swell(held_out)
+    return {
+        "all_hours": score("held-out all hours", chosen.predict(held_out), held_out).as_dict(),
+        "big_swell": score("held-out big swell", chosen.predict(big), big).as_dict(),
+        "regime_m": BIG_SWELL_M,
+        "measured_on": "held-out seasons, against the Proxy Target",
+        "is_a_width": (
+            "RMSE, for combining with translations.residual_rmse and the Forecast Error "
+            "Profile's noise. The mae beside it is the reader's figure, not the width."
+        ),
+    }
+
+
 def exported(
     chosen: Fit,
     translations: dict[str, measure.Translation],
     held_out_gold_days: int | None = None,
+    residual: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """The parameter file the backend reads, with the provenance of the fit beside it.
 
@@ -609,6 +641,11 @@ def exported(
             }
             for name, translation in translations.items()
         },
+        # The third and largest of the three terms a Predictive Distribution stacks (#15).
+        # The other two already ship: `translations.residual_rmse` here, and `noise` in
+        # `forecast_error.json`. This one had no home, so #15 could reach the two smaller
+        # terms and not the one that dominates them both.
+        "residual": residual,
         "method": {
             "ticket": 13,
             "fitted_on": f"{season_label(TRAIN_SEASONS[0])}-{season_label(TUNE_SEASONS[-1])}",
@@ -704,7 +741,10 @@ def build() -> int:
 
     translations = measure.fit_translations()
     parameters = exported(
-        chosen, translations, held_out_gold_days=len({row.day for row in held_out_gold})
+        chosen,
+        translations,
+        held_out_gold_days=len({row.day for row in held_out_gold}),
+        residual=residual_widths(chosen, held_out),
     )
     MODEL_PATH.write_text(json.dumps(parameters, indent=2) + "\n", encoding="utf-8")
     print(f"wrote {MODEL_PATH.relative_to(ROOT)}")
