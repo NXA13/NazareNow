@@ -47,8 +47,15 @@ from nazarenow.pipeline import DEFAULT_MODEL, amplification_model
 # #43 then moved the Watch bar back up, from 10.1 s to 11.5 s, by giving the recall tier a
 # stated price (ADR 0010) instead of requiring it to catch every Gold Day whatever that cost.
 # Only this bar moved: the Go Call bar, the height bar and the wind exemption are unchanged.
+#
+# #60 moved it once more, 11.5 s to 11.4 s, and the reason is worth separating from the
+# others: the fitted bar did not move. It is still 12 s in the reanalysis units the fit runs
+# in. What moved is the Translation that restates it in Open-Meteo units, because #60 settled
+# that the swell period transform is fitted on hours selected by *Combined Sea* >= 3 m rather
+# than by Open-Meteo's Swell height. The restated bar shifts 0.044 s, which would be invisible
+# if it did not happen to cross the 11.45 rounding boundary. Again only this bar moved.
 HEIGHT_M = 2.75
-WATCH_PERIOD_S = 11.5
+WATCH_PERIOD_S = 11.4
 GO_PERIOD_S = 12.9
 SWELL_ARC_FROM, SWELL_ARC_TO = 255.0, 330.0
 WIND_ARC_FROM, WIND_ARC_TO = 20.0, 180.0

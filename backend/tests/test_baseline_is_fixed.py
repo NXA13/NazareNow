@@ -77,9 +77,19 @@ def test_thresholds_are_what_the_reports_scored() -> None:
     a stated price under ADR 0010. It is the only one of the seven that #43 moved, which is
     the claim this list is best placed to hold: a change meant to affect one tier that
     quietly moved another would show up here as two failures rather than one.
+
+    #60 then moved it to 11.4 s, and that list-of-one claim is exactly why the number is
+    written here rather than read from the file. #60 changed which hours the swell period
+    Translation is fitted on — Combined Sea >= 3 m instead of Open-Meteo's Swell height at the
+    same bar — so it moved a transform, not a threshold. The fitted bar is still 12 s in
+    reanalysis units. Only its restatement into the units a Pipeline Run reads moved, by
+    0.044 s across the 11.45 rounding boundary. The Go Call bar moved 0.004 s *away* from its
+    own 12.85 boundary and now sits 0.011 s clear of it, so it still rounds to 12.9 — which is
+    why this test should show one failure for #60 rather than two, and why a traveller's
+    booking decision is unaffected.
     """
     assert SHIPPED.minimum_significant_wave_height_m == 2.75, RERUN
-    assert SHIPPED.watch_minimum_swell_period_s == 11.5, RERUN
+    assert SHIPPED.watch_minimum_swell_period_s == 11.4, RERUN
     assert SHIPPED.go_call_minimum_swell_period_s == 12.9, RERUN
     assert SHIPPED.swell_arc == (255.0, 330.0), RERUN
     assert SHIPPED.offshore_wind_arc == (20.0, 180.0), RERUN
@@ -237,8 +247,8 @@ def test_the_baseline_reports_itself_calibrated() -> None:
         (13.0, Status.GO),
         (12.9, Status.GO),
         (12.8, Status.WATCH),
-        (11.5, Status.WATCH),
-        (11.4, Status.NONE),
+        (11.4, Status.WATCH),
+        (11.3, Status.NONE),
     ],
 )
 def test_the_calibrated_period_decides_the_tier(period: float, expected: Status) -> None:
@@ -248,6 +258,10 @@ def test_the_calibrated_period_decides_the_tier(period: float, expected: Status)
     that there are now two. Each bar is checked from both sides at the tightest step the
     calibration's own resolution supports, so a comparison silently written as `>` rather
     than `>=` fails here rather than in a season's worth of forecasts.
+
+    The Watch rows read 11.4/11.3 since #60 moved the restated Watch bar down a tenth. The
+    step stays 0.1 s because it is the resolution the shipped bars are rounded to, not a
+    margin chosen around whatever the bar currently is.
     """
     call = decide(
         HeuristicBaseline().predict(GIANT | {"swell_period": period}),

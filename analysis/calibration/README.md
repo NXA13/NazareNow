@@ -9,12 +9,16 @@ numbers, and writes them where the running system reads them.
 > Swell record reached at the time. It is kept as the record of where the numbers came from.
 > The shipped values are no longer these.
 >
-> | | #12 (9 Gold Days) | #39/#40 (38 Gold Days) | now (#43, #51) |
+> | | #12 (9 Gold Days) | #39/#40 (38 Gold Days) | now (#43, #51, #60) |
 > |---|---|---|---|
 > | `minimum_significant_wave_height_m` | 3.75 | 2.75 | **2.75** |
-> | `watch_minimum_swell_period_s` | 12.5 | 10.1 | **11.5** |
+> | `watch_minimum_swell_period_s` | 12.5 | 10.1 | **11.4** |
 > | `go_call_minimum_swell_period_s` | 13.0 | 12.9 | **12.9** |
 > | `light_wind_exemption_kmh` | — | 16.5 (new, ADR 0009) | **14.5** |
+>
+> The Watch row moved a second time without being refitted. #43 set it at 11.5; #60 changed which
+> hours the swell period Translation is fitted on, and the *restated* bar became 11.4. The fitted
+> value is still 12 s in reanalysis units, as it was after #43.
 >
 > The exemption is the one row that moved without being refitted: #51 found it was shipping in
 > ERA5 units into a system that reads a forecast product, and translated it. The fitted value is

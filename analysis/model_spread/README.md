@@ -124,9 +124,12 @@ Swell period disagreement between providers ran **0.22 s to 4.15 s** across this
 and exceeded 1.4 s on six of the seven days sampled.
 
 That number is worth stating precisely because of what it sits next to. The calibrated Watch bar
-is 11.5 s and the Go Call bar is 12.9 s (`analysis/calibration/`), so **1.4 s is the entire gap
-between the recall tier and the precision tier**. Where the providers disagree by more than
-that, which day earns a Watch and which earns a Go Call is inside the disagreement — which is
+is 11.4 s and the Go Call bar is 12.9 s (`analysis/calibration/`), so **1.5 s is the entire gap
+between the recall tier and the precision tier**. It was 1.4 s until #60 moved the Watch bar down
+a tenth, and the count above is unchanged by that: six of the seven days exceed 1.5 s as well,
+so the tier gap widened without buying any margin against this disagreement. Where the providers
+disagree by more than the gap, which day earns a Watch and which earns a Go Call is inside the
+disagreement — which is
 exactly the thing ADR 0003 wants Model Spread to expose, and exactly the thing the system
 currently cannot say.
 
