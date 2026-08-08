@@ -145,6 +145,65 @@ class TestTheCentreIsCorrectedBeforeTheSpreadIsAdded:
         assert (got.p95 - got.p5) > 1.0
 
 
+class TestTheCorrectionHoldsWhereTheMeasurementStops:
+    """Past the archive's seven days the width keeps growing and the centre stops moving.
+
+    The two terms are extrapolated differently on purpose, and the reason is the direction
+    each one's error points. A frozen *width* would claim uncertainty stops growing at the
+    exact day the evidence runs out, which is a false claim of certainty — so it keeps
+    growing at the measured rate. A growing *correction* would claim an under-read nobody
+    measured, and it moves the centre rather than the edges: the tail rate is -0.092 m a day,
+    which reaches -0.87 m by day 14 and would inflate a 5 m sea's centre by 19% on no
+    evidence at all, in the one direction that manufactures Go Calls.
+
+    Dropping the correction to zero instead — which is what the first version did — is not
+    the cautious middle. It puts a 0.25 m cliff at a fixed calendar boundary: a date crossing
+    from eight days out to seven gained a quarter of a metre for methodological rather than
+    weather reasons, an order of magnitude above the sampling wobble either side of it, and
+    #15's eighth criterion asks a user to read exactly that kind of movement as news.
+
+    So the correction holds at its last measured value. It is the only rule of the three with
+    no methodological movement anywhere, it cannot claim more than the archive measured, and
+    where it is wrong it under-corrects — which withholds a Go Call rather than inventing one.
+    """
+
+    def test_the_centre_does_not_jump_as_a_date_crosses_the_archive_edge(self) -> None:
+        seven = BUDGET.distribution(MODEL, GIANT, lead_time_days=7)
+        eight = BUDGET.distribution(MODEL, GIANT, lead_time_days=8)
+
+        assert abs(eight.median - seven.median) < 0.1
+
+    def test_the_centre_stops_moving_once_nothing_more_is_measured(self) -> None:
+        """Flat beyond the edge, so every median change a user sees out there is weather."""
+        seven = BUDGET.distribution(MODEL, GIANT, lead_time_days=7)
+
+        for lead in (8, 10, 14):
+            beyond = BUDGET.distribution(MODEL, GIANT, lead_time_days=lead)
+            assert abs(beyond.median - seven.median) < 0.1, f"the centre moved at {lead} days"
+
+    def test_holding_the_correction_is_visibly_not_extrapolating_it(self) -> None:
+        """The bound that rules out the third option, stated against that option.
+
+        The archive's last two Lead Times fall 0.092 m a day, so continuing the trend would
+        reach roughly 0.64 m of extra correction by day 14 — larger than the correction ever
+        measured, and applied to the centre. Measured off the profile rather than hardcoded,
+        so the test still describes the choice if the profile is re-measured.
+        """
+        seventh, sixth = BUDGET.forecast.at(7), BUDGET.forecast.at(6)
+        assert seventh is not None and sixth is not None
+        per_day = abs(seventh.for_sea(5.0).bias - sixth.for_sea(5.0).bias)
+        seven_days_of_trend = per_day * 7
+        assert seven_days_of_trend > 0.5, "the trend is steep enough for this to be a real choice"
+
+        at_the_edge = BUDGET.distribution(MODEL, GIANT, lead_time_days=7).median
+        far_out = BUDGET.distribution(MODEL, GIANT, lead_time_days=14).median
+
+        assert far_out - at_the_edge < seven_days_of_trend / 4
+
+    def test_the_width_still_grows_out_there(self) -> None:
+        assert spread_at(8) < spread_at(10) < spread_at(14)
+
+
 class TestErrorsArePropagatedRatherThanSummed:
     """The second of the two decisions. See the module docstring."""
 

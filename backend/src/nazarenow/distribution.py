@@ -36,10 +36,12 @@ cutoff. A cutoff would be one more parameter fitted on a single Big-Wave Season,
 Lead Time biases are small enough (0.5% to 7% of the combined width) that applying them is
 nearly a no-op. One rule, statable in a sentence, beats a threshold nobody can defend.
 
-**Beyond the archive, the range keeps widening and says it is unmeasured.** The wave run
+**Beyond the archive, the width keeps growing and the centre stops moving.** The wave run
 archive reaches seven days. Past that the width continues at the growth rate the archive
 measured and the distribution is marked `measured=False`, so the interface can be visibly more
-cautious rather than quietly reusing the last band it had.
+cautious rather than quietly reusing the last band it had. The correction holds at its last
+measured value instead of growing or vanishing — `_unmeasured_drift` carries the reasoning,
+and the short version is that widening errs toward caution while moving a centre does not.
 """
 
 from __future__ import annotations
@@ -232,15 +234,33 @@ class ErrorBudget:
         )
 
     def _unmeasured_drift(self, lead_time_days: int, sea: float) -> tuple[float, float]:
-        """Width past the edge of the archive, and no correction at all.
+        """Width past the edge of the archive, and the last correction the archive measured.
 
         The width continues at the rate the archive measured over its last two Lead Times,
         rather than freezing at the seven-day band — eight days out is not seven days out, and
         pretending otherwise is the silent narrowing this module exists to avoid.
 
-        The *bias* is deliberately not extrapolated. A width that grows too fast is cautious;
-        a correction applied where nothing was measured moves the centre of a range on
-        evidence that does not exist.
+        The correction does the opposite: it holds. The two terms are extrapolated differently
+        on purpose, and the reason is the direction each one's error points. A frozen width
+        would claim uncertainty stops growing on the day the evidence runs out, which is a
+        false claim of certainty. A growing correction would claim an under-read nobody
+        measured, and unlike a width it moves the *centre* — the tail rate is -0.092 m a day,
+        which reaches -0.87 m by day 14 and would lift a 5 m sea's centre by 19% on no
+        evidence, in the one direction that manufactures Go Calls.
+
+        Dropping the correction to zero out here is not the cautious middle, which is what the
+        first version of this took it for. It puts a 0.25 m cliff at a fixed calendar
+        boundary: a date crossing from eight days out to seven gained a quarter of a metre for
+        methodological rather than weather reasons — an order of magnitude above the sampling
+        wobble either side of it — and #15's eighth criterion asks a user to read exactly that
+        kind of movement as news about the swell.
+
+        So the last measured correction is carried forward unchanged. Of the three rules it is
+        the only one with no methodological movement anywhere: continuous at the boundary and
+        flat beyond it, so every centre change a user sees out there is weather. It can never
+        claim more than the archive measured. And where it is wrong it under-corrects, because
+        the measured under-read is still growing at the edge — which withholds a Go Call
+        rather than inventing one.
         """
         last = self.forecast.measured_through_lead_days
         final = self.forecast.at(last)
@@ -250,4 +270,4 @@ class ErrorBudget:
 
         per_day = max(0.0, final.for_sea(sea).noise - previous.for_sea(sea).noise)
         beyond = max(0, lead_time_days - last)
-        return final.for_sea(sea).noise + per_day * beyond, 0.0
+        return final.for_sea(sea).noise + per_day * beyond, final.for_sea(sea).bias

@@ -96,3 +96,29 @@ on every overlapping hour. The ordering is unchanged and the gap to the drift te
 
 The ceiling this decision names is confirmed against the archive rather than the
 documentation: seven days, and nothing beyond it.
+
+## Amendment: past the ceiling, the width grows and the centre holds (ticket #15)
+
+The asymmetry the previous amendment handed to #15 needed a rule for what happens where the
+archive stops, and the two terms turn out to want opposite answers.
+
+The **width** keeps growing at the rate the archive measured over its last two Lead Times.
+Freezing it would claim uncertainty stops growing on the day the evidence runs out, which is a
+false claim of certainty at the range where this system is least sure.
+
+The **correction** holds at its last measured value. Three rules were available and each fails
+differently. Continuing the trend extrapolates a tail falling 0.092 m a day to roughly 0.87 m
+of correction by day 14 — larger than any correction measured, applied to the centre rather
+than the edges, and in the one direction that manufactures Go Calls. Dropping it to zero looks
+like the cautious middle and is not: it puts a 0.25 m cliff at a fixed calendar boundary, so a
+date crossing from eight days out to seven gained a quarter of a metre for methodological
+rather than weather reasons, an order of magnitude above the sampling wobble either side. This
+ticket's eighth criterion asks a user to read exactly that movement as news about the swell.
+
+Holding is the only one of the three with no methodological movement anywhere: continuous at
+the boundary, flat beyond it. It cannot claim more than the archive measured, and where it is
+wrong it under-corrects — because the measured under-read is still growing at the edge — which
+withholds a Go Call rather than inventing one.
+
+The general form, which is what survives a re-measurement: **beyond the evidence, a term that
+errs toward caution may be extrapolated, and a term that moves the centre may not.**
