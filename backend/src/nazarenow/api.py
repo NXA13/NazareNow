@@ -137,6 +137,19 @@ class Reading(BaseModel):
     unit: str
 
 
+class HeightRange(BaseModel):
+    """A span between two heights, carrying its unit for the reason `Reading` does.
+
+    Its own model rather than two bare floats on the call, so the pair cannot be rendered
+    half-present: a low with no high describes a range with one end, and the interface would
+    have no honest thing to draw for it.
+    """
+
+    low: float
+    high: float
+    unit: str
+
+
 class CurrentConditions(BaseModel):
     observed_at: str
     """The older of the two providers' observation times — the whole picture is at
@@ -217,6 +230,45 @@ class DayCall(BaseModel):
     Null only for a call issued before the Decision Model consulted the models at all. Those
     calls were decided on this system's own forecast alone, and the interface must not present
     them as agreed."""
+
+    plausible_range: HeightRange | None
+    """Where the Predictive Distribution puts this date, 5th to 95th percentile (#15).
+
+    The ticket's fourth criterion, and the reason it exists: "6.1 metres, 78% confident" is
+    not something a person can act on, and "most likely 6.1 m, plausibly 5.2 to 7.0" is. The
+    percentage was never the useful half.
+
+    Null for a call decided without a distribution, which today means one issued before the
+    pipeline built them."""
+
+    gold_day_probability: float | None
+    """How much of that distribution clears the calibrated height bar (#15's fifth criterion).
+
+    A share between 0 and 1, not a percentage, so the interface owns the rounding — the
+    difference between 0.94 and "94%" is presentation, and the backend guessing at it once
+    left a threshold restated in two places."""
+
+    uncertainty_measured: bool | None
+    """Whether a measured Forecast Error Profile covered this call's Lead Time (#15's sixth).
+
+    False past the archive's seven days. The width out there is still honest — it keeps
+    growing at the rate the archive measured, and the centre holds at the last correction it
+    measured — but nothing was measured about *that* Lead Time, and the interface has to be
+    able to be visibly more cautious rather than presenting an extrapolation as evidence.
+
+    Sent as a flag rather than left for the interface to infer from `lead_time_days`, because
+    inferring it means hardcoding the archive's depth in a second place. The archive grows
+    every season; the page must not carry its own copy of how deep it currently is."""
+
+    go_call_withheld_for_uncertainty: bool | None
+    """Whether the width, rather than the models, refused a Go Call (#15).
+
+    Deliberately separate from `go_call_withheld` above. Both end in a Watch, and a reader
+    deserves to know which: the forecasters disagreeing about a swell is a different fact
+    about the world from one forecast being too uncertain to book on. Collapsing them would
+    make the same badge mean two things.
+
+    Null for a call issued before the distribution could refuse anything."""
 
 
 class DaySpread(BaseModel):
@@ -443,6 +495,21 @@ def summarise(
                 None if call["model_agreement"] is None else Agreement(call["model_agreement"])
             ),
             go_call_withheld=call["go_call_withheld"],
+            plausible_range=(
+                None
+                if call["plausible_range_m"] is None
+                else HeightRange(
+                    low=call["plausible_range_m"][0],
+                    high=call["plausible_range_m"][1],
+                    # The distribution is built in the unit the call is reported in, and
+                    # sourced from the call rather than written as "m" so the two cannot
+                    # disagree about what the numbers beside them mean.
+                    unit=call["unit"],
+                )
+            ),
+            gold_day_probability=call["gold_day_probability"],
+            uncertainty_measured=call["uncertainty_measured"],
+            go_call_withheld_for_uncertainty=call["go_call_withheld_for_uncertainty"],
         ),
         peak_swell_height=Reading(**peak["readings"]["swell_height"]),
         swell_period_at_peak=Reading(**peak["readings"]["swell_period"]),

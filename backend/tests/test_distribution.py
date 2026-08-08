@@ -326,6 +326,54 @@ class TestModelSpreadWidensTheSameDistribution:
             )
 
 
+class TestTheGoldDayProbabilityIsAboutTheBarThatIsActuallyJudged:
+    """#15's fifth criterion, and the quantity trap sitting under it.
+
+    The calibrated height bar is fitted in operational Open-Meteo units and applied by the
+    Amplification Model to the **incoming Combined Sea reading** — `heuristic.predict` reads
+    `readings["significant_wave_height"]` and compares it, and every tier branch in `decide`
+    rests on that verdict. The distribution's samples are the model's **output**, the Proxy
+    Target at Monican02, which the model amplifies to from that same reading.
+
+    Measuring the output against an input-side bar asks a different question from the one
+    the tier asks, and it flatters by exactly the amplification: a 2.75 m sea sitting on the
+    bar leaves the model at 3.15 m, so it reads 0.84 where the comparison warrants 0.50. The
+    bar already embeds whatever amplification exists between a reading and a Gold Day —
+    that is what fitting it against Gold Days *means* — so applying it again downstream
+    counts the canyon twice.
+
+    CONTEXT.md's Go Call entry is the wording this follows: "predicted conditions clear the
+    Gold Day threshold", where the conditions are the ones the model judges.
+    """
+
+    def test_a_sea_sitting_exactly_on_the_bar_is_a_coin_flip(self) -> None:
+        """The measurement that shows the quantity is right. A forecast reading exactly the
+        bar has half its plausible values either side of it, whatever the canyon does
+        downstream — and a Go Call costs a flight."""
+        on_the_bar = GIANT | {"significant_wave_height": 2.75, "swell_height": 2.2}
+
+        got = BUDGET.distribution(MODEL, on_the_bar, 3, gold_day_height_m=2.75)
+
+        assert got.gold_day_probability is not None
+        assert 0.4 < got.gold_day_probability < 0.6
+
+    def test_a_genuine_giant_clears_it_at_every_lead_time(self) -> None:
+        """The inertness `GO_CALL_CONFIDENCE` is documented to have, on the corrected
+        quantity. A 5 m sea clears a 2.75 m bar whatever the forecast does, so this floor
+        cannot take a Go Call from a day anyone would fly for."""
+        for lead in (1, 3, 7):
+            got = BUDGET.distribution(MODEL, GIANT, lead, gold_day_height_m=2.75)
+            assert got.gold_day_probability == pytest.approx(1.0, abs=0.02), f"at {lead} days"
+
+    def test_the_range_a_user_reads_is_still_the_predicted_sea(self) -> None:
+        """The two quantities stay apart rather than one replacing the other. The range
+        answers "how big will it be" and is the model's output; the probability answers
+        "does it clear the bar" and is the reading the bar judges."""
+        got = BUDGET.distribution(MODEL, GIANT, 3, gold_day_height_m=2.75)
+
+        assert got.p5 < MODEL.predict(GIANT).significant_wave_height < got.p95
+
+
 class TestTheProbabilityOfAGiantDay:
     """#15's fifth criterion: state the chance of a date reaching Gold Day conditions."""
 

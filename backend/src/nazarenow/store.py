@@ -146,7 +146,39 @@ CREATE TABLE IF NOT EXISTS day_call (
     -- Decision Model saw the conditions next to the verdict and can say which happened.
     --
     -- Null, like `model_agreement`, for calls issued before any of this existed.
-    go_call_withheld    INTEGER
+    go_call_withheld    INTEGER,
+    -- The Predictive Distribution this call was decided on (#15, ADR 0004).
+    --
+    -- The 5th and 95th percentiles as two columns rather than one JSON blob, because #11
+    -- scores calls against what the ocean did and "how often did the outcome land inside
+    -- the stated range" is the question this ticket makes askable. A blob would put that
+    -- behind a parse in every query.
+    --
+    -- Stored rather than recomputed on read, for the reason `calibration` is: the profile,
+    -- the fitted coefficients and the ensemble all change, and a range recomputed at
+    -- request time would describe a distribution the call was never decided under. It also
+    -- genuinely cannot be recomputed — the ensemble term is measured from the deciding
+    -- hour's members, and which hour that was is not recoverable from this table.
+    --
+    -- Null for calls issued before the pipeline built distributions at all.
+    plausible_low_m     REAL,
+    plausible_high_m    REAL,
+    -- How much of that distribution cleared the calibrated height bar (#15).
+    gold_day_probability REAL,
+    -- Whether a measured Forecast Error Profile covered this call's Lead Time.
+    --
+    -- False past the archive's seven days, where the width is extrapolated and the centre
+    -- held at its last measured correction. Carried so the interface can be visibly more
+    -- cautious rather than presenting an extrapolation as evidence, and so #11 can tell the
+    -- two populations apart when it scores them.
+    uncertainty_measured INTEGER,
+    -- Whether the distribution, rather than the models, refused a Go Call (#15).
+    --
+    -- Deliberately a second column beside `go_call_withheld` rather than a widening of it.
+    -- Both end in a Watch, and they are different facts about the world: the forecasters
+    -- disagreeing about a swell is not the same as one forecast being too uncertain to book
+    -- on. A single column would force a reader to guess which, and #11 scores them apart.
+    go_call_withheld_for_uncertainty INTEGER
 );
 
 -- Every wave model's own reading for every forecast hour, kept apart (#8).
@@ -223,7 +255,8 @@ CREATE INDEX IF NOT EXISTS day_spread_date
 CALL_COLUMNS = (
     "date, issued_at, issued_for_date, status, lead_time_days, reasons, "
     "predicted_significant_wave_height, unit, amplification_model, calibrated, calibration, "
-    "model_agreement, go_call_withheld"
+    "model_agreement, go_call_withheld, plausible_low_m, plausible_high_m, "
+    "gold_day_probability, uncertainty_measured, go_call_withheld_for_uncertainty"
 )
 
 RUN_COLUMNS = "id, started_at, finished_at, outcome, failure_kind, failure_detail"
@@ -242,6 +275,30 @@ def _optional_json(value: Any) -> str | None:
     happened to be empty" without parsing anything.
     """
     return None if value is None else json.dumps(value)
+
+
+def _optional_flag(value: bool | None) -> int | None:
+    """A boolean that may legitimately be absent, keeping absence distinct from `False`.
+
+    The same distinction `_optional_json` protects, on the columns #15 added. A call decided
+    without a distribution never asked whether the forecast was too uncertain to book on, and
+    storing `0` for it would answer a question nobody put — which is exactly the reading
+    `go_call_withheld`'s own docstring warns against one column up.
+    """
+    return None if value is None else int(value)
+
+
+def _range_columns(value: tuple[float, float] | list[float] | None) -> tuple[Any, Any]:
+    """A plausible range as its two columns, or two nulls where there was no distribution.
+
+    Split here rather than at the call site so the pair cannot be written half-present: a row
+    carrying a low with no high would describe a range with one end, and nothing downstream
+    would have a sensible reading for it.
+    """
+    if value is None:
+        return None, None
+    low, high = value
+    return float(low), float(high)
 
 
 class StoreUnavailable(RuntimeError):
@@ -350,6 +407,21 @@ class Store:
             connection.execute("ALTER TABLE day_call ADD COLUMN model_agreement TEXT")
         if "go_call_withheld" not in columns:
             connection.execute("ALTER TABLE day_call ADD COLUMN go_call_withheld INTEGER")
+
+        # #15, nullable and not backfilled for the same reason as every column above it. A
+        # call issued before the pipeline built distributions was decided on a point
+        # estimate; computing a range for it today would use a profile, a fit and an
+        # ensemble reading that were not what judged it, and would then sit in the record
+        # looking exactly like one that had been.
+        for column, kind in (
+            ("plausible_low_m", "REAL"),
+            ("plausible_high_m", "REAL"),
+            ("gold_day_probability", "REAL"),
+            ("uncertainty_measured", "INTEGER"),
+            ("go_call_withheld_for_uncertainty", "INTEGER"),
+        ):
+            if column not in columns:
+                connection.execute(f"ALTER TABLE day_call ADD COLUMN {column} {kind}")
 
         connection.commit()
 
@@ -572,8 +644,9 @@ class Store:
                 "INSERT INTO day_call (run_id, date, issued_at, issued_for_date, status, "
                 "lead_time_days, reasons, predicted_significant_wave_height, unit, "
                 "amplification_model, calibrated, calibration, model_agreement, "
-                "go_call_withheld) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "go_call_withheld, plausible_low_m, plausible_high_m, gold_day_probability, "
+                "uncertainty_measured, go_call_withheld_for_uncertainty) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [
                     (
                         run_id,
@@ -590,6 +663,10 @@ class Store:
                         _optional_json(call.get("calibration")),
                         call["model_agreement"],
                         int(call["go_call_withheld"]),
+                        *_range_columns(call.get("plausible_range_m")),
+                        call.get("gold_day_probability"),
+                        _optional_flag(call.get("uncertainty_measured")),
+                        _optional_flag(call.get("go_call_withheld_for_uncertainty")),
                     )
                     for call in calls
                 ],
@@ -831,6 +908,23 @@ class Store:
             # "the models did not withhold this" about a call that never asked them.
             "go_call_withheld": (
                 None if row["go_call_withheld"] is None else bool(row["go_call_withheld"])
+            ),
+            # None-preserving in both halves, and the pair travels together. A call written
+            # before the pipeline built distributions has no range, which is a different
+            # thing from a range of zero width.
+            "plausible_range_m": (
+                None
+                if row["plausible_low_m"] is None or row["plausible_high_m"] is None
+                else (row["plausible_low_m"], row["plausible_high_m"])
+            ),
+            "gold_day_probability": row["gold_day_probability"],
+            "uncertainty_measured": (
+                None if row["uncertainty_measured"] is None else bool(row["uncertainty_measured"])
+            ),
+            "go_call_withheld_for_uncertainty": (
+                None
+                if row["go_call_withheld_for_uncertainty"] is None
+                else bool(row["go_call_withheld_for_uncertainty"])
             ),
         }
 

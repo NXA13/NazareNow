@@ -59,26 +59,37 @@ if TYPE_CHECKING:  # `distribution` reaches the model layer, which would import 
 CONFIRMED_THROUGH = 1
 GO_CALL_THROUGH = 7
 
-GO_CALL_CONFIDENCE = 0.9
-"""How much of a Predictive Distribution must clear the height bar for a Go Call (#15).
+GO_CALL_CONFIDENCE = 0.70
+"""How much of the incoming reading must clear the height bar for a Go Call (#15).
 
 The same trade ADR 0003 makes for Model Spread, arrived at from a third direction: a day the
 system is not confident about falls to a Watch — the swell is still worth watching, it is
 simply not yet worth a flight.
 
-**Measured to be inert where it would be dangerous.** On the seas that actually earn a Go
-Call this probability is 1.000 at every Lead Time — 5 m and 7 m inputs clear a 2.75 m bar
-whatever the forecast does — which is the same fact `thresholds.json` records when it says
-height was "verified to block no Gold Day rather than fitted". The bar only stops being
-certain at the margin: a 2.8 m sea reads 0.934 at one day and 0.790 at seven. So this floor
-cannot take a Go Call from a genuine giant day, and it downgrades exactly the marginal
-long-range days where a Go Call was least defensible.
+**Priced against Gold Day recall, in ADR 0010's shape.** The strictest floor that refuses a
+Go Call to no Gold Day the height condition admits. `analysis/forecast_error/confidence.py`
+runs the measurement: every Gold Day's own peak sea, restated into operational units, scored
+against the shipped Forecast Error Profile at each Lead Time it could be called at. The
+binding days are the two 3.04 m Gold Days, which bottom out at 0.72 at five days; 0.70 is the
+step below that rather than a bar sitting exactly on them, for the reason `fit_height` gives
+about the next Gold Day half a metre smaller.
 
-Not fitted against Gold Days, and that is a real limitation rather than an oversight. The
-Hindcast the calibration runs on contains no forecast error, so the backtest cannot score this
-the way ADR 0010 scored the Watch bar. Chosen instead as the point where the measurement above
-separates the two populations, and left as a named constant so a ticket with a forecast
-archive deep enough to fit it can.
+**What that costs, and what the obvious value would have cost.** At this floor the rule
+refuses a Go Call in the band between the height bar and the smallest Gold Day — 2.75 m to
+about 3.0 m, where no Gold Day has ever been observed. A day reading exactly the bar is a coin
+flip about clearing it, 0.52 at one day out, and that is the day this exists to stop somebody
+booking. At 0.9 it would instead have taken the Go Call from **7 of the 37 Gold Days the
+height bar admits**, which is a recall loss on precisely the days the system exists to call.
+
+That 0.9 was believed inert, and the belief came from measuring the wrong quantity: the
+probability was read off the model's amplified *output* against a bar that judges the
+*incoming reading*, which flatters every marginal day by the gain. `PredictiveDistribution.
+gold_day_probability` carries that correction and why it matters.
+
+**The precision half is still unpriced, and that limitation is real.** ADR 0010 could price
+the Watch bar in both directions because the Hindcast supplies outcomes; it contains no
+forecast error, so how many *false* Go Calls this floor prevents cannot be scored the same
+way. What is now measured is the half that can be: it costs no Gold Day.
 """
 
 # A Watch does not require the wind condition. Wind direction a week or more out carries

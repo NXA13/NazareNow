@@ -30,8 +30,10 @@ from nazarenow.decision import (
     agreement_of,
     conditions_behind,
     decide,
+    go_call_is_available,
     strength,
 )
+from nazarenow.distribution import SEA, ErrorBudget, PredictiveDistribution
 from nazarenow.models import AmplificationModel, HeuristicBaseline, LearnedAmplification
 from nazarenow.runs import FailureKind
 from nazarenow.sources import open_meteo
@@ -333,29 +335,89 @@ def earliest(*timestamps: str) -> str:
     return min(timestamps)
 
 
-def lowest_opinion_of_period(ensemble: Ensemble, stamp: str) -> float | None:
-    """The gloomiest organisation's swell period for one forecast hour, or None if too few
-    reported.
+def opinions_at(ensemble: Ensemble, stamp: str, variable: str) -> dict[str, float | None]:
+    """Each wave model's own reading of one variable at one forecast hour.
 
     **One forecast hour, not the date's.** `derive_spreads` takes a date's spread from its
     median hour, which is a real hour's real disagreement and needs no model to find. A call
     rests on a different hour — the best *matching* one, which only the Amplification Model
-    can identify — so a gate reading the stored median would judge a call against a moment
+    can identify — so anything reading the stored median would judge a call against a moment
     that did not produce it. Per-model readings are held per hour (#8's first half) precisely
     so this can ask about the right one, with no refetch and no migration.
+
+    Two callers want that hour for different variables — the Go Call gate reads swell period,
+    #15's distribution reads Combined Sea — and the shape they both need is the one
+    `spread.derive` takes.
+    """
+    return {
+        model: readings[variable]["value"]
+        for model, readings in ensemble.get(stamp, {}).items()
+        if variable in readings
+    }
+
+
+def lowest_opinion_of_period(ensemble: Ensemble, stamp: str) -> float | None:
+    """The gloomiest organisation's swell period for one forecast hour, or None if too few
+    reported.
 
     `spread.derive` supplies the None, and it means fewer than two organisations rather than
     perfect agreement. `agreement_of` is where that becomes a decision.
     """
-    measured = spread.derive(
-        "swell_period",
-        {
-            model: readings["swell_period"]["value"]
-            for model, readings in ensemble.get(stamp, {}).items()
-            if "swell_period" in readings
-        },
-    )
+    measured = spread.derive("swell_period", opinions_at(ensemble, stamp, "swell_period"))
     return None if measured is None else measured.lowest
+
+
+def sea_disagreement_at(ensemble: Ensemble, stamp: str) -> spread.Spread | None:
+    """How far apart the organisations are on Combined Sea for one forecast hour (#15).
+
+    The fourth uncertainty term, and the only one measured live rather than shipped as data.
+    `ErrorBudget._drift_floor` decides what it is allowed to do with it — raise the archive's
+    drift, never lower it — and `None`, meaning fewer than two organisations reported, leaves
+    the distribution resting on the shipped terms alone.
+    """
+    return spread.derive(SEA, opinions_at(ensemble, stamp, SEA))
+
+
+def distribution_for(
+    budget: ErrorBudget,
+    model: AmplificationModel,
+    readings: dict[str, float],
+    lead_time_days: int,
+    ensemble: Ensemble,
+    stamp: str,
+    gold_day_height_m: float | None,
+) -> PredictiveDistribution:
+    """One forecast hour's Predictive Distribution, with its own hour's ensemble verdict.
+
+    A free function rather than a closure inside `derive_calls`, so the hour it is built for
+    is an argument rather than whatever the enclosing loop last bound. That distinction is
+    this module's recurring bug in miniature: a call rests on its best matching hour, and
+    anything that quietly reads a different one produces a perfectly ordinary-looking answer
+    about the wrong moment.
+    """
+    return budget.distribution(
+        model,
+        readings,
+        lead_time_days,
+        gold_day_height_m=gold_day_height_m,
+        model_spread=sea_disagreement_at(ensemble, stamp),
+    )
+
+
+def gold_day_height_of(model: AmplificationModel) -> float | None:
+    """The calibrated height bar the model judges against, for the Gold Day probability.
+
+    Read off the model rather than loaded here, exactly as `calibration_of` reads its
+    provenance and for the same reason: what the probability is measured against must be the
+    bar that actually judged the hours, not whichever file is current when this is asked.
+
+    The `getattr` keeps ADR 0001's seam. The `AmplificationModel` interface promises a name, a
+    `calibrated` flag and `predict`, and a model carrying no threshold set is entitled to
+    exist — it simply gets a distribution with no Gold Day probability on it, which `decide`
+    already treats as a number nobody calculated rather than as a failed test.
+    """
+    thresholds = getattr(model, "thresholds", None)
+    return getattr(thresholds, "minimum_significant_wave_height_m", None)
 
 
 def agreement_at(
@@ -418,6 +480,10 @@ def derive_calls(hours: list[dict[str, Any]], ensemble: Ensemble) -> list[dict[s
     # calibration that produced it rather than against whichever one is current when someone
     # asks (#12, and #30's premise that a prediction is traceable to its inputs).
     provenance = calibration_of(model)
+    # Built once per run for the reason the model is, and read fresh on the next run so a
+    # re-measured profile takes effect without a redeployment (#14's `PATH_VARIABLE`).
+    budget = ErrorBudget.shipped()
+    gold_day_height_m = gold_day_height_of(model)
 
     for day in sorted(by_date):
         readings = [
@@ -426,16 +492,37 @@ def derive_calls(hours: list[dict[str, Any]], ensemble: Ensemble) -> list[dict[s
         ]
         predictions = [model.predict(hour) for hour in readings]
         lead_time = (date.fromisoformat(day) - date.fromisoformat(issued_for)).days
-        # Decide every hour, then take the strongest call. The reasons and the height
-        # reported are the winning hour's, so what a user reads is the hour that earned
-        # the call rather than whichever hour some earlier heuristic preferred.
+        # Model Spread is consulted per hour, and it is what makes the deciding hour's spread
+        # the one that gates the call: whichever hour wins brings its own ensemble verdict
+        # with it, so no separate pass has to go back and find it.
+        agreements = [
+            agreement_at(model, hour, ensemble, stamp["at"])
+            for stamp, hour in zip(by_date[day], readings, strict=True)
+        ]
+
+        # A distribution is priced before the ranking only where it can change a decision,
+        # which is the hours already clearing every Go Call condition — `_confident_enough`
+        # gates that branch and no other. Doing it for every hour would be correct and
+        # wasteful: one costs 22.9 ms, so a real 216-hour forecast would spend 4.9 s to
+        # decide the same calls.
         #
-        # Model Spread is consulted per hour for the same reason, and it is what makes the
-        # deciding hour's spread the one that gates the call: whichever hour wins brings its
-        # own ensemble verdict with it, so no separate pass has to go back and find it.
-        issued = [
-            decide(prediction, lead_time, agreement_at(model, hour, ensemble, stamp["at"]))
+        # It has to happen *before* `max`, not after. The width can only drop a Go Call to a
+        # Watch, and a Watch that used to outrank a taller hour on `strength` no longer does
+        # — so a distribution applied to the winner alone would leave the day reporting a
+        # smaller sea than an hour it had already beaten.
+        distributions: list[PredictiveDistribution | None] = [
+            distribution_for(
+                budget, model, hour, lead_time, ensemble, stamp["at"], gold_day_height_m
+            )
+            if go_call_is_available(prediction, lead_time)
+            else None
             for stamp, hour, prediction in zip(by_date[day], readings, predictions, strict=True)
+        ]
+        issued = [
+            decide(prediction, lead_time, agreement, distribution)
+            for prediction, agreement, distribution in zip(
+                predictions, agreements, distributions, strict=True
+            )
         ]
         # Within one status, a *refused* Go Call outranks a taller hour that never earned one,
         # and only then does size break the tie.
@@ -447,14 +534,35 @@ def derive_calls(hours: list[dict[str, Any]], ensemble: Ensemble) -> list[dict[s
         # A day whose conditions supported a Go Call the forecasters would not confirm is a
         # different day from one that failed a condition outright, and it is the more useful of
         # the two to explain.
-        call = max(
-            issued,
-            key=lambda issued: (
-                strength(issued.status),
-                issued.go_call_withheld,
-                issued.predicted_significant_wave_height,
+        chosen = max(
+            range(len(issued)),
+            key=lambda index: (
+                strength(issued[index].status),
+                issued[index].go_call_withheld,
+                issued[index].predicted_significant_wave_height,
             ),
         )
+        # The winning hour pays for a distribution whatever tier it landed in, because the
+        # range is what a user reads and every date carries one — including the quiet dates,
+        # since #15's eighth criterion is about watching a swell arrive where there was
+        # nothing. Re-deciding cannot move this hour's status: it did not clear every Go Call
+        # condition, so `decide` never reaches the branch a distribution gates.
+        if distributions[chosen] is None:
+            issued[chosen] = decide(
+                predictions[chosen],
+                lead_time,
+                agreements[chosen],
+                distribution_for(
+                    budget,
+                    model,
+                    readings[chosen],
+                    lead_time,
+                    ensemble,
+                    by_date[day][chosen]["at"],
+                    gold_day_height_m,
+                ),
+            )
+        call = issued[chosen]
         # Counted against the conditions this call rests on, not always against all four.
         # A Watch ignores wind by design, so counting every condition made a genuine Watch
         # day report "0 of 24 forecast hours match every condition" beside its own badge.
@@ -476,6 +584,10 @@ def derive_calls(hours: list[dict[str, Any]], ensemble: Ensemble) -> list[dict[s
                 "unit": call.unit,
                 "model_agreement": call.model_agreement.value,
                 "go_call_withheld": call.go_call_withheld,
+                "plausible_range_m": call.plausible_range_m,
+                "gold_day_probability": call.gold_day_probability,
+                "uncertainty_measured": call.uncertainty_measured,
+                "go_call_withheld_for_uncertainty": call.go_call_withheld_for_uncertainty,
                 "amplification_model": model.name,
                 "calibrated": model.calibrated,
                 "calibration": provenance,

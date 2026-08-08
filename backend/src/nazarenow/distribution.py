@@ -49,7 +49,7 @@ from __future__ import annotations
 import math
 import random
 import statistics
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from nazarenow.forecast_error import ForecastError
@@ -107,6 +107,8 @@ class PredictiveDistribution:
     """What the system thinks a date will bring, as a spread rather than a point."""
 
     samples: tuple[float, ...]
+    """The model's output: the predicted sea, in the unit the call reports. The range."""
+
     lead_time_days: int
     measured: bool
     """Whether a Forecast Error Profile actually covered this Lead Time.
@@ -116,13 +118,34 @@ class PredictiveDistribution:
     so rather than presenting an extrapolation as evidence.
     """
 
+    offshore_samples: tuple[float, ...] = ()
+    """The same draws on the *input* side: the perturbed incoming Combined Sea reading.
+
+    Kept because the calibrated height bar is a bar on this quantity, not on `samples`. See
+    `gold_day_probability`, which is the only thing that reads it.
+    """
+
     gold_day_probability: float | None = None
-    """The share of this distribution clearing the calibrated height bar.
+    """The share of the incoming reading's draws clearing the calibrated height bar.
 
     Attached here rather than computed by `decide`, because the bar lives in `thresholds.json`
     and a `Prediction` arrives with its conditions already evaluated — the Decision Model never
     sees a threshold, and giving it one to satisfy this would invert that. `None` when the
     builder was not told the bar, which is the Hindcast case.
+
+    **Read off `offshore_samples` rather than `samples`, and the difference is not cosmetic.**
+    The bar is fitted in operational Open-Meteo units and applied by the model to the incoming
+    Combined Sea — `heuristic.predict` compares `readings["significant_wave_height"]` against
+    it, and every tier branch in `decide` rests on that verdict. `samples` are the model's
+    output, the Proxy Target at Monican02, which the model amplifies to from that same reading.
+
+    Measuring the output against an input-side bar therefore asks a different question from
+    the one the tier asks, and it flatters by exactly the amplification: a 2.75 m sea sitting
+    on the bar leaves the model at 3.15 m and reads 0.84 where the comparison warrants 0.50.
+    The bar already embeds whatever amplification stands between a reading and a Gold Day —
+    that is what fitting it against Gold Days means — so applying it downstream counts the
+    canyon twice, on the one condition thresholds.json records as "verified to block no Gold
+    Day rather than fitted".
     """
 
     @property
@@ -147,12 +170,24 @@ class PredictiveDistribution:
         return self.p5, self.p95
 
     def probability_above(self, metres: float) -> float:
-        """The share of the distribution clearing a height — #15's Gold Day probability.
+        """The share of the predicted sea clearing a height — "how likely is it this big".
 
         Read off the samples rather than a fitted normal, because the samples carry the
         model's flooring at zero and any asymmetry the correction introduced.
         """
         return sum(1 for sample in self.samples if sample >= metres) / len(self.samples)
+
+    def probability_offshore_above(self, metres: float) -> float:
+        """The share of the *incoming* reading's draws clearing a height.
+
+        The question the calibrated bars are asked, on the quantity they are asked it about.
+        Separate from `probability_above` rather than a flag on it, because a caller picking
+        the wrong one gets a plausible number rather than an error, and this is the pair
+        CONTEXT.md holds apart.
+        """
+        return sum(1 for sample in self.offshore_samples if sample >= metres) / len(
+            self.offshore_samples
+        )
 
     def _percentile(self, fraction: float) -> float:
         ordered = sorted(self.samples)
@@ -249,22 +284,25 @@ class ErrorBudget:
 
         rng = random.Random(seed)
         samples = []
+        offshore = []
         for _ in range(draws):
             perturbed = dict(readings)
-            perturbed["significant_wave_height"] = max(0.0, centre + rng.gauss(0.0, input_sigma))
+            incoming = max(0.0, centre + rng.gauss(0.0, input_sigma))
+            perturbed[SEA] = incoming
+            offshore.append(incoming)
             predicted = model.predict(perturbed).significant_wave_height
             samples.append(max(0.0, predicted + rng.gauss(0.0, output_sigma)))
 
         built = PredictiveDistribution(
-            samples=tuple(samples), lead_time_days=lead_time_days, measured=measured
+            samples=tuple(samples),
+            offshore_samples=tuple(offshore),
+            lead_time_days=lead_time_days,
+            measured=measured,
         )
         if gold_day_height_m is None:
             return built
-        return PredictiveDistribution(
-            samples=built.samples,
-            lead_time_days=lead_time_days,
-            measured=measured,
-            gold_day_probability=built.probability_above(gold_day_height_m),
+        return replace(
+            built, gold_day_probability=built.probability_offshore_above(gold_day_height_m)
         )
 
     def _drift_floor(self, drift: float, model_spread: Spread | None) -> float:

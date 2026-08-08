@@ -37,6 +37,70 @@ GIANT = {
 }
 
 
+# The smallest Gold Days on record, as peak Combined Sea in the operational units the running
+# system reads. Literals, deliberately, for the reason `test_calls.py` gives about shipped
+# bars: importing them would move both sides of the assertion together.
+#
+# Written by `analysis/forecast_error/confidence.py`, which restates each Gold Day's own
+# reanalysis peak through the same Translation `calibrate.py` ships the bars through. The full
+# table is `analysis/forecast_error/output/go_call_confidence.csv`; these are the ones that
+# bind, the rest sitting from 3.28 m up to 5.99 m.
+#
+# 2021-11-19 is the one Gold Day below the height bar. It earns no Go Call at any confidence
+# because the height condition already refuses it, so it is not this floor's to lose.
+SMALLEST_GOLD_DAYS_M = (3.04, 3.04, 3.10, 3.28)
+GOLD_DAY_BELOW_THE_BAR_M = 2.11
+
+
+class TestTheConfidenceFloorCostsNoGoldDay:
+    """The budget `GO_CALL_CONFIDENCE` is priced against, in ADR 0010's shape.
+
+    A rule meant to stop somebody booking a flight on a coin flip must not also stop them
+    booking one on a day the ocean actually delivered. The floor is therefore the strictest
+    value that refuses a Go Call to no Gold Day the height condition admits.
+
+    Pinned here as well as in the analysis because the constant lives in this module and the
+    measurement does not. The obvious value, 0.9, would have cost 7 of the 37 eligible Gold
+    Days their Go Call — and it looked inert until the probability stopped being read off the
+    model's amplified output against a bar that judges the incoming reading.
+    """
+
+    def test_every_gold_day_the_height_bar_admits_keeps_its_go_call(self) -> None:
+        for peak in SMALLEST_GOLD_DAYS_M:
+            for lead in range(1, 8):
+                built = BUDGET.distribution(
+                    MODEL,
+                    GIANT | {"significant_wave_height": peak, "swell_height": round(peak * 0.8, 2)},
+                    lead,
+                    gold_day_height_m=BAR,
+                )
+
+                assert built.gold_day_probability is not None
+                assert built.gold_day_probability >= GO_CALL_CONFIDENCE, (
+                    f"a {peak} m Gold Day loses its Go Call at {lead} days"
+                )
+
+    def test_a_day_sitting_exactly_on_the_bar_is_still_refused(self) -> None:
+        """The floor has to keep doing something, or it is a rule priced down to nothing.
+
+        Its active band is the gap between the height bar and the smallest Gold Day — 2.75 m
+        to about 3.0 m, where no Gold Day has ever been observed.
+        """
+        built = BUDGET.distribution(
+            MODEL,
+            GIANT | {"significant_wave_height": BAR, "swell_height": round(BAR * 0.8, 2)},
+            3,
+            gold_day_height_m=BAR,
+        )
+
+        assert built.gold_day_probability is not None
+        assert built.gold_day_probability < GO_CALL_CONFIDENCE
+
+    def test_the_one_gold_day_under_the_bar_is_not_this_rules_to_lose(self) -> None:
+        """It fails the height condition outright, so no confidence floor decides it."""
+        assert GOLD_DAY_BELOW_THE_BAR_M < BAR
+
+
 def certainty(probability: float) -> PredictiveDistribution:
     """A distribution of a chosen confidence, built rather than sampled.
 
@@ -137,11 +201,21 @@ class TestAWiderProfileProducesAMoreCautiousCall:
     def test_a_genuine_giant_day_keeps_its_go_call_at_every_lead_time(self) -> None:
         """The measurement `GO_CALL_CONFIDENCE` rests on: this floor is inert where it would
         be dangerous. A 5 m sea clears a 2.75 m bar whatever the forecast does, so the rule
-        can only ever take a Go Call from the margin."""
+        can only ever take a Go Call from the margin.
+
+        Stated as "far clear of the floor" rather than as exactly 1.0. The probability is
+        read off the incoming reading's own draws, and at seven days those are 0.72 m wide on
+        a big swell — so a handful of the five hundred land under a bar 2.25 m below the
+        forecast. That is the distribution being honest, not the floor biting; an assertion
+        of exactly 1.0 was only ever true because the figure was previously measured against
+        the model's amplified output, where the same day sat further from the bar than the
+        reading the bar actually judges.
+        """
         for lead in range(2, 8):
             built = BUDGET.distribution(MODEL, GIANT, lead, gold_day_height_m=BAR)
 
-            assert built.gold_day_probability == 1.0
+            assert built.gold_day_probability is not None
+            assert built.gold_day_probability > GO_CALL_CONFIDENCE + 0.05, f"at {lead} days"
             assert decide(MODEL.predict(GIANT), lead, Agreement.AGREED, built).status is Status.GO
 
 

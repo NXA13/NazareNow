@@ -121,6 +121,7 @@ def forecast_provider(
     silent_models: tuple[str, ...] = (),
     ensemble_status: int = 200,
     ensemble_offsets: dict[str, float] | None = None,
+    ensemble_sea_offsets: dict[str, float] | None = None,
 ) -> httpx.MockTransport:
     """A provider returning `days` days from `today`, quiet except where overridden.
 
@@ -210,7 +211,10 @@ def forecast_provider(
     }
 
     ensemble_body = ensemble_body_from(
-        marine_body, silent_models=silent_models, offsets=ensemble_offsets
+        marine_body,
+        silent_models=silent_models,
+        offsets=ensemble_offsets,
+        sea_offsets=ensemble_sea_offsets,
     )
 
     def handle(request: httpx.Request) -> httpx.Response:
@@ -241,6 +245,7 @@ def ensemble_body_from(
     *,
     silent_models: tuple[str, ...] = (),
     offsets: dict[str, float] | None = None,
+    sea_offsets: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """One series per model per variable, built from a marine body's own hourly arrays.
 
@@ -266,6 +271,7 @@ def ensemble_body_from(
     hourly = marine_body.get("hourly") or {}
     series: dict[str, list[Any]] = {"time": hourly.get("time", [])}
     units: dict[str, str] = {"time": "iso8601"}
+    by_sea = sea_offsets or offsets or ENSEMBLE_OFFSETS
 
     for model, offset in (offsets or ENSEMBLE_OFFSETS).items():
         silent = model in silent_models
@@ -273,10 +279,15 @@ def ensemble_body_from(
             ("swell_wave_height", offset),
             ("swell_wave_period", offset * 2),
             ("swell_wave_direction", offset * 10),
-            # Combined Sea, which #15 widens the Predictive Distribution by. Offset by the
-            # same step as the Swell partition so the two spreads stay comparable in the
-            # fixtures that assert on both.
-            ("wave_height", offset),
+            # Combined Sea, which #15 widens the Predictive Distribution by.
+            #
+            # Driven by its own offsets, defaulting to the Swell partition's. The two
+            # disagreements are genuinely independent — `analysis/model_spread/` measured
+            # providers 0.74 m apart on height while agreeing to 0.22 s on period, and says
+            # in as many words that one spread number covering both would hide it. A fixture
+            # that could only move them together would make every test about a period split
+            # silently also a test about a two-metre sea, which is a different day.
+            ("wave_height", by_sea.get(model, offset)),
         ):
             if variable not in hourly:
                 continue
