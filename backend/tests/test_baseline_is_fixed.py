@@ -83,9 +83,10 @@ def test_thresholds_are_what_the_reports_scored() -> None:
     Translation is fitted on — Combined Sea >= 3 m instead of Open-Meteo's Swell height at the
     same bar — so it moved a transform, not a threshold. The fitted bar is still 12 s in
     reanalysis units. Only its restatement into the units a Pipeline Run reads moved, by
-    0.044 s across the 11.45 rounding boundary. The Go Call bar sits 0.004 s from its own
-    boundary and did not cross it, which is the single failure this test should show for #60
-    and the reason a traveller's booking decision is unaffected.
+    0.044 s across the 11.45 rounding boundary. The Go Call bar moved 0.004 s *away* from its
+    own 12.85 boundary and now sits 0.011 s clear of it, so it still rounds to 12.9 — which is
+    why this test should show one failure for #60 rather than two, and why a traveller's
+    booking decision is unaffected.
     """
     assert SHIPPED.minimum_significant_wave_height_m == 2.75, RERUN
     assert SHIPPED.watch_minimum_swell_period_s == 11.4, RERUN

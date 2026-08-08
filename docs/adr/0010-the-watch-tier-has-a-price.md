@@ -127,6 +127,12 @@ The Go Call bar stays at 12.9 s, the height bar at 2.75 m, both arcs and the spe
 unchanged, and ADR 0009's exemption at 16.5 km/h. The Go Call tier's figures are identical
 either side of this change.
 
+**Since #60 the shipped Watch bar reads 11.4 s.** That is not a repricing and does not disturb
+this ADR's decision: the bar this ADR chooses is 12 s in the reanalysis units the fit runs in,
+and it is still 12 s. What #60 changed is the Translation that restates it into the units a
+Pipeline Run reads. The budget below — 40 Watch days per Big-Wave Season — is still the rule,
+and the restated bar costs 36.9 days a season against the 35.9 recorded here.
+
 **The Watch tier halves in cost and loses nothing held out.** On the held-out split it flags
 32.2 days a season instead of 61.2, and catches the same 12 of 13 Gold Days. On the fitting
 split recall falls from 25/25 to 21/25, which is the in-sample number this ADR argues should

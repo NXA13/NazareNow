@@ -412,12 +412,16 @@ builds that pairing separately, out of `measure.FITTINGS` itself.
 because it is the line every figure in this module was originally measured against, and
 dropping it would silently rebase the comparison.
 
-**`swell-3m` selects on operational Swell height, not on Combined Sea**, and that is the code
-rather than a transcription slip — the swell period fitting in `measure.FITTINGS` filters
-`operational_height`, which is Open-Meteo's `swell_wave_height`. `combined-sea-3m` is the same
+**`swell-3m` selects on operational Swell height, not on Combined Sea**, and that was the code
+rather than a transcription slip: until #60 the swell period fitting in `measure.FITTINGS`
+filtered `operational_height`, Open-Meteo's `swell_wave_height`. `combined-sea-3m` is the same
 bar read the way `train.py`, `amplification.json` and #52's own body all describe it, and it is
-a different 4,941 hours. CONTEXT.md keeps Combined Sea and Swell apart for exactly this reason,
-and #60 owns settling which of the two should gate the period subset.
+a different 4,941 hours. CONTEXT.md keeps Combined Sea and Swell apart for exactly this reason.
+
+**#60 settled it on Combined Sea, so `swell-3m` now names the pre-#60 code as well as the
+pre-#58 one.** `measure.FITTINGS` selects on `reanalysis_combined_sea`, which is what
+`period-sea-3m` below measures. The candidate is still kept, because it is the line every figure
+in this module was originally measured against.
 """
 
 
@@ -447,12 +451,13 @@ These two move the period line alone. Height comes from `shipped_candidate`, so 
 cannot move, and any movement in the Watch or Go Call bar is attributable to the period subset
 and nothing else.
 
-**There are two candidates because "Combined Sea >= 3 m" does not name a product.** The shipped
-filter reads `operational_height`, Open-Meteo's `swell_wave_height` — an *operational* quantity.
-`train.py` defines its own big-swell regime on `combined_sea_m`, which is the hindcast's
-`hindcast_combined_sea_height_m` — a *reanalysis* quantity. So the prose #60 wants the code to
-match is itself ambiguous between two different subsets, and both are measured here rather than
-one being assumed. `period-sea-3m` is the reading that matches `train.py`'s regime.
+**There are two candidates because "Combined Sea >= 3 m" does not name a product.** The filter
+read `operational_height` before #60 — Open-Meteo's `swell_wave_height`, an *operational*
+quantity. `train.py` defines its own big-swell regime on `combined_sea_m`, which is the
+hindcast's `hindcast_combined_sea_height_m` — a *reanalysis* quantity. So the prose #60 had to
+make the code match was itself ambiguous between two different subsets, and both are measured
+here rather than one being assumed. `period-sea-3m` is the reading that matches `train.py`'s
+regime, and it is the one #60 shipped.
 """
 
 

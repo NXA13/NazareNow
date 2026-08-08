@@ -622,32 +622,50 @@ def check() -> int:
     # filter would have admitted it and the current one excludes it — and its period reading
     # is one of the off-line ones, so admitting it breaks the recovered line rather than
     # merely changing a count. Reverting `FITTINGS` to `operational_height` fails here.
+    # The two heights are named apart because that is the whole subject of #60: `swell_height`
+    # is Open-Meteo's Swell partition, which the pre-#60 filter read, and `reanalysis_sea` is
+    # the Combined Sea the current one reads. One argument sets both Swell fields, since no
+    # case here needs the operational and sw1 partitions to disagree.
     def hour(
-        at: str, height: float, sea: float, operational_sea: float, sw1: float, period: float
+        at: str,
+        swell_height: float,
+        reanalysis_sea: float,
+        operational_sea: float,
+        sw1_period: float,
+        operational_period: float,
     ) -> Paired:
         return Paired(
             at=at,
-            operational_height=height,
-            operational_period=period,
+            operational_height=swell_height,
+            operational_period=operational_period,
             operational_direction=300.0,
             operational_combined_sea=operational_sea,
-            sw1_height=height,
-            sw1_period=sw1,
+            sw1_height=swell_height,
+            sw1_period=sw1_period,
             sw1_direction=300.0,
             sw2_height=0.0,
             sw2_period=0.0,
             sw2_direction=0.0,
-            reanalysis_combined_sea=sea,
+            reanalysis_combined_sea=reanalysis_sea,
         )
 
     # Combined Sea sits on operational = 2x + 1 in every hour, big or small. Swell period
-    # sits on operational = 3x - 2 in the big hours only. The first two columns after the
-    # stamp are Swell height and Combined Sea, and `swell-decoy` is the hour where they
-    # disagree about which side of 3 m it falls.
+    # sits on operational = 3x - 2 in the big hours only. `swell-decoy` is the hour whose
+    # Swell height and Combined Sea disagree about which side of 3 m it falls, and it is
+    # spelled out by keyword because that disagreement is the point of it.
     below = [
         hour(f"small-{i}", 1.0, x, 2.0 * x + 1.0, 10.0, 0.0) for i, x in enumerate((1.0, 1.5, 2.0))
     ]
-    below.append(hour("swell-decoy", 5.0, 2.5, 2.0 * 2.5 + 1.0, 10.0, 0.0))
+    below.append(
+        hour(
+            "swell-decoy",
+            swell_height=5.0,
+            reanalysis_sea=2.5,
+            operational_sea=2.0 * 2.5 + 1.0,
+            sw1_period=10.0,
+            operational_period=0.0,
+        )
+    )
     above = [
         hour(f"big-{i}", 4.0, x, 2.0 * x + 1.0, p, 3.0 * p - 2.0)
         for i, (x, p) in enumerate(((4.0, 1.0), (5.0, 2.0), (6.0, 3.0)))

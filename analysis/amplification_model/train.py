@@ -600,8 +600,10 @@ def exported(
                 "fitted_on_hours": translation.n,
                 # Which hours those were. Since #58 the two quantities are fitted on
                 # different subsets, so the count alone no longer identifies the subset —
-                # and a reader who found 35064 against 4366 with nothing to explain the gap
+                # and a reader who found 35064 against 4941 with nothing to explain the gap
                 # would have to go to the source to learn whether that was deliberate.
+                # Since #60 the string also names the *quantity* the subset is selected on,
+                # because 3 m of Combined Sea and 3 m of Swell are different sets of hours.
                 "fitted_on": translation.regime,
                 "residual_rmse": translation.residual_rmse,
             }

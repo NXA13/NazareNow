@@ -468,7 +468,7 @@ Amplification Model change. From the fitted 2.75 m / 12.0 s / 13.5 s (`output/tr
 
 | Candidate | Height | Watch bar | Go Call bar | Expressible as a Translation |
 |---|---|---|---|---|
-| shipped (since #58) | 2.75 m | 11.5 s | 12.9 s | yes |
+| shipped (since #60) | 2.75 m | 11.4 s | 12.9 s | yes |
 | period-sea-3m (#60) | 2.75 m | 11.4 s | 12.9 s | yes |
 | period-op-sea-3m (#60) | 2.75 m | 11.4 s | 12.9 s | yes |
 | swell-3m (pre-#58) | 2.75 m | 11.5 s | 12.9 s | yes |
@@ -477,19 +477,29 @@ Amplification Model change. From the fitted 2.75 m / 12.0 s / 13.5 s (`output/tr
 | band-fitted | 2.75 m | 11.4 s | 12.8 s | yes |
 | regime-aware | 2.75 m | **11.2 s** | **12.6 s** | **no — two lines** |
 
-**The shipped row is identical to the pre-#58 row: 2.75 m / 11.5 s / 12.9 s.** That is the
-demonstration that #58 moved no decision threshold. It works because the bars are restated
-through the *period* transform and a height transform that both survive the change — the period
-line is untouched, and the height bar floors to the same 0.25 m step under either line
-(`0.9412 × 2.75 + 0.3435 = 2.932` and `1.0127 × 2.75 + 0.0192 = 2.804` both floor to 2.75).
+**Read this table at #58, the `swell-3m` row was identical to the then-shipped row: 2.75 m /
+11.5 s / 12.9 s.** That was the demonstration that #58 moved no decision threshold. It worked
+because the bars are restated through the *period* transform and a height transform that both
+survive the change — the period line was untouched, and the height bar floors to the same 0.25 m
+step under either line (`0.9412 × 2.75 + 0.3435 = 2.932` and `1.0127 × 2.75 + 0.0192 = 2.804`
+both floor to 2.75).
+
+**#60 then moved the period line, and the shipped row moved with it to 11.4 s.** The `swell-3m`
+row is the pre-#60 shipped bars, which is why it still reads 11.5 s and why
+`translation_shipped_bars.csv` records it as `moved_watch 0.1`. The Go Call bar and the height
+bar are unchanged, so what #60 cost is one tenth on the Watch bar and nothing else in this table.
 
 **No bar moved is not the same as nothing moved.** `backtest.py` scores the shipped bars by
 restating them *into* reanalysis units with `Translation.invert`, and that inversion did change:
 the 2.75 m bar reads 2.557 m under the old line and 2.697 m under the new one. So the whole-record
-backtest flags fewer days — 574 → 530 Watch and 128 → 110 Go Calls — while calling the same 33
+backtest flagged fewer days — 574 → 530 Watch and 128 → 110 Go Calls — while calling the same 33
 and 16 Gold Days. Same recall, better precision, and it is the restatement that improved rather
 than the bar that moved. The held-out figures from `calibrate.py` are untouched, because that
 panel is scored in reanalysis units natively and never inverts anything.
+
+Those Watch counts are #58's, and #60 has since moved the Watch one: `summary.csv` now reads
+**553**, because the lower Watch bar flags 23 more days for the same 33 Gold Days. The Go Call
+count stays at 110. Section 5a has what that bought and what it cost.
 
 **The two candidates that refit height by moving the shared subset both drop the Go Call bar by
 0.3 s**, on the strength of a period fit that section 4 shows is worse in the regime that bar
@@ -506,10 +516,11 @@ shipped line is a single all-hours fit rather than the marginally better hinged 
 
 ### 5a. Moving the period subset alone costs the Go Call bar nothing (#60)
 
-#60 asks which quantity should gate the **swell period** subset: the code filters Open-Meteo's
-Swell height while `train.py`, `amplification.json` and #52's body all describe it as Combined
-Sea. `period-sea-3m` and `period-op-sea-3m` hold height at the shipped fit and move the period
-line alone, so any movement is attributable to the subset and nothing else.
+#60 asked which quantity should gate the **swell period** subset: the code filtered Open-Meteo's
+Swell height while `train.py`, `amplification.json` and #52's body all described it as Combined
+Sea. `period-sea-3m` and `period-op-sea-3m` hold height at the #58 fit and move the period line
+alone, so any movement is attributable to the subset and nothing else. `period-sea-3m` is what
+shipped.
 
 **The Go Call bar does not move.** Watch reads 11.4 s against 11.5 s; the height bar cannot move
 by construction. The −0.3 s drop to 12.6 s belongs to `all-hours` and `regime-aware`, which are

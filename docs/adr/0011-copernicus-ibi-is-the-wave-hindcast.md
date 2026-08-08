@@ -169,9 +169,10 @@ operates in. Fixing it properly meant separating the two consumers, not moving t
 still returns one `dict[str, Translation]`, so the height line moved to all 35,064 overlapping
 hours while the swell period line stayed on its 4,366. The height bias below 2 m is now +0.004
 and +0.003; no shipped bar moved; #39's rule was not strained because nothing was moved by hand.
-The whole-record backtest flags fewer days for the same Gold Days caught (574 → 530 Watch,
+The whole-record backtest flagged fewer days for the same Gold Days caught (574 → 530 Watch,
 128 → 110 Go), because the height bar restated into reanalysis units is no longer pulled down by
-a spurious intercept.
+a spurious intercept. **That 530 is #58's figure and #60 has since moved it to 553**; the Go
+Call count is still 110. What follows records why that was accepted.
 
 **That part was #60, and it is now settled: the subset is selected on reanalysis Combined Sea.**
 It had been selected on Open-Meteo's *Swell* height while `train.py`, `amplification.json` and
