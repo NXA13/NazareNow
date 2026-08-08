@@ -90,6 +90,15 @@ class PredictiveDistribution:
     so rather than presenting an extrapolation as evidence.
     """
 
+    gold_day_probability: float | None = None
+    """The share of this distribution clearing the calibrated height bar.
+
+    Attached here rather than computed by `decide`, because the bar lives in `thresholds.json`
+    and a `Prediction` arrives with its conditions already evaluated — the Decision Model never
+    sees a threshold, and giving it one to satisfy this would invert that. `None` when the
+    builder was not told the bar, which is the Hindcast case.
+    """
+
     @property
     def median(self) -> float:
         return statistics.median(self.samples)
@@ -172,6 +181,7 @@ class ErrorBudget:
         readings: dict[str, float],
         lead_time_days: int,
         *,
+        gold_day_height_m: float | None = None,
         draws: int = DRAWS,
         seed: int = SEED,
     ) -> PredictiveDistribution:
@@ -209,8 +219,16 @@ class ErrorBudget:
             predicted = model.predict(perturbed).significant_wave_height
             samples.append(max(0.0, predicted + rng.gauss(0.0, output_sigma)))
 
-        return PredictiveDistribution(
+        built = PredictiveDistribution(
             samples=tuple(samples), lead_time_days=lead_time_days, measured=measured
+        )
+        if gold_day_height_m is None:
+            return built
+        return PredictiveDistribution(
+            samples=built.samples,
+            lead_time_days=lead_time_days,
+            measured=measured,
+            gold_day_probability=built.probability_above(gold_day_height_m),
         )
 
     def _unmeasured_drift(self, lead_time_days: int, sea: float) -> tuple[float, float]:
