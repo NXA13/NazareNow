@@ -361,6 +361,30 @@ footer p {
   font-size: 0.9rem;
 }
 
+/* How sure the forecast is: the plausible range, and the chance of a giant day.
+ *
+ * Sits directly under the predicted height because it qualifies that number rather than
+ * standing beside it as a second finding — a range rendered as its own panel invites a reader
+ * to take the point estimate as the answer and the range as a footnote, which is the reading
+ * ticket #15 exists to end. The beyond-the-archive notice inside it keeps `.alert`, because
+ * that one genuinely is a shortfall in what was measured. */
+.confidence {
+  margin: 0 0 0.5rem;
+}
+
+.confidence p {
+  margin: 0 0 0.5rem;
+}
+
+/* How the prediction has moved since the run before.
+ *
+ * Quiet by design. It is context for the figures above rather than a finding of its own, and
+ * a swell that grew half a metre between two runs is not news until it has kept doing it. */
+.shift {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 /* How much the forecasters agree.
  *
  * Styled as a companion to the call detail rather than as an alert. It qualifies the call

@@ -829,6 +829,34 @@ class Store:
         )
         return None if row is None else self._call(row)
 
+    def recent_calls(self, limit: int = 5) -> dict[str, list[dict[str, Any]]]:
+        """The last few calls made about each date, oldest first, keyed by date.
+
+        #15's eighth criterion asks a user to see how a prediction has shifted across
+        successive Pipeline Runs, and this is the record that answers it. `calls()` serves
+        the newest call about each date and deliberately throws the rest away; the rest are
+        exactly what "shifted" means.
+
+        Ordered and windowed by `id` rather than `issued_at`, for the reason `calls()` gives
+        at length: `issued_at` is a wall clock, and a clock adjusted backwards would reorder
+        the succession of runs and draw a swell building when it was fading. Insertion order
+        is the only total order the store has, and it is the order the runs happened in.
+
+        Bounded rather than complete. `call_history` exists for anything that wants every
+        call ever made; this feeds a response a traveller reads, and a date approached over
+        a fortnight of three-hourly runs has more than a hundred of them.
+        """
+        rows = self._connect().execute(
+            "SELECT * FROM (SELECT "
+            f"{CALL_COLUMNS}, ROW_NUMBER() OVER (PARTITION BY date ORDER BY id DESC) AS recency "
+            "FROM day_call) WHERE recency <= ? ORDER BY date, recency DESC",
+            (limit,),
+        )
+        history: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            history.setdefault(row["date"], []).append(self._call(row))
+        return history
+
     def call_history(self) -> list[dict[str, Any]]:
         """Every call ever made, oldest first, including superseded ones.
 

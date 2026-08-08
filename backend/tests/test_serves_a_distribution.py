@@ -188,6 +188,59 @@ class TestAWiderErrorProfileMakesTheSystemMoreCautious:
         assert any("too uncertain" in reason for reason in call["reasons"])
 
 
+class TestAPredictionCanBeWatchedMoving:
+    """#15's eighth criterion: how a prediction has shifted across successive runs.
+
+    Served from the record rather than accumulated by the interface, which has no memory —
+    a page a traveller opens once every few days cannot have watched the runs in between.
+    The store keeps every call ever made (ADR 0005) so this can be answered from what
+    happened rather than from what somebody's browser happened to see.
+    """
+
+    def test_the_first_run_about_a_date_has_nothing_to_compare_against(self, store, client):
+        """Empty, not a series of one. A date compared against itself would draw a shift of
+        exactly zero and read as "settled" on a forecast nobody has revisited."""
+        ingest(store, forecast_provider({SOON: GIANT}, today=TODAY))
+
+        assert call_for(client, SOON)["previous_runs"] == []
+
+    def test_a_later_run_carries_what_the_earlier_one_said(self, store, client) -> None:
+        smaller = GIANT | {"significant_wave_height": 3.6}
+        ingest(store, forecast_provider({SOON: smaller}, today=TODAY))
+        was = call_for(client, SOON)["predicted_significant_wave_height"]["value"]
+
+        ingest(store, forecast_provider({SOON: GIANT | {"significant_wave_height": 5.4}}, TODAY))
+        call = call_for(client, SOON)
+
+        assert len(call["previous_runs"]) == 1
+        assert call["previous_runs"][0]["predicted_significant_wave_height"]["value"] == was
+        assert call["predicted_significant_wave_height"]["value"] > was, "the swell built"
+
+    def test_the_current_call_is_not_listed_among_the_ones_it_superseded(self, store, client):
+        """Sending it twice would let an interface draw a date as having shifted from
+        itself, which is the one movement that is always spurious."""
+        for _ in range(3):
+            ingest(store, forecast_provider({SOON: GIANT}, today=TODAY))
+
+        call = call_for(client, SOON)
+        issued = [run["issued_at"] for run in call["previous_runs"]]
+
+        assert len(issued) == 2
+        assert issued == sorted(issued), "the succession must read oldest first"
+
+    def test_an_earlier_run_carries_its_own_range_and_lead_time(self, store, client) -> None:
+        """The range, because a narrowing band is the shift worth seeing most; the Lead Time,
+        because a range narrowing as a date approaches is the forecast working, and the same
+        narrowing at a fixed Lead Time would be something else entirely."""
+        ingest(store, forecast_provider({SOON: GIANT}, today=TODAY))
+        ingest(store, forecast_provider({SOON: GIANT}, today=TODAY))
+
+        earlier = call_for(client, SOON)["previous_runs"][0]
+
+        assert earlier["plausible_range"]["low"] < earlier["plausible_range"]["high"]
+        assert earlier["lead_time_days"] == call_for(client, SOON)["lead_time_days"]
+
+
 class TestTheEstimateDegradesRatherThanFailing:
     def test_an_unreachable_ensemble_still_produces_a_range(self, store, client) -> None:
         """ADR 0003: a provider being unavailable degrades the uncertainty estimate rather

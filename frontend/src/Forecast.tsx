@@ -270,9 +270,122 @@ function CallDetail({ day, model }: { day: ForecastDay; model: string | null }) 
               figure, carried through unchanged. Nothing here models what the canyon does to it yet.
             </p>
           )}
+          <Confidence day={day} />
+          <Shift day={day} />
         </>
       )}
     </div>
+  );
+}
+
+/** How sure the forecast is, as a range in metres rather than a percentage on the height.
+ *
+ * The point of ticket #15. "6.1 metres, 78% confident" gives a reader nothing to act on: it
+ * asks them to convert a confidence into a size themselves, which is the arithmetic the
+ * backend has already done. The two heights the day plausibly lands between say the same
+ * thing in terms somebody booking a flight can use.
+ *
+ * **The chance of a giant day is rounded here and nowhere else.** The backend sends a share
+ * between 0 and 1 on purpose, so the figure a reader sees is stated in one place — a
+ * percentage computed on both sides is two copies of a number that can drift apart.
+ *
+ * A call decided without a distribution renders nothing rather than an empty band. Those are
+ * calls issued before the pipeline built them, and drawing a range of zero width for one
+ * would read as total certainty about the oldest predictions in the record.
+ */
+function Confidence({ day }: { day: ForecastDay }) {
+  const call = day.call;
+  const range = call?.plausible_range;
+  if (!call || !range) return null;
+
+  return (
+    <div className="confidence" data-testid={`confidence-${day.date}`}>
+      <p>
+        Plausibly{' '}
+        <strong>
+          {formatValue(range.low)}
+          {range.unit} to {formatValue(range.high)}
+          {range.unit}
+        </strong>
+        {call.gold_day_probability !== null && (
+          <>
+            {' '}
+            — about <strong>{Math.round(call.gold_day_probability * 100)}%</strong> likely to reach
+            the size this system calls a giant day.
+          </>
+        )}
+      </p>
+      {/* Which of the two refusals produced this Watch. Both end in the same badge, and a
+          reader told only "Watch" cannot tell a swell the forecasters have not settled on
+          from one the forecast is simply too uncertain about to book on. */}
+      {call.go_call_withheld_for_uncertainty && (
+        <p>
+          The forecast is too uncertain at this range to book on, so this is a Watch rather than a
+          Go Call. The forecasters agree about it; the forecast itself has not settled.
+        </p>
+      )}
+      {/* Beyond the archive the width is an extrapolation, and an extrapolation rendered
+          identically to a measurement is the failure the flag exists to prevent. Announced
+          rather than merely printed, so it reaches a reader who never opens the panel. */}
+      {call.uncertainty_measured === false && (
+        <p role="status" className="alert">
+          Nothing has been measured about how wrong a forecast this far out tends to be — the record
+          only reaches seven days. The range keeps widening at the rate it did measure, but treat it
+          as the shape of the doubt rather than its size.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** How the prediction has moved since the runs before it.
+ *
+ * A swell building between runs is the signal a traveller is waiting for, and a number that
+ * silently replaces the previous one shows none of it. Both directions are stated: a fading
+ * swell is as much a reason to act — by not booking — as a building one.
+ *
+ * Compared against the run immediately before, not against the oldest in the series. What a
+ * reader is asking is "what changed since I last looked", and the most recent run is the
+ * closest this page can get to that without knowing when they last looked.
+ *
+ * Nothing renders on the first run that mentions a date. The backend sends an empty list
+ * rather than a series of one, because a date compared against itself draws a shift of
+ * exactly zero and reads as settled.
+ */
+function Shift({ day }: { day: ForecastDay }) {
+  const call = day.call;
+  const previous = call?.previous_runs.at(-1);
+  if (!call || !previous) return null;
+
+  const now = call.predicted_significant_wave_height;
+  const before = previous.predicted_significant_wave_height;
+  const change = now.value - before.value;
+  // A run that moved the height by less than the rounding the page displays at has not
+  // moved it as far as a reader can see, and "0m larger" is a sentence about nothing.
+  const moved = Math.abs(change) >= 0.05;
+
+  return (
+    <p className="shift" data-testid={`shift-${day.date}`}>
+      {moved ? (
+        <>
+          <strong>
+            {formatValue(Math.abs(change))}
+            {now.unit} {change > 0 ? 'larger' : 'smaller'}
+          </strong>{' '}
+          than the run before, which put this day at {formatValue(before.value)}
+          {before.unit}
+        </>
+      ) : (
+        <>
+          Unchanged since the run before, which also put this day at {formatValue(before.value)}
+          {before.unit}
+        </>
+      )}
+      {/* The lead time the earlier run spoke at, because a range narrowing as a date
+          approaches is the forecast doing its job and the same narrowing at a fixed lead
+          time would be something else entirely. */}
+      {` from ${previous.lead_time_days} days out.`}
+    </p>
   );
 }
 
