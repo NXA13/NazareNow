@@ -97,10 +97,6 @@ wobbled on its own would make that display meaningless — the user could not te
 forecast from a reshuffled sample.
 """
 
-SPAN_90 = 3.2897072539029457
-"""Width of a standard normal's 5th-to-95th percentile span, in sigma. Used only to reason
-about widths in tests and comments, never to replace the sampled percentiles."""
-
 
 @dataclass(frozen=True)
 class PredictiveDistribution:
