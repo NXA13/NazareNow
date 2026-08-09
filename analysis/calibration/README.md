@@ -229,19 +229,31 @@ fitting split, with the observed range reported:
 
 | Condition | Observed across Gold Days | Threshold | Binds? |
 |---|---|---|---|
-| Significant Wave Height | 3.84-5.68 m | ≥ 3.75 m | no |
-| Swell direction | 316-327° | 255-330° | no |
-| Wind | calmest hour 2-7 km/h | offshore 20-180°, ≤ 35 km/h | no |
+| Significant Wave Height | 2.98-5.90 m | ≥ 2.75 m | no |
+| Swell direction | 287-331° | 255-330° | no |
+| Wind | calmest hour 0-21 km/h | ≤ 16.5 km/h, or offshore 20-180° and ≤ 35 km/h | no |
 
-Fitting an arc to six Gold Days would narrow it onto noise while changing no call — the
-observed directions span 11°, and an arc fitted to them would reject three quarters of the arc
-the canyon is actually fed from. `calibrate.py` **raises** if any of the three turns out to
-block a Gold Day, because at that point the claim this section rests on is false and the
-calibration would need redoing rather than reporting.
+The bars in this table are the ones the fit chooses, in the reanalysis units it runs in — the
+same numbers `calibrate.py` prints. `thresholds.json` ships them translated into Open-Meteo
+units, which is a separate step and can move them.
+
+"Binds? no" means no Gold Day was *blocked*, not that every Gold Day's whole range sits inside
+the bar: a day is admitted on its best matching hour, which is why the observed direction range
+can reach past the arc's edge and still cost nothing. `calibrate.py` **raises** if any of the
+three turns out to block a Gold Day, because at that point the claim this section rests on is
+false and the calibration would need redoing rather than reporting.
+
+Fitting an arc to the Gold Days would narrow it onto noise while changing no call — an arc
+fitted to the observed 44° would reject most of the arc the canyon is actually fed from.
 
 The height bar is the one exception: it *is* derived, as the tightest bar admitting every Gold
-Day in the fitting split, floored to 0.25 m. It rose from 3.0 m to 3.75 m and still does not
-bind — the smallest Gold Day peak in the fitting split is 3.84 m.
+Day in the fitting split, floored to 0.25 m. At 2.75 m it still does not bind — the smallest
+Gold Day peak in the fitting split is 2.98 m.
+
+Ticket #15 now prices a second rule against this same margin. The Go Call confidence floor asks
+how sure the forecast is that a day clears this bar, and the gap between the bar and that
+smallest Gold Day is the band it is allowed to refuse in — see
+`analysis/forecast_error/README.md`, finding 5.
 
 ## The Watch tier now adds recall
 

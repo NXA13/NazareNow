@@ -534,11 +534,20 @@ def derive_calls(hours: list[dict[str, Any]], ensemble: Ensemble) -> list[dict[s
         # A day whose conditions supported a Go Call the forecasters would not confirm is a
         # different day from one that failed a condition outright, and it is the more useful of
         # the two to explain.
+        # *Either* refusal counts here, and #15 is why there are two. An hour the width
+        # refused is a day whose conditions supported a Go Call exactly as much as one the
+        # forecasters refused, so ranking on the models' refusal alone reproduced this very
+        # defect one term along: a clean window the forecast was too uncertain to book on
+        # lost the day to a bigger onshore peak, and the refusal vanished from the record.
+        #
+        # One boolean rather than two ranks, because the two are equally informative about
+        # the day. Which of them happened is on the call itself, in its own field, and in the
+        # reasons a user reads.
         chosen = max(
             range(len(issued)),
             key=lambda index: (
                 strength(issued[index].status),
-                issued[index].go_call_withheld,
+                issued[index].go_call_withheld or issued[index].go_call_withheld_for_uncertainty,
                 issued[index].predicted_significant_wave_height,
             ),
         )

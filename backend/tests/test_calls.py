@@ -136,15 +136,16 @@ class TestThresholdBoundaries:
         What changed is that a Go Call now also requires confidence the reading genuinely
         clears the bar, and a forecast reading *exactly* the bar is a coin flip about it —
         0.52 at one day out and 0.56 at seven, measured on the incoming reading the bar
-        judges. `GO_CALL_CONFIDENCE` wants 0.9, so the day falls to a Watch: still worth
+        judges. `GO_CALL_CONFIDENCE` wants 0.70, so the day falls to a Watch: still worth
         watching, not yet worth a flight. That is ADR 0003's precision trade reaching the one
         condition it had never been applied to.
 
-        **It costs no Gold Day, which is the check that makes it shippable.** The calibration
-        reports Gold Days spanning 3.84-5.68 m and the height bar as never binding; across
-        that whole range this probability runs 0.968 to 1.000 at every Lead Time. The rule
-        bites between 2.75 m and about 3.25 m — days the height bar was never fitted to catch
-        and where a Go Call was least defensible.
+        **It costs no Gold Day, which is the check that makes it shippable.** The floor is
+        fitted to that budget — `analysis/forecast_error/confidence.py` takes the strictest
+        value refusing none of the 37 Gold Days the height bar admits, which the two 3.04 m
+        days of 2016-12-20 and 2018-11-16 set at 0.72. So the rule's active band is exactly
+        the gap between the bar and the smallest Gold Day, 2.75 m to about 3.0 m, where no
+        Gold Day has ever been observed.
         """
         assert status_for(store, client, {**GIANT, "significant_wave_height": value}) == expected
 

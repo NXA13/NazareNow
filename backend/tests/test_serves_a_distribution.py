@@ -30,6 +30,7 @@ import time
 
 from helpers import GIANT, forecast_provider, ingest
 from nazarenow.cycle import INTERVAL_SECONDS
+from nazarenow.distribution import DRAWS, ErrorBudget
 from nazarenow.forecast_error import PATH_VARIABLE
 
 TODAY = "2026-02-09"
@@ -241,6 +242,39 @@ class TestAPredictionCanBeWatchedMoving:
         assert earlier["lead_time_days"] == call_for(client, SOON)["lead_time_days"]
 
 
+class TestARefusedGoCallIsNotLostToABiggerHour:
+    """The tie-break `test_calls.py` already protects, in the dimension #15 added.
+
+    `derive_calls` ranks a day's hours by status, then by whether a Go Call was *withheld*,
+    then by size — because a day whose conditions supported a Go Call somebody refused is a
+    different day from one that failed a condition outright, and it is the more useful of the
+    two to explain. Without the middle term a clean window under a bigger onshore peak loses
+    the day to the peak, and the refusal disappears from the record.
+
+    #15 introduced a second way to refuse one. An hour the *width* refused is a day whose
+    conditions supported a Go Call just as much as one the forecasters refused, so it has to
+    count in the same place — otherwise the ticket reproduces the exact defect the existing
+    tie-break exists to prevent, one term along.
+    """
+
+    def test_an_hour_the_width_refused_outranks_a_taller_hour_that_never_earned_one(
+        self, store, client, tmp_path, monkeypatch
+    ) -> None:
+        monkeypatch.setenv(PATH_VARIABLE, widened(tmp_path, 40.0))
+        ingest(
+            store,
+            forecast_provider({SOON: GIANT}, today=TODAY, peak_but_onshore={SOON: (12,)}),
+        )
+
+        call = call_for(client, SOON)
+
+        assert call["status"] == "watch"
+        assert call["go_call_withheld_for_uncertainty"] is True, (
+            "the day lost its refused hour to the taller onshore peak"
+        )
+        assert any("too uncertain" in reason for reason in call["reasons"])
+
+
 class TestTheEstimateDegradesRatherThanFailing:
     def test_an_unreachable_ensemble_still_produces_a_range(self, store, client) -> None:
         """ADR 0003: a provider being unavailable degrades the uncertainty estimate rather
@@ -262,46 +296,75 @@ class TestThePipelineRunStaysInsideTheForecastCycle:
     served one and nothing in the backend checked the difference.
     """
 
-    def test_a_full_run_finishes_well_inside_one_cycle(self, store) -> None:
-        """A wall-clock bound loose enough not to flake on a shared machine and tight
-        enough to catch the failure that matters, which is an order-of-magnitude one:
-        building a distribution per hour rather than per deciding hour, or a draw count
-        raised without anyone pricing it."""
+    def test_a_run_builds_exactly_the_distributions_its_shape_calls_for(self, store) -> None:
+        """The deterministic statement of criterion 9, pinned exactly rather than bounded.
+
+        An inequality was the first attempt and it was worth almost nothing: at four times
+        the real figure it admitted a doubled `DRAWS`, a doubled hour count, and most of the
+        regressions it was written to catch. This repo pins shipped numbers as literals for
+        the same reason `test_calls.py` gives — a bound that moves with the thing it measures
+        pins nothing.
+
+        The fixture is 14 dates of 24 hours, which is already larger than the ~216 hours a
+        real forecast returns, so a run inside this budget is inside it in production too.
+        """
+        built = 0
+        original = ErrorBudget.distribution
+
+        def counted(self, *args, **kwargs):
+            nonlocal built
+            built += 1
+            return original(self, *args, **kwargs)
+
+        ErrorBudget.distribution = counted
+        try:
+            ingest(store, forecast_provider({SOON: GIANT}, today=TODAY))
+        finally:
+            ErrorBudget.distribution = original
+
+        # Every hour of SOON clears every Go Call condition, so all 24 are priced before the
+        # ranking; the other 13 dates are quiet and pay for their winning hour alone. A run
+        # building one per hour would be 336.
+        assert built == 24 + 13
+
+    def test_the_run_stays_inside_the_cycle_at_that_shape(self, store) -> None:
+        """Criterion 9 itself, as arithmetic rather than as a stopwatch.
+
+        The cost is `DRAWS` model evaluations per distribution, and
+        `analysis/amplification_model/output/inference_cost.csv` measures the point model at
+        tens of microseconds. Projecting the two against the cycle states the criterion
+        without depending on how loaded the machine running the suite happens to be — a
+        wall-clock bound tight enough to be informative would flake on CI, and one loose
+        enough not to flake says nothing.
+
+        Deliberately generous about the per-evaluation cost. The published figure is 13 µs;
+        this allows 200, so the claim survives a machine an order of magnitude slower than
+        the one the CSV was written on and still fails if the *shape* goes wrong.
+        """
+        hours_in_a_real_run = 216
+        # The worst shape the pricing rule permits: every hour of every date clearing every
+        # Go Call condition, so none of them is skipped.
+        worst_case = hours_in_a_real_run * DRAWS * 200e-6
+
+        # A tenth of the cycle, not the whole of it. A Pipeline Run shares the cycle with
+        # three provider requests and their retries, and a run that only just fits leaves
+        # nothing for the fetching that has to happen first.
+        assert worst_case < INTERVAL_SECONDS / 10, (
+            f"{worst_case:.0f}s of a {INTERVAL_SECONDS}s cycle"
+        )
+
+    def test_a_full_run_does_not_hang(self, store) -> None:
+        """The stopwatch, claiming only what a stopwatch can claim.
+
+        CI machines vary by more than an order of magnitude, so this catches a run that
+        hangs or has gone quadratic and nothing subtler. The two tests above are where the
+        shape and the cost are actually pinned.
+        """
         started = time.perf_counter()
         ingest(store, forecast_provider({SOON: GIANT, FAR: GIANT}, today=TODAY))
         elapsed = time.perf_counter() - started
 
         assert elapsed < INTERVAL_SECONDS / 20
-
-    def test_the_run_is_not_quietly_scoring_every_hour(self, store) -> None:
-        """The deterministic half of the same claim, which cannot flake.
-
-        Counts the model evaluations a run actually performs. A distribution costs `DRAWS`
-        of them, so this pins how many distributions get built — the quantity the wall-clock
-        test above can only observe indirectly.
-        """
-        from nazarenow.distribution import DRAWS
-        from nazarenow.models import learned
-
-        calls = 0
-        original = learned.LearnedAmplification.predict
-
-        def counted(self, readings):
-            nonlocal calls
-            calls += 1
-            return original(self, readings)
-
-        learned.LearnedAmplification.predict = counted
-        try:
-            ingest(store, forecast_provider({SOON: GIANT}, today=TODAY))
-        finally:
-            learned.LearnedAmplification.predict = original
-
-        # 14 dates of 24 hours. One date's hours clear every Go Call condition and are
-        # priced before the ranking; every other date pays for its winning hour alone. A
-        # run building one distribution per hour would spend `DRAWS` on all 336.
-        every_hour = DRAWS * 24 * 14
-        assert calls < every_hour / 4, f"{calls} evaluations looks like one per hour"
 
 
 def test_every_date_carries_a_range_including_the_quiet_ones(store, client) -> None:
