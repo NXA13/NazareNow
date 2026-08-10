@@ -40,6 +40,25 @@
       "residual_rmse": 0.6516768177772111
     }
   },
+  "residual": {
+    "all_hours": {
+      "subset": "held-out all hours",
+      "rows": 28426,
+      "mae": 0.207,
+      "rmse": 0.282,
+      "bias": 0.0515
+    },
+    "big_swell": {
+      "subset": "held-out big swell",
+      "rows": 4473,
+      "mae": 0.3557,
+      "rmse": 0.4653,
+      "bias": 0.1116
+    },
+    "regime_m": 3.0,
+    "measured_on": "held-out seasons, against the Proxy Target",
+    "is_a_width": "RMSE, for combining with translations.residual_rmse and the Forecast Error Profile's noise. The mae beside it is the reader's figure, not the width."
+  },
   "method": {
     "ticket": 13,
     "fitted_on": "2011/12-2019/20",

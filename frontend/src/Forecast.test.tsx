@@ -946,3 +946,145 @@ describe('the forecast range', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/forecast/i);
   });
 });
+
+describe('how sure the forecast is', () => {
+  /** Open a day and return its detail panel. */
+  async function detailFor(date: string, days?: unknown[]) {
+    if (days) {
+      server.use(
+        http.get('*/api/conditions/forecast', () => HttpResponse.json({ ...forecast, days })),
+      );
+    }
+    render(<ForecastRange />);
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(date) }));
+    return screen.findByTestId(`confidence-${date}`);
+  }
+
+  it('states the plausible range in metres rather than a bare percentage', async () => {
+    // #15's whole point. "78% confident" is not something a person can act on; the two
+    // heights the forecast plausibly lands between are. Asserted against the fixture so it
+    // cannot pass on static copy.
+    const range = BIG_CALL.plausible_range!;
+
+    const panel = await detailFor(BIG.date);
+
+    expect(panel).toHaveTextContent(`${range.low}${range.unit} to ${range.high}${range.unit}`);
+  });
+
+  it('states the chance of a giant day as a percentage a reader can scan', async () => {
+    // The backend sends a share between 0 and 1 and leaves the rounding here, so the figure
+    // is stated in one place. 0.82 must reach the page as 82%, not as 0.82.
+    const panel = await detailFor(BIG.date);
+
+    expect(panel).toHaveTextContent('82%');
+  });
+
+  it('says the range is not measured beyond the archive, and says why', async () => {
+    // The sixth criterion. The width out there keeps growing at the rate the archive
+    // measured, but nothing was measured about that lead time — and an extrapolation
+    // rendered identically to a measurement is the failure this flag exists to prevent.
+    const beyond = {
+      ...BIG,
+      call: { ...BIG_CALL, uncertainty_measured: false, lead_time_days: 10 },
+    };
+
+    const panel = await detailFor(BIG.date, [forecast.days[0], beyond, forecast.days[2]]);
+
+    expect(panel).toHaveTextContent(/nothing has been measured/i);
+    // And says what the limit actually is, rather than only that there is one.
+    expect(panel).toHaveTextContent(/seven days/i);
+    expect(within(panel).getByRole('status')).toBeInTheDocument();
+  });
+
+  it('does not cry unmeasured for a date inside the archive', async () => {
+    const panel = await detailFor(BIG.date);
+
+    expect(within(panel).queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('separates a Go Call the width refused from one the forecasters refused', async () => {
+    // Both end in a Watch and they are different facts about the world. A reader told only
+    // "Watch" cannot tell a swell the forecasters have not settled on from one the forecast
+    // is simply too uncertain about to book on.
+    const uncertain = {
+      ...BIG,
+      call: {
+        ...BIG_CALL,
+        status: 'watch' as const,
+        go_call_withheld: false,
+        go_call_withheld_for_uncertainty: true,
+      },
+    };
+
+    const panel = await detailFor(BIG.date, [forecast.days[0], uncertain, forecast.days[2]]);
+
+    expect(panel).toHaveTextContent(/too uncertain/i);
+    expect(panel).not.toHaveTextContent(/forecasters do not agree/i);
+  });
+});
+
+describe('how the prediction has moved', () => {
+  async function detailFor(date: string, days: unknown[]) {
+    server.use(
+      http.get('*/api/conditions/forecast', () => HttpResponse.json({ ...forecast, days })),
+    );
+    render(<ForecastRange />);
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(date) }));
+    return screen.findByTestId(`shift-${date}`);
+  }
+
+  const earlier = (value: number, lead: number, issued: string) => ({
+    issued_at: issued,
+    lead_time_days: lead,
+    status: 'watch' as const,
+    predicted_significant_wave_height: { value, unit: 'm' },
+    plausible_range: { low: value - 1.2, high: value + 1.9, unit: 'm' },
+  });
+
+  it('says which way the prediction has moved since the run before', async () => {
+    // #15's eighth criterion. A swell building between runs is the signal a traveller is
+    // waiting for, and a number that simply replaces the previous one shows nothing.
+    const building = {
+      ...BIG,
+      call: {
+        ...BIG_CALL,
+        predicted_significant_wave_height: { value: 6.4, unit: 'm' },
+        previous_runs: [
+          earlier(4.1, 9, '2026-02-08T06:00:00Z'),
+          earlier(5.2, 8, '2026-02-09T06:00:00Z'),
+        ],
+      },
+    };
+
+    const panel = await detailFor(BIG.date, [forecast.days[0], building, forecast.days[2]]);
+
+    expect(panel).toHaveTextContent(/1.2m larger|up 1.2m/i);
+    expect(panel).toHaveTextContent('5.2m');
+  });
+
+  it('says when the prediction has come down as readily as when it has risen', async () => {
+    // A fading swell is as much a reason to act — by not booking — as a building one, and a
+    // display that only knew how to say "building" would be telling half the truth.
+    const fading = {
+      ...BIG,
+      call: {
+        ...BIG_CALL,
+        predicted_significant_wave_height: { value: 3.0, unit: 'm' },
+        previous_runs: [earlier(5.0, 8, '2026-02-09T06:00:00Z')],
+      },
+    };
+
+    const panel = await detailFor(BIG.date, [forecast.days[0], fading, forecast.days[2]]);
+
+    expect(panel).toHaveTextContent(/2m smaller|down 2m/i);
+  });
+
+  it('says nothing about movement on the first run that mentions a date', async () => {
+    // Empty is the honest answer, and a date compared against itself would draw a shift of
+    // exactly zero and read as settled.
+    render(<ForecastRange />);
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
+
+    expect(screen.queryByTestId(`shift-${BIG.date}`)).not.toBeInTheDocument();
+  });
+});

@@ -68,8 +68,36 @@ class TestTheMembersAreKeptApart:
 
         readings = store.model_forecast()[0]["readings"]
 
-        assert sorted(readings) == ["swell_direction", "swell_height", "swell_period"]
+        assert sorted(readings) == [
+            "significant_wave_height",
+            "swell_direction",
+            "swell_height",
+            "swell_period",
+        ]
         assert readings["swell_height"]["unit"] == "m"
+
+    def test_the_members_carry_the_combined_sea_the_distribution_is_built_on(self, store):
+        """#15's third criterion needs the ensemble's disagreement on the quantity the
+        Predictive Distribution actually perturbs, and that is Combined Sea rather than the
+        Swell partition the tier conditions are judged on.
+
+        Not interchangeable, and the gap is not marginal. `feature_reliance.csv` puts
+        Combined Sea at a standardised coefficient of 1.09 against 0.09 or less for every
+        other feature, so a distribution widened by the Swell partition's disagreement would
+        leave the dominant input sitting at one provider's number and report the ensemble as
+        nearly unanimous whatever it said.
+
+        It costs no extra request: the members arrive in the one call `fetch_ensemble`
+        already makes, with one more variable on it.
+        """
+        ingest(store, forecast_provider({SOON: GIANT}, today=TODAY))
+
+        first = min(row["at"] for row in store.model_forecast())
+        at_first = [row for row in store.model_forecast() if row["at"] == first]
+
+        seas = {row["readings"]["significant_wave_height"]["value"] for row in at_first}
+        assert len(seas) > 1, "every member reported the same Combined Sea"
+        assert at_first[0]["readings"]["significant_wave_height"]["unit"] == "m"
 
 
 class TestTheSpreadIsDerivedPerDate:
@@ -111,6 +139,7 @@ class TestTheSpreadIsDerivedPerDate:
 
         for day in body["days"]:
             assert sorted(day["model_spread"]) == [
+                "significant_wave_height",
                 "swell_direction",
                 "swell_height",
                 "swell_period",

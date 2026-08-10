@@ -326,3 +326,44 @@ they stack: a wind reading a Go Call is issued on carries both.
 | `output/drift_by_lead_time.csv` | Drift within Open-Meteo, per variable, Lead Time and subset. |
 | `output/total_error_by_lead_time.csv` | Total error against the Proxy Target. |
 | `output/reference_stability.csv` | Mean drift per calendar month, the evidence behind finding 4. |
+| `confidence.py` | Prices #15's Go Call confidence floor against Gold Day recall. `--check` self-tests the arithmetic offline. |
+| `output/go_call_confidence.csv` | Every Gold Day's chance of clearing the height bar, per Lead Time. |
+
+## Finding 5 — the Go Call confidence floor is priceable, in the direction that can lose a day
+
+Added by #15. The Decision Model withholds a Go Call when too little of the incoming reading's
+Predictive Distribution clears the calibrated height bar, and that floor shipped at 0.9 on the
+belief that it was inert on the days that matter.
+
+It is not inert, and the belief came from measuring the wrong quantity. The probability had
+been read off the Amplification Model's *output* against a bar that judges the *incoming
+reading*; the model amplifies, so every marginal day looked further clear of the bar than it
+was — a 2.75 m sea sitting exactly on the bar read 0.84 rather than 0.52.
+
+Corrected, `confidence.py` prices it against the 38 Gold Days on record, restated into
+operational units through the same Translation `calibrate.py` ships the bars through:
+
+| Floor | Eligible Gold Days losing a Go Call somewhere in Lead Time 1–7 |
+|---|---|
+| 0.60 | 0 |
+| **0.70** | **0** |
+| 0.75 | 2 |
+| 0.80 | 3 |
+| 0.85 | 4 |
+| 0.90 | 7 |
+
+**0.70 is the strictest floor costing no Gold Day**, set by the two 3.04 m days of 2016-12-20
+and 2018-11-16, which bottom out at 0.72 at five days out. Floored to a 0.05 step rather than
+placed on them, for the reason `calibrate.fit_height` gives about the next Gold Day slightly
+smaller. The rule's active band is then exactly the gap between the height bar and the
+smallest Gold Day — 2.75 m to about 3.0 m, where no Gold Day has ever been observed.
+
+One Gold Day, 2021-11-19, peaks at 2.11 m and sits *below* the height bar. It earns no Go Call
+at any confidence because the height condition already refuses it, so this floor is not
+charged for it.
+
+**Only half of ADR 0010's pricing is possible here.** That ADR could score the Watch bar in
+both directions because the Hindcast supplies outcomes. It contains no forecast error, so how
+many *false* Go Calls this floor prevents cannot be scored the same way — that needs a forecast
+archive deeper than the one Big-Wave Season beginning 2025-11-16. What is measured is the
+direction that can lose a Gold Day.

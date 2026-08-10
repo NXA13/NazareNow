@@ -48,12 +48,49 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from nazarenow.models.base import Condition, Prediction
+
+if TYPE_CHECKING:  # `distribution` reaches the model layer, which would import back
+    from nazarenow.distribution import PredictiveDistribution
 
 # Lead Time bands, in days from the day the call was issued.
 CONFIRMED_THROUGH = 1
 GO_CALL_THROUGH = 7
+
+GO_CALL_CONFIDENCE = 0.70
+"""How much of the incoming reading must clear the height bar for a Go Call (#15).
+
+The same trade ADR 0003 makes for Model Spread, arrived at from a third direction: a day the
+system is not confident about falls to a Watch — the swell is still worth watching, it is
+simply not yet worth a flight.
+
+**Priced against Gold Day recall, in ADR 0010's shape.** The strictest floor that refuses a
+Go Call to no Gold Day the height condition admits. `analysis/forecast_error/confidence.py`
+runs the measurement: every Gold Day's own peak sea, restated into operational units, scored
+against the shipped Forecast Error Profile at each Lead Time it could be called at. The
+binding days are the two 3.04 m Gold Days, which bottom out at 0.72 at five days; 0.70 is the
+step below that rather than a bar sitting exactly on them, for the reason `fit_height` gives
+about the next Gold Day half a metre smaller.
+
+**What that costs, and what the obvious value would have cost.** At this floor the rule
+refuses a Go Call in the band between the height bar and the smallest Gold Day — 2.75 m to
+about 3.0 m, where no Gold Day has ever been observed. A day reading exactly the bar is a coin
+flip about clearing it, 0.52 at one day out, and that is the day this exists to stop somebody
+booking. At 0.9 it would instead have taken the Go Call from **7 of the 37 Gold Days the
+height bar admits**, which is a recall loss on precisely the days the system exists to call.
+
+That 0.9 was believed inert, and the belief came from measuring the wrong quantity: the
+probability was read off the model's amplified *output* against a bar that judges the
+*incoming reading*, which flatters every marginal day by the gain. `PredictiveDistribution.
+gold_day_probability` carries that correction and why it matters.
+
+**The precision half is still unpriced, and that limitation is real.** ADR 0010 could price
+the Watch bar in both directions because the Hindcast supplies outcomes; it contains no
+forecast error, so how many *false* Go Calls this floor prevents cannot be scored the same
+way. What is now measured is the half that can be: it costs no Gold Day.
+"""
 
 # A Watch does not require the wind condition. Wind direction a week or more out carries
 # almost no information, and gating a Watch on it made the tier exactly as strict as a Go
@@ -201,6 +238,32 @@ class Call:
 
     unit: str = "m"
 
+    plausible_range_m: tuple[float, float] | None = None
+    """The 5th-to-95th percentile of the Predictive Distribution, in metres (#15).
+
+    `None` when the call was decided without one, which is every caller scoring a Hindcast:
+    what the ocean did carries no forecast to be uncertain about.
+    """
+
+    gold_day_probability: float | None = None
+    """How much of the distribution clears the calibrated height bar."""
+
+    uncertainty_measured: bool | None = None
+    """Whether a measured Forecast Error Profile covered this Lead Time.
+
+    `False` beyond the archive's seven days, where the width is extrapolated. Carried so the
+    interface can be visibly more cautious rather than presenting an extrapolation as
+    evidence, which is #15's sixth criterion.
+    """
+
+    go_call_withheld_for_uncertainty: bool = False
+    """Whether the distribution, not the models, refused a Go Call.
+
+    Deliberately separate from `go_call_withheld`. Both end in a Watch, and a reader deserves
+    to know which happened: the forecasters disagreeing about a swell is a different fact
+    about the world from one forecast being too uncertain to book on.
+    """
+
 
 def conditions_behind(status: Status) -> tuple[Condition, ...]:
     """The conditions a call of this status actually rests on.
@@ -226,7 +289,28 @@ def go_call_is_available(prediction: Prediction, lead_time_days: int) -> bool:
     )
 
 
-def decide(prediction: Prediction, lead_time_days: int, agreement: Agreement) -> Call:
+_UNCERTAIN_REASON = "the forecast is too uncertain at this range to book on"
+
+
+def _confident_enough(distribution: PredictiveDistribution | None) -> bool:
+    """Whether a distribution supports a Go Call, and `True` when there is none.
+
+    Two separate cases return `True` without consulting a probability, and both are
+    deliberate. A caller scoring a Hindcast passes no distribution, because what the ocean
+    did carries no forecast error; and a distribution built without the height bar cannot
+    answer the question, so it does not get to veto on a number it never computed.
+    """
+    if distribution is None or distribution.gold_day_probability is None:
+        return True
+    return distribution.gold_day_probability >= GO_CALL_CONFIDENCE
+
+
+def decide(
+    prediction: Prediction,
+    lead_time_days: int,
+    agreement: Agreement,
+    distribution: PredictiveDistribution | None = None,
+) -> Call:
     """Turn a prediction into a call at the given Lead Time, given what the models said.
 
     A Go Call or a Confirmed statement requires every condition of the rule: wind, because
@@ -264,13 +348,21 @@ def decide(prediction: Prediction, lead_time_days: int, agreement: Agreement) ->
     available = go_call_is_available(prediction, lead_time_days)
     withheld = available and agreement is not Agreement.AGREED
 
+    # The distribution's own refusal, kept apart from the models'. `confident` is True when
+    # there is no distribution at all, because a Hindcast carries no forecast to be uncertain
+    # about and scoring one must not silently become stricter than the rule it is scoring.
+    confident = _confident_enough(distribution)
+    uncertain = available and agreement is Agreement.AGREED and not confident
+
     reasons = prediction.matched + prediction.unmatched
     if available:
         reasons += (AGREEMENT_REASONS[agreement],)
+    if uncertain:
+        reasons += (_UNCERTAIN_REASON,)
 
     if prediction.holds(*GO_CONDITIONS) and lead_time_days <= CONFIRMED_THROUGH:
         status = Status.CONFIRMED
-    elif available and agreement is Agreement.AGREED:
+    elif available and agreement is Agreement.AGREED and confident:
         status = Status.GO
     elif prediction.holds(*WATCH_CONDITIONS) and lead_time_days > CONFIRMED_THROUGH:
         status = Status.WATCH
@@ -284,4 +376,8 @@ def decide(prediction: Prediction, lead_time_days: int, agreement: Agreement) ->
         predicted_significant_wave_height=prediction.significant_wave_height,
         go_call_withheld=withheld,
         model_agreement=agreement,
+        plausible_range_m=None if distribution is None else distribution.range_m,
+        gold_day_probability=None if distribution is None else distribution.gold_day_probability,
+        uncertainty_measured=None if distribution is None else distribution.measured,
+        go_call_withheld_for_uncertainty=uncertain,
     )

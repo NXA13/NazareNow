@@ -179,6 +179,20 @@ export function dayFrom(
             // is about them, which keeps the unusual shape beside the assertion it explains.
             model_agreement: 'agreed' as const,
             go_call_withheld: false,
+            // A range around the predicted height rather than a pair of round numbers, so a
+            // component rendering the wrong end, or rendering the prediction where the range
+            // belongs, is visible. Asymmetric for the same reason.
+            plausible_range: {
+              low: Number((peakHour.swell_height.value - 0.5).toFixed(2)),
+              high: Number((peakHour.swell_height.value + 1.6).toFixed(2)),
+              unit: 'm',
+            },
+            gold_day_probability: 0.82,
+            // Measured by default: the fixture's lead times sit inside the archive, and the
+            // beyond-the-archive case is built by spreading over this in the test about it.
+            uncertainty_measured: true,
+            go_call_withheld_for_uncertainty: false,
+            previous_runs: [],
           },
     peak_swell_height: peakHour.swell_height,
     swell_period_at_peak: peakHour.swell_period,

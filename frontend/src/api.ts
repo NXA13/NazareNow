@@ -80,6 +80,64 @@ export interface DayCall {
    * Not readable off `model_spread`: that is the date's median hour and a call is decided on
    * its best matching hour. Null for a call issued before any of this existed. */
   model_agreement: ModelAgreement | null;
+  /** Where the backend's Predictive Distribution puts this date, 5th to 95th percentile.
+   *
+   * The point of the whole thing: "6.1 metres, 78% confident" is not something a person can
+   * act on, and "most likely 6.1 m, plausibly 5.2 to 7.0" is. Null for a call decided
+   * without a distribution. */
+  plausible_range: HeightRange | null;
+  /** How much of that distribution clears the calibrated height bar.
+   *
+   * A share between 0 and 1, not a percentage — the backend leaves the rounding here on
+   * purpose, so the figure is stated in one place rather than two. */
+  gold_day_probability: number | null;
+  /** Whether a measured forecast error profile covered this call's lead time.
+   *
+   * False past the archive's seven days, where the width is extrapolated. The page has to be
+   * visibly more cautious there rather than presenting an extrapolation as evidence — and
+   * this arrives as a flag rather than being inferred from `lead_time_days`, because
+   * inferring it means keeping a copy of how deep the archive currently is. It grows every
+   * season. */
+  uncertainty_measured: boolean | null;
+  /** Whether the width, rather than the models, refused a Go Call.
+   *
+   * Separate from `go_call_withheld` because both end in a Watch and they are different
+   * facts: forecasters disagreeing about a swell is not the same as one forecast being too
+   * uncertain to book on. */
+  go_call_withheld_for_uncertainty: boolean | null;
+  /** What earlier pipeline runs said about this same date, oldest first.
+   *
+   * The current call is not among them. Empty on the first run that mentions a date, which
+   * is the honest answer rather than a series of one — a date compared against itself would
+   * draw a shift of exactly zero and read as settled.
+   *
+   * Sent rather than accumulated here, because this page has no memory: a traveller opens it
+   * once every few days and the runs it would have needed to watch happened while nobody was
+   * looking. */
+  previous_runs: EarlierCall[];
+}
+
+/** A span between two heights, carrying its unit for the reason `Reading` does. */
+export interface HeightRange {
+  low: number;
+  high: number;
+  unit: string;
+}
+
+/** One superseded call about a date, cut down to what "has this shifted?" needs.
+ *
+ * Deliberately not a whole `DayCall`. The reasons and the withholding flags describe a
+ * judgement that is no longer the system's, and rendering a stale explanation beside a
+ * current one would be worse than not showing the history at all.
+ */
+export interface EarlierCall {
+  issued_at: string;
+  /** How far out the date was when that run spoke. A range narrowing as a date approaches is
+   * the forecast doing its job; the same narrowing at a fixed lead time is not. */
+  lead_time_days: number;
+  status: CallStatus;
+  predicted_significant_wave_height: Reading;
+  plausible_range: HeightRange | null;
 }
 
 /** The three things the wave models can have said about a call's own hour.

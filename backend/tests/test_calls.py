@@ -125,9 +125,28 @@ class TestThresholdBoundaries:
 
     @pytest.mark.parametrize(
         ("value", "expected"),
-        [(HEIGHT_M, "go"), (HEIGHT_M - 0.1, "none")],
+        [(HEIGHT_M, "watch"), (HEIGHT_M - 0.1, "none")],
     )
     def test_wave_height_boundary(self, store, client, value, expected) -> None:
+        """The bar still divides silence from a call; #15 changed which call it buys.
+
+        **The bar has not moved.** 2.75 m still holds the height condition and 2.65 m still
+        fails it, which is what this case pins and what `thresholds.json` still ships.
+
+        What changed is that a Go Call now also requires confidence the reading genuinely
+        clears the bar, and a forecast reading *exactly* the bar is a coin flip about it —
+        0.52 at one day out and 0.56 at seven, measured on the incoming reading the bar
+        judges. `GO_CALL_CONFIDENCE` wants 0.70, so the day falls to a Watch: still worth
+        watching, not yet worth a flight. That is ADR 0003's precision trade reaching the one
+        condition it had never been applied to.
+
+        **It costs no Gold Day, which is the check that makes it shippable.** The floor is
+        fitted to that budget — `analysis/forecast_error/confidence.py` takes the strictest
+        value refusing none of the 37 Gold Days the height bar admits, which the two 3.04 m
+        days of 2016-12-20 and 2018-11-16 set at 0.72. So the rule's active band is exactly
+        the gap between the bar and the smallest Gold Day, 2.75 m to about 3.0 m, where no
+        Gold Day has ever been observed.
+        """
         assert status_for(store, client, {**GIANT, "significant_wave_height": value}) == expected
 
     @pytest.mark.parametrize(
@@ -251,10 +270,32 @@ class TestAGoCallRestsOnTheModelsAgreeing:
     # Two organisations say book the flight and one says the day misses.
     DIVIDED = {**AGREEING, "dwd_ewam": -2.0, "dwd_gwam": -2.0}
 
+    # Combined Sea is held at `AGREEING` wherever `DIVIDED` is used below, so these cases stay
+    # about the thing they are named for.
+    #
+    # #15 made the ensemble's Combined Sea disagreement widen the Predictive Distribution, and
+    # the fixture drives every member's variables from one offset. Left alone, "DWD reads the
+    # period four seconds shorter" also became "DWD reads the sea two metres smaller", which
+    # would refuse a Go Call through the *width* — a second, unrelated rule — and these tests
+    # would go on passing while no longer testing the period gate at all.
+    #
+    # The two spreads really are independent: `analysis/model_spread/` measured providers
+    # 0.74 m apart on height while agreeing to 0.22 s on period.
+    SEA_AGREED = AGREEING
+
     def test_a_day_the_models_divide_over_is_watched_rather_than_booked_on(
         self, store, client
     ) -> None:
-        assert status_for(store, client, GIANT, ensemble_offsets=self.DIVIDED) == "watch"
+        assert (
+            status_for(
+                store,
+                client,
+                GIANT,
+                ensemble_offsets=self.DIVIDED,
+                ensemble_sea_offsets=self.SEA_AGREED,
+            )
+            == "watch"
+        )
 
     def test_the_same_day_earns_a_go_call_when_every_organisation_clears_the_bar(
         self, store, client
@@ -271,7 +312,13 @@ class TestAGoCallRestsOnTheModelsAgreeing:
         and would need a number the record cannot supply — see `analysis/model_spread/`,
         which measured its one sample on a 0.4 m summer sea.
         """
-        under = status_for(store, client, GIANT, ensemble_offsets=self.DIVIDED)
+        under = status_for(
+            store,
+            client,
+            GIANT,
+            ensemble_offsets=self.DIVIDED,
+            ensemble_sea_offsets=self.SEA_AGREED,
+        )
         # The same members, four seconds apart as before, but around a 20 s swell: the
         # gloomiest of them still reads 16 s.
         over = status_for(
@@ -279,6 +326,7 @@ class TestAGoCallRestsOnTheModelsAgreeing:
             client,
             {**GIANT, "swell_period": 20.0},
             ensemble_offsets=self.DIVIDED,
+            ensemble_sea_offsets=self.SEA_AGREED,
         )
 
         assert (under, over) == ("watch", "go")
@@ -291,7 +339,14 @@ class TestAGoCallRestsOnTheModelsAgreeing:
         fall: a Watch requires a Lead Time beyond the Confirmed band, so gating this tier
         would leave a user standing at Praia do Norte told nothing at all."""
         assert (
-            status_for(store, client, GIANT, date=TODAY, ensemble_offsets=self.DIVIDED)
+            status_for(
+                store,
+                client,
+                GIANT,
+                date=TODAY,
+                ensemble_offsets=self.DIVIDED,
+                ensemble_sea_offsets=self.SEA_AGREED,
+            )
             == "confirmed"
         )
 
@@ -318,7 +373,15 @@ class TestAGoCallRestsOnTheModelsAgreeing:
     ) -> None:
         """ "The models disagree" and "we could not reach enough models" are different facts
         about a call, and a reader deciding whether to keep watching a swell is owed which."""
-        ingest(store, forecast_provider({SOON: GIANT}, today=TODAY, ensemble_offsets=self.DIVIDED))
+        ingest(
+            store,
+            forecast_provider(
+                {SOON: GIANT},
+                today=TODAY,
+                ensemble_offsets=self.DIVIDED,
+                ensemble_sea_offsets=self.SEA_AGREED,
+            ),
+        )
         divided = " ".join(calls(client)[SOON]["reasons"])
 
         ingest(store, forecast_provider({SOON: GIANT}, today=TODAY, ensemble_status=503))
@@ -332,7 +395,15 @@ class TestAGoCallRestsOnTheModelsAgreeing:
     ) -> None:
         """Carried on the call rather than left to be read off `model_spread`, which is the
         date's median hour — a different hour from the one that earned the call."""
-        ingest(store, forecast_provider({SOON: GIANT}, today=TODAY, ensemble_offsets=self.DIVIDED))
+        ingest(
+            store,
+            forecast_provider(
+                {SOON: GIANT},
+                today=TODAY,
+                ensemble_offsets=self.DIVIDED,
+                ensemble_sea_offsets=self.SEA_AGREED,
+            ),
+        )
 
         assert calls(client)[SOON]["model_agreement"] == "divided"
 
@@ -346,7 +417,15 @@ class TestAGoCallRestsOnTheModelsAgreeing:
         reports `divided` while the models decided nothing — the disagreement is an arithmetic
         consequence of the day being small, not a finding about it.
         """
-        ingest(store, forecast_provider({SOON: GIANT}, today=TODAY, ensemble_offsets=self.DIVIDED))
+        ingest(
+            store,
+            forecast_provider(
+                {SOON: GIANT},
+                today=TODAY,
+                ensemble_offsets=self.DIVIDED,
+                ensemble_sea_offsets=self.SEA_AGREED,
+            ),
+        )
         refused = calls(client)[SOON]
 
         ingest(
@@ -384,6 +463,7 @@ class TestAGoCallRestsOnTheModelsAgreeing:
                 today=TODAY,
                 peak_but_onshore={SOON: (12,)},
                 ensemble_offsets=self.DIVIDED,
+                ensemble_sea_offsets=self.SEA_AGREED,
             ),
         )
 
@@ -399,7 +479,15 @@ class TestAGoCallRestsOnTheModelsAgreeing:
         """A flat summer Tuesday earns no call for reasons that have nothing to do with the
         ensemble, and burying its real reasons under one that never applied would make the
         explanation worse."""
-        ingest(store, forecast_provider({SOON: QUIET}, today=TODAY, ensemble_offsets=self.DIVIDED))
+        ingest(
+            store,
+            forecast_provider(
+                {SOON: QUIET},
+                today=TODAY,
+                ensemble_offsets=self.DIVIDED,
+                ensemble_sea_offsets=self.SEA_AGREED,
+            ),
+        )
 
         assert not any("wave models" in reason for reason in calls(client)[SOON]["reasons"])
 

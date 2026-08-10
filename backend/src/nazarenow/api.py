@@ -137,6 +137,19 @@ class Reading(BaseModel):
     unit: str
 
 
+class HeightRange(BaseModel):
+    """A span between two heights, carrying its unit for the reason `Reading` does.
+
+    Its own model rather than two bare floats on the call, so the pair cannot be rendered
+    half-present: a low with no high describes a range with one end, and the interface would
+    have no honest thing to draw for it.
+    """
+
+    low: float
+    high: float
+    unit: str
+
+
 class CurrentConditions(BaseModel):
     observed_at: str
     """The older of the two providers' observation times — the whole picture is at
@@ -185,6 +198,26 @@ class ForecastHour(BaseModel):
     wind_direction: Reading
 
 
+class EarlierCall(BaseModel):
+    """One superseded call about a date, cut down to what "has this shifted?" needs.
+
+    Deliberately not a whole `DayCall`. The reasons, the calibration provenance and the two
+    withholding flags all describe a judgement that is no longer the system's, and sending
+    them would invite an interface to render a stale explanation beside a current one. What a
+    reader is comparing is the number, the range and the tier.
+    """
+
+    issued_at: str
+    lead_time_days: int
+    """How far out this date was when that run spoke, which is what makes the series
+    readable: a range narrowing from ten days out to three is the forecast doing its job,
+    and the same narrowing at a fixed Lead Time would be something else entirely."""
+
+    status: Status
+    predicted_significant_wave_height: Reading
+    plausible_range: HeightRange | None
+
+
 class DayCall(BaseModel):
     status: Status
     lead_time_days: int
@@ -217,6 +250,60 @@ class DayCall(BaseModel):
     Null only for a call issued before the Decision Model consulted the models at all. Those
     calls were decided on this system's own forecast alone, and the interface must not present
     them as agreed."""
+
+    plausible_range: HeightRange | None
+    """Where the Predictive Distribution puts this date, 5th to 95th percentile (#15).
+
+    The ticket's fourth criterion, and the reason it exists: "6.1 metres, 78% confident" is
+    not something a person can act on, and "most likely 6.1 m, plausibly 5.2 to 7.0" is. The
+    percentage was never the useful half.
+
+    Null for a call decided without a distribution, which today means one issued before the
+    pipeline built them."""
+
+    gold_day_probability: float | None
+    """How much of that distribution clears the calibrated height bar (#15's fifth criterion).
+
+    A share between 0 and 1, not a percentage, so the interface owns the rounding — the
+    difference between 0.94 and "94%" is presentation, and the backend guessing at it once
+    left a threshold restated in two places."""
+
+    uncertainty_measured: bool | None
+    """Whether a measured Forecast Error Profile covered this call's Lead Time (#15's sixth).
+
+    False past the archive's seven days. The width out there is still honest — it keeps
+    growing at the rate the archive measured, and the centre holds at the last correction it
+    measured — but nothing was measured about *that* Lead Time, and the interface has to be
+    able to be visibly more cautious rather than presenting an extrapolation as evidence.
+
+    Sent as a flag rather than left for the interface to infer from `lead_time_days`, because
+    inferring it means hardcoding the archive's depth in a second place. The archive grows
+    every season; the page must not carry its own copy of how deep it currently is."""
+
+    go_call_withheld_for_uncertainty: bool | None
+    """Whether the width, rather than the models, refused a Go Call (#15).
+
+    Deliberately separate from `go_call_withheld` above. Both end in a Watch, and a reader
+    deserves to know which: the forecasters disagreeing about a swell is a different fact
+    about the world from one forecast being too uncertain to book on. Collapsing them would
+    make the same badge mean two things.
+
+    Null for a call issued before the distribution could refuse anything."""
+
+    previous_runs: list[EarlierCall]
+    """What earlier Pipeline Runs said about this same date, oldest first (#15's eighth).
+
+    The current call is *not* in this list — it is the object these hang off. Empty on the
+    first run that mentions a date, which is the honest answer rather than a series of one.
+
+    Sent rather than left to the interface to accumulate, because the interface has no
+    memory: it is a page a traveller opens once every few days, and the succession of runs it
+    would need to have watched happened while nobody was looking. The store keeps every call
+    ever made (ADR 0005) precisely so this can be answered from the record.
+
+    Bounded to the last few runs. A date approached over a fortnight of three-hourly runs
+    accumulates more than a hundred calls, and what a reader is asking is "has this been
+    growing or fading", which the recent ones answer."""
 
 
 class DaySpread(BaseModel):
@@ -412,11 +499,41 @@ def summarise_spread(stored: dict[str, dict[str, Any]]) -> dict[str, DaySpread]:
     }
 
 
+def earlier_calls(previous: list[dict[str, Any]]) -> list[EarlierCall]:
+    """The superseded calls about a date, newest excluded, oldest first.
+
+    The store hands back the recent window including the call that is current; that one is
+    the object these hang off, so sending it twice would let an interface draw a date as
+    having shifted from itself.
+    """
+    return [
+        EarlierCall(
+            issued_at=call["issued_at"],
+            lead_time_days=call["lead_time_days"],
+            status=Status(call["status"]),
+            predicted_significant_wave_height=Reading(
+                value=call["predicted_significant_wave_height"], unit=call["unit"]
+            ),
+            plausible_range=(
+                None
+                if call["plausible_range_m"] is None
+                else HeightRange(
+                    low=call["plausible_range_m"][0],
+                    high=call["plausible_range_m"][1],
+                    unit=call["unit"],
+                )
+            ),
+        )
+        for call in previous[:-1]
+    ]
+
+
 def summarise(
     date: str,
     hours: list[dict[str, Any]],
     call: dict[str, Any] | None,
     spread: dict[str, dict[str, Any]],
+    previous: list[dict[str, Any]] | None = None,
 ) -> ForecastDay:
     """Reduce a day's hours to the figures a user scans the overview for, plus its call.
 
@@ -443,6 +560,22 @@ def summarise(
                 None if call["model_agreement"] is None else Agreement(call["model_agreement"])
             ),
             go_call_withheld=call["go_call_withheld"],
+            plausible_range=(
+                None
+                if call["plausible_range_m"] is None
+                else HeightRange(
+                    low=call["plausible_range_m"][0],
+                    high=call["plausible_range_m"][1],
+                    # The distribution is built in the unit the call is reported in, and
+                    # sourced from the call rather than written as "m" so the two cannot
+                    # disagree about what the numbers beside them mean.
+                    unit=call["unit"],
+                )
+            ),
+            gold_day_probability=call["gold_day_probability"],
+            uncertainty_measured=call["uncertainty_measured"],
+            go_call_withheld_for_uncertainty=call["go_call_withheld_for_uncertainty"],
+            previous_runs=earlier_calls(previous or []),
         ),
         peak_swell_height=Reading(**peak["readings"]["swell_height"]),
         swell_period_at_peak=Reading(**peak["readings"]["swell_period"]),
@@ -471,6 +604,9 @@ def forecast(store: Annotated[Store, Depends(get_store)]) -> Forecast:
     by_date = group_by_date(hours)
     stored = store.calls()
     disagreement = store.spreads()
+    # The succession of runs behind each date (#15's eighth criterion). Read once for every
+    # date rather than per day, so a fortnight of forecast is one query rather than fourteen.
+    succession = store.recent_calls()
 
     # A forecast with no calls behind it is still served. ADR 0005 asks that the site stay
     # up and honest, and the days, their hours and their heights are all real; failing the
@@ -493,7 +629,13 @@ def forecast(store: Annotated[Store, Depends(get_store)]) -> Forecast:
         if newest is None or newest.get("calibration") is None
         else Calibration(**newest["calibration"]),
         days=[
-            summarise(day, by_date[day], stored.get(day), disagreement.get(day, {}))
+            summarise(
+                day,
+                by_date[day],
+                stored.get(day),
+                disagreement.get(day, {}),
+                succession.get(day),
+            )
             for day in sorted(by_date)
         ],
     )
