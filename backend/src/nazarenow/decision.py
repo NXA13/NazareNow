@@ -84,7 +84,7 @@ height bar admits**, which is a recall loss on precisely the days the system exi
 That 0.9 was believed inert, and the belief came from measuring the wrong quantity: the
 probability was read off the model's amplified *output* against a bar that judges the
 *incoming reading*, which flatters every marginal day by the gain. `PredictiveDistribution.
-gold_day_probability` carries that correction and why it matters.
+height_bar_probability` carries that correction and why it matters.
 
 **The precision half is still unpriced, and that limitation is real.** ADR 0010 could price
 the Watch bar in both directions because the Hindcast supplies outcomes; it contains no
@@ -245,8 +245,13 @@ class Call:
     what the ocean did carries no forecast to be uncertain about.
     """
 
-    gold_day_probability: float | None = None
-    """How much of the distribution clears the calibrated height bar."""
+    height_bar_probability: float | None = None
+    """How much of the distribution clears the calibrated height bar.
+
+    The height condition alone — not the swell period, direction or wind conditions that a Go
+    Call also rests on. `PredictiveDistribution.height_bar_probability` records why the wider
+    number is not available (#66).
+    """
 
     uncertainty_measured: bool | None = None
     """Whether a measured Forecast Error Profile covered this Lead Time.
@@ -300,9 +305,9 @@ def _confident_enough(distribution: PredictiveDistribution | None) -> bool:
     did carries no forecast error; and a distribution built without the height bar cannot
     answer the question, so it does not get to veto on a number it never computed.
     """
-    if distribution is None or distribution.gold_day_probability is None:
+    if distribution is None or distribution.height_bar_probability is None:
         return True
-    return distribution.gold_day_probability >= GO_CALL_CONFIDENCE
+    return distribution.height_bar_probability >= GO_CALL_CONFIDENCE
 
 
 def decide(
@@ -377,7 +382,9 @@ def decide(
         go_call_withheld=withheld,
         model_agreement=agreement,
         plausible_range_m=None if distribution is None else distribution.range_m,
-        gold_day_probability=None if distribution is None else distribution.gold_day_probability,
+        height_bar_probability=(
+            None if distribution is None else distribution.height_bar_probability
+        ),
         uncertainty_measured=None if distribution is None else distribution.measured,
         go_call_withheld_for_uncertainty=uncertain,
     )

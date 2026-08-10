@@ -164,7 +164,11 @@ CREATE TABLE IF NOT EXISTS day_call (
     plausible_low_m     REAL,
     plausible_high_m    REAL,
     -- How much of that distribution cleared the calibrated height bar (#15).
-    gold_day_probability REAL,
+    --
+    -- The height condition alone. Named `gold_day_probability` until #66, which found the
+    -- name claiming all four Go conditions for a number that prices one; the stored values
+    -- are unchanged and were carried across by the rename in `_migrate`.
+    height_bar_probability REAL,
     -- Whether a measured Forecast Error Profile covered this call's Lead Time.
     --
     -- False past the archive's seven days, where the width is extrapolated and the centre
@@ -256,7 +260,7 @@ CALL_COLUMNS = (
     "date, issued_at, issued_for_date, status, lead_time_days, reasons, "
     "predicted_significant_wave_height, unit, amplification_model, calibrated, calibration, "
     "model_agreement, go_call_withheld, plausible_low_m, plausible_high_m, "
-    "gold_day_probability, uncertainty_measured, go_call_withheld_for_uncertainty"
+    "height_bar_probability, uncertainty_measured, go_call_withheld_for_uncertainty"
 )
 
 RUN_COLUMNS = "id, started_at, finished_at, outcome, failure_kind, failure_detail"
@@ -408,6 +412,24 @@ class Store:
         if "go_call_withheld" not in columns:
             connection.execute("ALTER TABLE day_call ADD COLUMN go_call_withheld INTEGER")
 
+        # #66 renames one of #15's columns, and this is the first migration here that
+        # carries data instead of admitting there is none. The others are nullable and
+        # not backfilled because the fact they record did not exist for older rows. This
+        # one did exist: the quantity is unchanged — the share of the incoming reading's
+        # draws clearing the height bar — and only the name was wrong, claiming all four
+        # Gold Day conditions where one was measured. Adding a fresh column beside the old
+        # one would split a single series in two at an arbitrary date, on the record #11
+        # scores.
+        #
+        # Ordered before the add-column loop below so the renamed column is already
+        # present when the loop checks, and guarded on the old name so a restart does not
+        # try to rename a column that is no longer there.
+        if "gold_day_probability" in columns:
+            connection.execute(
+                "ALTER TABLE day_call RENAME COLUMN gold_day_probability TO height_bar_probability"
+            )
+            columns = {row["name"] for row in connection.execute("PRAGMA table_info(day_call)")}
+
         # #15, nullable and not backfilled for the same reason as every column above it. A
         # call issued before the pipeline built distributions was decided on a point
         # estimate; computing a range for it today would use a profile, a fit and an
@@ -416,7 +438,7 @@ class Store:
         for column, kind in (
             ("plausible_low_m", "REAL"),
             ("plausible_high_m", "REAL"),
-            ("gold_day_probability", "REAL"),
+            ("height_bar_probability", "REAL"),
             ("uncertainty_measured", "INTEGER"),
             ("go_call_withheld_for_uncertainty", "INTEGER"),
         ):
@@ -644,7 +666,7 @@ class Store:
                 "INSERT INTO day_call (run_id, date, issued_at, issued_for_date, status, "
                 "lead_time_days, reasons, predicted_significant_wave_height, unit, "
                 "amplification_model, calibrated, calibration, model_agreement, "
-                "go_call_withheld, plausible_low_m, plausible_high_m, gold_day_probability, "
+                "go_call_withheld, plausible_low_m, plausible_high_m, height_bar_probability, "
                 "uncertainty_measured, go_call_withheld_for_uncertainty) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [
@@ -664,7 +686,7 @@ class Store:
                         call["model_agreement"],
                         int(call["go_call_withheld"]),
                         *_range_columns(call.get("plausible_range_m")),
-                        call.get("gold_day_probability"),
+                        call.get("height_bar_probability"),
                         _optional_flag(call.get("uncertainty_measured")),
                         _optional_flag(call.get("go_call_withheld_for_uncertainty")),
                     )
@@ -945,7 +967,7 @@ class Store:
                 if row["plausible_low_m"] is None or row["plausible_high_m"] is None
                 else (row["plausible_low_m"], row["plausible_high_m"])
             ),
-            "gold_day_probability": row["gold_day_probability"],
+            "height_bar_probability": row["height_bar_probability"],
             "uncertainty_measured": (
                 None if row["uncertainty_measured"] is None else bool(row["uncertainty_measured"])
             ),

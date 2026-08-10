@@ -187,7 +187,7 @@ export function dayFrom(
               high: Number((peakHour.swell_height.value + 1.6).toFixed(2)),
               unit: 'm',
             },
-            gold_day_probability: 0.82,
+            height_bar_probability: 0.82,
             // Measured by default: the fixture's lead times sit inside the archive, and the
             // beyond-the-archive case is built by spreading over this in the test about it.
             uncertainty_measured: true,

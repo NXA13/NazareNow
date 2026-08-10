@@ -90,7 +90,7 @@ export interface DayCall {
    *
    * A share between 0 and 1, not a percentage — the backend leaves the rounding here on
    * purpose, so the figure is stated in one place rather than two. */
-  gold_day_probability: number | null;
+  height_bar_probability: number | null;
   /** Whether a measured forecast error profile covered this call's lead time.
    *
    * False past the archive's seven days, where the width is extrapolated. The page has to be

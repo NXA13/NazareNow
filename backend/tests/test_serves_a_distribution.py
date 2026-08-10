@@ -91,16 +91,16 @@ class TestTheUserIsGivenARangeRatherThanANumber:
     def test_the_chance_of_a_gold_day_is_stated(self, store, client) -> None:
         ingest(store, forecast_provider({SOON: GIANT}, today=TODAY))
 
-        assert 0.0 <= call_for(client, SOON)["gold_day_probability"] <= 1.0
+        assert 0.0 <= call_for(client, SOON)["height_bar_probability"] <= 1.0
 
     def test_a_giant_day_is_likelier_to_reach_gold_than_a_quiet_one(self, store, client):
         """Otherwise the number is present and means nothing."""
         ingest(store, forecast_provider({SOON: GIANT}, today=TODAY))
 
-        giant = call_for(client, SOON)["gold_day_probability"]
+        giant = call_for(client, SOON)["height_bar_probability"]
         quiet = call_for(client, "2026-02-13")
 
-        assert quiet is None or giant > quiet["gold_day_probability"]
+        assert quiet is None or giant > quiet["height_bar_probability"]
 
 
 class TestBeyondTheArchiveTheSystemSaysSo:

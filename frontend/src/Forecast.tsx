@@ -285,9 +285,16 @@ function CallDetail({ day, model }: { day: ForecastDay; model: string | null }) 
  * backend has already done. The two heights the day plausibly lands between say the same
  * thing in terms somebody booking a flight can use.
  *
- * **The chance of a giant day is rounded here and nowhere else.** The backend sends a share
- * between 0 and 1 on purpose, so the figure a reader sees is stated in one place — a
- * percentage computed on both sides is two copies of a number that can drift apart.
+ * **The percentage is rounded here and nowhere else.** The backend sends a share between 0
+ * and 1 on purpose, so the figure a reader sees is stated in one place — a percentage
+ * computed on both sides is two copies of a number that can drift apart.
+ *
+ * **It is a chance of clearing the minimum size, not a chance of a giant day (#66).** A giant
+ * day needs four conditions and this prices one of them. The three it leaves out cannot be
+ * priced: the Swell partition is not archived at any Lead Time, so there is no measured
+ * forecast error to put a distribution around swell period — which is the condition that
+ * actually binds. Saying "likely to be a giant day" here would be the system's largest
+ * overclaim, on its most load-bearing number, so the copy says size and says what it omits.
  *
  * A call decided without a distribution renders nothing rather than an empty band. Those are
  * calls issued before the pipeline built them, and drawing a range of zero width for one
@@ -307,14 +314,22 @@ function Confidence({ day }: { day: ForecastDay }) {
           {range.unit} to {formatValue(range.high)}
           {range.unit}
         </strong>
-        {call.gold_day_probability !== null && (
+        {call.height_bar_probability !== null && (
           <>
             {' '}
-            — about <strong>{Math.round(call.gold_day_probability * 100)}%</strong> likely to reach
-            the size this system calls a giant day.
+            — about <strong>{Math.round(call.height_bar_probability * 100)}%</strong> likely to
+            clear the minimum size for a giant day.
           </>
         )}
       </p>
+      {/* Size is one condition of four, and the only one this figure prices. Left unsaid, a
+          reader would reasonably take the percentage for the chance of a giant day. */}
+      {call.height_bar_probability !== null && (
+        <p className="confidence-scope">
+          Size only. The swell period, swell direction and wind a giant day also needs are not part
+          of that figure.
+        </p>
+      )}
       {/* Which of the two refusals produced this Watch. Both end in the same badge, and a
           reader told only "Watch" cannot tell a swell the forecasters have not settled on
           from one the forecast is simply too uncertain about to book on. */}
