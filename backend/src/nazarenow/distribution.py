@@ -289,6 +289,31 @@ class ErrorBudget:
         side. That ordering is the whole point: it is how a metre of forecast error becomes
         1.083 metres of uncertainty about the wave a person would fly for.
 
+        **One of the model's eight features is perturbed; the other seven are not** (#68).
+        #15's first criterion says *inputs*, plural, so which ones are left alone belongs
+        here rather than in whatever a reader infers from the loop. Four of the seven have no
+        choice about it: ADR 0004's #14 amendment records that the Swell partition is not
+        archived at any Lead Time, so there is no measured profile to perturb the swell
+        height, period or bearings by.
+
+        **Wind is archived — out to four trustworthy days — and is still left fixed, on
+        purpose.** Perturbing it is worth about **1% of the plausible range's width**: one to
+        two centimetres on a range one and a half to two metres wide, at every Lead Time in
+        that window and in both regimes. `analysis/forecast_error/wind_sensitivity.py`
+        measures it against the shipped sampler and writes `output/wind_perturbation.csv`;
+        `test_wind_is_carried_through.py` fails if it stops being true. Wind's standardised
+        coefficient is -0.0569 against Combined Sea's 1.0893, so a large wind error is a small
+        height error, and it then enters in quadrature with the 0.356 m Amplification residual,
+        which flattens it again. It reaches no verdict either way: `height_bar_probability` is
+        read off `offshore_samples`, which is the perturbed sea alone.
+
+        Buying that 1% would cost a methodological step at a fixed calendar boundary. The wind
+        profile is weather to four days and a provider artefact past it — finding 4 of
+        `analysis/forecast_error/README.md` — while a forecast here runs to fourteen, so days
+        five onward would have to widen by a different rule than days one to four.
+        `_unmeasured_drift` argues at length against exactly that, over a quarter of a metre;
+        this would be a hundredth of the width.
+
         `model_spread` is the fourth term and the only one measured live rather than shipped:
         what the independent wave models said about *this* hour. `_drift_floor` records why it
         may raise the drift and never lower it. `None` — an unreachable ensemble, too few

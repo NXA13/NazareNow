@@ -165,3 +165,30 @@ This does not reopen the decision above. The separation of Amplification from fo
 what makes the limitation legible in the first place: because the profile is a distinct term
 measured per quantity, "which conditions can we be uncertain about" has a precise answer
 instead of a vague one.
+
+## Amendment: wind is archived and still not perturbed, at a measured price (ticket #68)
+
+The #14 amendment above establishes that the profile "can be measured for Combined Sea and
+wind". What ships perturbs only Combined Sea. For the four Swell-partition features that is
+forced; for wind it is a choice, and this records it as one.
+
+**Priced before taken.** `analysis/forecast_error/wind_sensitivity.py` perturbs both wind
+variables at their own measured drift and reports the change in the plausible range: **0.86% to
+1.26%** of its width — 0.010 m to 0.023 m on a range 1.09 m to 2.22 m wide — at every Lead Time
+inside the four trustworthy days and in both regimes. Below the 0.1 m the interface rounds to.
+It also reaches no verdict: the probability a tier rests on is read off the perturbed incoming
+reading rather than the model's output, so wind cannot move a call however it is treated.
+
+**What buying it would cost is a boundary.** The wind profile is weather to four days and a
+provider artefact past it (#14, finding 4), while a forecast here runs to fourteen. Perturbing
+wind would therefore widen days one to four by one rule and days five onward by another, putting
+a methodological step at a fixed calendar boundary — which the previous amendment already
+refuses over a quarter of a metre, on the grounds that #15 asks users to read a moving range as
+news about the swell. Refusing it again over a hundredth of the width applies the rule already
+here rather than adding one.
+
+The decision above is untouched, and this is an instance of it working as intended: a profile
+measured per quantity makes "what would perturbing this input buy" a question with a number
+attached, rather than a matter of taste. The number is committed, the script that produces it
+is committed, and `backend/tests/test_wind_is_carried_through.py` fails if either half of the
+justification stops holding.

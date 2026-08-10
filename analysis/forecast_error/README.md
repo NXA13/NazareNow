@@ -328,6 +328,8 @@ they stack: a wind reading a Go Call is issued on carries both.
 | `output/reference_stability.csv` | Mean drift per calendar month, the evidence behind finding 4. |
 | `confidence.py` | Prices #15's Go Call confidence floor against Gold Day recall. `--check` self-tests the arithmetic offline. |
 | `output/go_call_confidence.csv` | Every Gold Day's chance of clearing the height bar, per Lead Time. |
+| `wind_sensitivity.py` | Prices perturbing wind, the one omitted input that is archived. `--check` holds its sampler to the shipped one. |
+| `output/wind_perturbation.csv` | What wind perturbation would add to the plausible range, per fixture and Lead Time. |
 
 ## Finding 5 — the Go Call confidence floor is priceable, in the direction that can lose a day
 
@@ -367,3 +369,49 @@ both directions because the Hindcast supplies outcomes. It contains no forecast 
 many *false* Go Calls this floor prevents cannot be scored the same way — that needs a forecast
 archive deeper than the one Big-Wave Season beginning 2025-11-16. What is measured is the
 direction that can lose a Gold Day.
+
+## Finding 6 — perturbing wind is worth about 1% of the range, and would cost a boundary
+
+Added by #68. `ErrorBudget.distribution` perturbs one of the Amplification Model's eight
+features and carries the other seven through unchanged. Four of those seven cannot be
+perturbed by anything: the Swell partition is not archived at any Lead Time, as the section
+above records. **Wind can be**, out to the four days finding 4 leaves trustworthy, and the
+branch that shipped #15 left it fixed without saying why.
+
+`wind_sensitivity.py` prices it, perturbing both wind variables at their own measured `noise`
+and reading the change in the p5–p95 width:
+
+| Fixture | 1 d | 2 d | 3 d | 4 d |
+|---|---|---|---|---|
+| giant, 5.0 m | 0.86% | 0.79% | 0.85% | **1.02%** |
+| ordinary, 2.2 m | 0.91% | 0.97% | 0.97% | **1.26%** |
+
+In metres that is 0.010 m to 0.023 m on a range 1.09 m to 2.22 m wide — below the 0.1 m the
+interface rounds to, at every Lead Time in the window and in both regimes.
+
+**Two things make it that small, and only one of them is the coefficient.** Wind's
+standardised coefficient is −0.0569 against Combined Sea's 1.0893
+(`analysis/amplification_model/output/feature_reliance.csv`), so even the widest measured wind
+drift — 8.75 km/h and 36.5° at lead 4 on big swell, applied to both variables at once and in
+their worst-aligned directions — moves a prediction by about 0.11 m on either fixture. That
+0.11 m then joins terms that are already several times larger: the p5–p95 widths above
+correspond to a combined sigma of roughly 0.43 m on the ordinary fixture and 0.68 m on the
+giant one at lead 4, and a quadrature term is worth its *square* against those. A term does not
+have to be small to disappear; it has to be small beside the terms it joins. The table is the
+measurement — this paragraph is why the table reads as it does.
+
+It also reaches no verdict. `height_bar_probability` is read off the perturbed incoming
+reading, not the model's output, so wind cannot move a tier however it is treated.
+
+**The cost of buying that 1% is a step at a fixed calendar boundary.** The wind profile is
+weather to four days and a provider artefact past it; a forecast here runs to fourteen. So days
+five onward would widen by a different rule than days one to four, and #15's eighth criterion
+asks a user to read exactly that kind of movement as news about the swell.
+`distribution._unmeasured_drift` refuses the same trade over a quarter of a metre — refusing it
+over a hundredth of the width follows from the rule already in place, rather than being a new
+judgement.
+
+So wind stays unperturbed, `distribution.py` says so and cites this number, and
+`backend/tests/test_wind_is_carried_through.py` fails if either half stops holding — the
+coefficient growing, the profile coming back wider, or a refit introducing a wind feature the
+measurement above does not cover.
