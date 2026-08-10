@@ -460,6 +460,95 @@ class TestAStoreWrittenBeforeThisTicket:
             reader.close()
 
 
+class TestAStoreWrittenWhileTheProbabilityWasMisnamed:
+    """#66 renames a column that already holds scored history, so the migration has to
+    carry the values across rather than start the series again.
+
+    The quantity never changed — it was always the share of the incoming reading's draws
+    clearing the height bar. Only the name was wrong, claiming all four Gold Day
+    conditions where one was measured. Adding a fresh column and leaving the old one
+    behind would split one series in two at an arbitrary date, and #11 scores calls off
+    exactly this record.
+    """
+
+    def old_database(self, tmp_path):
+        """A store in the shape #15 left it: today's schema, with the column misnamed.
+
+        Built by opening a current store and renaming the column backwards, rather than
+        freezing #15's DDL into this file. A frozen copy of a schema is a second
+        declaration of it, and it rots the moment an unrelated column is added — which is
+        the failure mode #64 is open about.
+        """
+        path = tmp_path / "pre-66.db"
+        store = Store(path)
+        store.close()
+
+        connection = sqlite3.connect(path)
+        connection.execute(
+            "ALTER TABLE day_call RENAME COLUMN height_bar_probability TO gold_day_probability"
+        )
+        connection.execute(
+            "INSERT INTO day_call (date, issued_at, issued_for_date, status, lead_time_days, "
+            "reasons, predicted_significant_wave_height, unit, amplification_model, calibrated, "
+            "gold_day_probability) "
+            "VALUES ('2026-02-13', '2026-02-09T06:00', '2026-02-09', 'go', 4, '[]', 6.1, 'm', "
+            "'learned-amplification', 1, 0.82)"
+        )
+        connection.commit()
+        connection.close()
+        return path
+
+    def test_the_scored_history_survives_the_rename(self, tmp_path) -> None:
+        """The value, not merely the column. A migration that renamed the column but lost
+        what was in it would leave the record looking intact and reading null."""
+        store = Store(self.old_database(tmp_path))
+        try:
+            call = store.call_history()[0]
+
+            assert call["height_bar_probability"] == 0.82
+            assert "gold_day_probability" not in call, "the old name is still being served"
+        finally:
+            store.close()
+
+    def test_reopening_it_does_not_rename_twice(self, tmp_path) -> None:
+        """`ALTER TABLE RENAME COLUMN` fails on a column that is no longer there, which
+        would turn every restart after the first into a crash — the same trap the
+        add-column migration above already has a test for."""
+        path = self.old_database(tmp_path)
+        first = Store(path)
+        first.close()
+        second = Store(path)
+        second.close()
+
+        reader = Store(path, create=False)
+        try:
+            assert reader.call_history()[0]["height_bar_probability"] == 0.82
+        finally:
+            reader.close()
+
+    def test_a_store_that_never_had_the_column_still_gets_it(self, tmp_path) -> None:
+        """The pre-#15 path has to keep working. A database old enough to predate
+        distributions entirely has no column to rename, and must be given one."""
+        path = tmp_path / "pre-15.db"
+        store = Store(path)
+        store.close()
+
+        connection = sqlite3.connect(path)
+        connection.execute("ALTER TABLE day_call DROP COLUMN height_bar_probability")
+        connection.commit()
+        connection.close()
+
+        reopened = Store(path)
+        try:
+            columns = {
+                row["name"]
+                for row in reopened._connect().execute("PRAGMA table_info(day_call)")  # noqa: SLF001
+            }
+            assert "height_bar_probability" in columns
+        finally:
+            reopened.close()
+
+
 def test_the_one_off_ingest_command_is_recorded_like_any_other_run(store) -> None:
     """The run record belongs to the Pipeline Run, not to the scheduler. A store whose
     provenance depended on which command happened to write it would be provenance in name

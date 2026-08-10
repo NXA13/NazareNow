@@ -385,7 +385,7 @@ def distribution_for(
     lead_time_days: int,
     ensemble: Ensemble,
     stamp: str,
-    gold_day_height_m: float | None,
+    height_bar_m: float | None,
 ) -> PredictiveDistribution:
     """One forecast hour's Predictive Distribution, with its own hour's ensemble verdict.
 
@@ -399,13 +399,13 @@ def distribution_for(
         model,
         readings,
         lead_time_days,
-        gold_day_height_m=gold_day_height_m,
+        height_bar_m=height_bar_m,
         model_spread=sea_disagreement_at(ensemble, stamp),
     )
 
 
-def gold_day_height_of(model: AmplificationModel) -> float | None:
-    """The calibrated height bar the model judges against, for the Gold Day probability.
+def height_bar_of(model: AmplificationModel) -> float | None:
+    """The calibrated height bar the model judges against, for `height_bar_probability`.
 
     Read off the model rather than loaded here, exactly as `calibration_of` reads its
     provenance and for the same reason: what the probability is measured against must be the
@@ -413,7 +413,7 @@ def gold_day_height_of(model: AmplificationModel) -> float | None:
 
     The `getattr` keeps ADR 0001's seam. The `AmplificationModel` interface promises a name, a
     `calibrated` flag and `predict`, and a model carrying no threshold set is entitled to
-    exist — it simply gets a distribution with no Gold Day probability on it, which `decide`
+    exist — it simply gets a distribution with no height-bar probability on it, which `decide`
     already treats as a number nobody calculated rather than as a failed test.
     """
     thresholds = getattr(model, "thresholds", None)
@@ -483,7 +483,7 @@ def derive_calls(hours: list[dict[str, Any]], ensemble: Ensemble) -> list[dict[s
     # Built once per run for the reason the model is, and read fresh on the next run so a
     # re-measured profile takes effect without a redeployment (#14's `PATH_VARIABLE`).
     budget = ErrorBudget.shipped()
-    gold_day_height_m = gold_day_height_of(model)
+    height_bar_m = height_bar_of(model)
 
     for day in sorted(by_date):
         readings = [
@@ -511,9 +511,7 @@ def derive_calls(hours: list[dict[str, Any]], ensemble: Ensemble) -> list[dict[s
         # — so a distribution applied to the winner alone would leave the day reporting a
         # smaller sea than an hour it had already beaten.
         distributions: list[PredictiveDistribution | None] = [
-            distribution_for(
-                budget, model, hour, lead_time, ensemble, stamp["at"], gold_day_height_m
-            )
+            distribution_for(budget, model, hour, lead_time, ensemble, stamp["at"], height_bar_m)
             if go_call_is_available(prediction, lead_time)
             else None
             for stamp, hour, prediction in zip(by_date[day], readings, predictions, strict=True)
@@ -568,7 +566,7 @@ def derive_calls(hours: list[dict[str, Any]], ensemble: Ensemble) -> list[dict[s
                     lead_time,
                     ensemble,
                     by_date[day][chosen]["at"],
-                    gold_day_height_m,
+                    height_bar_m,
                 ),
             )
         call = issued[chosen]
@@ -594,7 +592,7 @@ def derive_calls(hours: list[dict[str, Any]], ensemble: Ensemble) -> list[dict[s
                 "model_agreement": call.model_agreement.value,
                 "go_call_withheld": call.go_call_withheld,
                 "plausible_range_m": call.plausible_range_m,
-                "gold_day_probability": call.gold_day_probability,
+                "height_bar_probability": call.height_bar_probability,
                 "uncertainty_measured": call.uncertainty_measured,
                 "go_call_withheld_for_uncertainty": call.go_call_withheld_for_uncertainty,
                 "amplification_model": model.name,

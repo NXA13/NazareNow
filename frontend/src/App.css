@@ -361,7 +361,7 @@ footer p {
   font-size: 0.9rem;
 }
 
-/* How sure the forecast is: the plausible range, and the chance of a giant day.
+/* How sure the forecast is: the plausible range, and the chance of clearing the height bar.
  *
  * Sits directly under the predicted height because it qualifies that number rather than
  * standing beside it as a second finding — a range rendered as its own panel invites a reader
@@ -374,6 +374,16 @@ footer p {
 
 .confidence p {
   margin: 0 0 0.5rem;
+}
+
+/* What the percentage above does not cover (#66).
+ *
+ * Muted rather than an `.alert`: it is a scope note on an honest figure, not a warning that
+ * something is wrong. Loud styling here would compete with the beyond-the-archive notice,
+ * which is a genuine shortfall and has to stay the louder of the two. */
+.confidence-scope {
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 
 /* How the prediction has moved since the run before.

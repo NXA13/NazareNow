@@ -326,7 +326,7 @@ class TestModelSpreadWidensTheSameDistribution:
             )
 
 
-class TestTheGoldDayProbabilityIsAboutTheBarThatIsActuallyJudged:
+class TestTheHeightBarProbabilityIsAboutTheBarThatIsActuallyJudged:
     """#15's fifth criterion, and the quantity trap sitting under it.
 
     The calibrated height bar is fitted in operational Open-Meteo units and applied by the
@@ -352,30 +352,37 @@ class TestTheGoldDayProbabilityIsAboutTheBarThatIsActuallyJudged:
         downstream — and a Go Call costs a flight."""
         on_the_bar = GIANT | {"significant_wave_height": 2.75, "swell_height": 2.2}
 
-        got = BUDGET.distribution(MODEL, on_the_bar, 3, gold_day_height_m=2.75)
+        got = BUDGET.distribution(MODEL, on_the_bar, 3, height_bar_m=2.75)
 
-        assert got.gold_day_probability is not None
-        assert 0.4 < got.gold_day_probability < 0.6
+        assert got.height_bar_probability is not None
+        assert 0.4 < got.height_bar_probability < 0.6
 
     def test_a_genuine_giant_clears_it_at_every_lead_time(self) -> None:
         """The inertness `GO_CALL_CONFIDENCE` is documented to have, on the corrected
         quantity. A 5 m sea clears a 2.75 m bar whatever the forecast does, so this floor
         cannot take a Go Call from a day anyone would fly for."""
         for lead in (1, 3, 7):
-            got = BUDGET.distribution(MODEL, GIANT, lead, gold_day_height_m=2.75)
-            assert got.gold_day_probability == pytest.approx(1.0, abs=0.02), f"at {lead} days"
+            got = BUDGET.distribution(MODEL, GIANT, lead, height_bar_m=2.75)
+            assert got.height_bar_probability == pytest.approx(1.0, abs=0.02), f"at {lead} days"
 
     def test_the_range_a_user_reads_is_still_the_predicted_sea(self) -> None:
         """The two quantities stay apart rather than one replacing the other. The range
         answers "how big will it be" and is the model's output; the probability answers
         "does it clear the bar" and is the reading the bar judges."""
-        got = BUDGET.distribution(MODEL, GIANT, 3, gold_day_height_m=2.75)
+        got = BUDGET.distribution(MODEL, GIANT, 3, height_bar_m=2.75)
 
         assert got.p5 < MODEL.predict(GIANT).significant_wave_height < got.p95
 
 
-class TestTheProbabilityOfAGiantDay:
-    """#15's fifth criterion: state the chance of a date reaching Gold Day conditions."""
+class TestTheProbabilityOfClearingTheHeightBar:
+    """#15's fifth criterion, as far as it can be met: the chance of clearing the height bar.
+
+    The criterion asked for the chance of reaching Gold Day *conditions*, plural. Three of the
+    four cannot be given a probability — the Swell partition is unarchived and wind is not
+    perturbed — so what is asserted here is the one condition that can be, and #66 renamed the
+    field and the interface copy to stop the number reading as all four. ADR 0004's #66
+    amendment carries the reasoning.
+    """
 
     def test_a_giant_forecast_is_more_likely_than_a_flat_one(self) -> None:
         giant = BUDGET.distribution(MODEL, GIANT, lead_time_days=3)

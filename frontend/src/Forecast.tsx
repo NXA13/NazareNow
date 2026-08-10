@@ -285,9 +285,23 @@ function CallDetail({ day, model }: { day: ForecastDay; model: string | null }) 
  * backend has already done. The two heights the day plausibly lands between say the same
  * thing in terms somebody booking a flight can use.
  *
- * **The chance of a giant day is rounded here and nowhere else.** The backend sends a share
- * between 0 and 1 on purpose, so the figure a reader sees is stated in one place — a
- * percentage computed on both sides is two copies of a number that can drift apart.
+ * **The percentage is rounded here and nowhere else.** The backend sends a share between 0
+ * and 1 on purpose, so the figure a reader sees is stated in one place — a percentage
+ * computed on both sides is two copies of a number that can drift apart.
+ *
+ * **It is a chance of clearing one condition, not a chance of a giant day (#66).** A giant day
+ * needs height, swell period, swell direction and wind; this prices height. The rest cannot be
+ * priced: the Swell partition is not archived at any Lead Time, so there is no measured
+ * forecast error to put a distribution around swell period — which is the condition that
+ * actually binds. Saying "likely to be a giant day" here would be the system's largest
+ * overclaim, on its most load-bearing number, so the copy names the condition it prices and
+ * lists the ones it does not.
+ *
+ * **It says "significant wave height", not "size".** CONTEXT.md's Face Height entry puts "wave
+ * size" on its Avoid list, and this bar is on the Combined Sea 15km offshore, not on the wave
+ * a person would see break. "The minimum size for a giant day" sitting beside the words "giant
+ * day" invites exactly the Face Height reading the glossary exists to prevent, and
+ * `TrackRecord` already spells the quantity out for the same reason.
  *
  * A call decided without a distribution renders nothing rather than an empty band. Those are
  * calls issued before the pipeline built them, and drawing a range of zero width for one
@@ -298,6 +312,10 @@ function Confidence({ day }: { day: ForecastDay }) {
   const range = call?.plausible_range;
   if (!call || !range) return null;
 
+  // Read once and tested twice below, so the figure and the caveat scoping it cannot come
+  // apart. They sit in different paragraphs and cannot share a single conditional.
+  const probability = call.height_bar_probability;
+
   return (
     <div className="confidence" data-testid={`confidence-${day.date}`}>
       <p>
@@ -307,14 +325,23 @@ function Confidence({ day }: { day: ForecastDay }) {
           {range.unit} to {formatValue(range.high)}
           {range.unit}
         </strong>
-        {call.gold_day_probability !== null && (
+        {probability !== null && (
           <>
             {' '}
-            — about <strong>{Math.round(call.gold_day_probability * 100)}%</strong> likely to reach
-            the size this system calls a giant day.
+            — about <strong>{Math.round(probability * 100)}%</strong> likely to clear the minimum
+            significant wave height a giant day needs.
           </>
         )}
       </p>
+      {/* Height is one condition of several, and the only one this figure prices. Left unsaid,
+          a reader would reasonably take the percentage for the chance of a giant day. Rendered
+          from the same guard as the figure above, so the caveat cannot outlive what it caveats. */}
+      {probability !== null && (
+        <p className="confidence-scope">
+          Height only. The swell period, swell direction and wind a giant day also needs are not
+          part of that figure.
+        </p>
+      )}
       {/* Which of the two refusals produced this Watch. Both end in the same badge, and a
           reader told only "Watch" cannot tell a swell the forecasters have not settled on
           from one the forecast is simply too uncertain about to book on. */}

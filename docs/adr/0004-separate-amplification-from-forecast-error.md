@@ -122,3 +122,46 @@ withholds a Go Call rather than inventing one.
 
 The general form, which is what survives a re-measurement: **beyond the evidence, a term that
 errs toward caution may be extrapolated, and a term that moves the centre may not.**
+
+## Amendment: the system cannot state a probability of Gold Day conditions (ticket #66)
+
+#15's fifth criterion asked that "the probability of a date reaching **Gold Day conditions** is
+stated". What can be built is narrower, and the gap follows directly from the unarchived Swell
+partition recorded two amendments above. This records it so the limitation is a stated
+consequence of this decision rather than a discrepancy a reader has to notice.
+
+A Gold Day needs four quantities to hold: height, swell period, swell direction and wind.
+(`GO_CONDITIONS` lists five entries, because swell period is judged twice — against the Watch
+bar and against the stricter Go Call one — but that is two bars on one measurement, not two
+things to forecast.) Putting a probability on a condition means putting a distribution around
+the forecast of the quantity behind it, and that needs a measured Forecast Error Profile for
+it. Of the four:
+
+- **Height** is measurable. Combined Sea is archived to seven days, and the calibrated height
+  bar is a bar on the incoming reading, so the probability of clearing it is exactly what a
+  perturbed input distribution answers. This is what ships, as `height_bar_probability`.
+- **Swell period and swell direction** are not measurable at any Lead Time. The
+  `_previous_dayN` variables for the Swell partition return HTTP 200 with every value null.
+- **Wind** is measurable to four days and is not currently perturbed at all; #68 is open on
+  whether that omission is closed or justified with a number.
+
+The uncomfortable part is which one is missing. `thresholds.json` records that height and both
+arcs were "verified to block no Gold Day rather than fitted" — swell period is the condition
+the calibration actually fitted, and therefore the one that binds. **So the system can state
+uncertainty about a condition that has never blocked a Gold Day, and cannot state it about the
+one that decides them.** That is not a defect in the distribution; it is the archive's shape
+showing through, and it caps how much a probability here can ever be worth.
+
+Two things follow, and both are now true in the code. The quantity is named for what it
+measures — `height_bar_probability` end to end, renamed from `gold_day_probability`, with the
+stored column carried across so the series #11 scores is unbroken. And the interface says
+"likely to clear the minimum significant wave height a giant day needs" and then names the
+three the figure leaves out, rather than letting a reader take one condition's probability for
+all of them. It spells the quantity out rather than saying "size" because CONTEXT.md puts
+"wave size" on Face Height's Avoid list, and a percentage about the Combined Sea 15km offshore
+sitting beside the words "giant day" is precisely where that conflation would land.
+
+This does not reopen the decision above. The separation of Amplification from forecast error is
+what makes the limitation legible in the first place: because the profile is a distinct term
+measured per quantity, "which conditions can we be uncertain about" has a precise answer
+instead of a vague one.

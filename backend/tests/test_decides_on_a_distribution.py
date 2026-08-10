@@ -72,11 +72,11 @@ class TestTheConfidenceFloorCostsNoGoldDay:
                     MODEL,
                     GIANT | {"significant_wave_height": peak, "swell_height": round(peak * 0.8, 2)},
                     lead,
-                    gold_day_height_m=BAR,
+                    height_bar_m=BAR,
                 )
 
-                assert built.gold_day_probability is not None
-                assert built.gold_day_probability >= GO_CALL_CONFIDENCE, (
+                assert built.height_bar_probability is not None
+                assert built.height_bar_probability >= GO_CALL_CONFIDENCE, (
                     f"a {peak} m Gold Day loses its Go Call at {lead} days"
                 )
 
@@ -90,11 +90,11 @@ class TestTheConfidenceFloorCostsNoGoldDay:
             MODEL,
             GIANT | {"significant_wave_height": BAR, "swell_height": round(BAR * 0.8, 2)},
             3,
-            gold_day_height_m=BAR,
+            height_bar_m=BAR,
         )
 
-        assert built.gold_day_probability is not None
-        assert built.gold_day_probability < GO_CALL_CONFIDENCE
+        assert built.height_bar_probability is not None
+        assert built.height_bar_probability < GO_CALL_CONFIDENCE
 
     def test_the_one_gold_day_under_the_bar_is_not_this_rules_to_lose(self) -> None:
         """It fails the height condition outright, so no confidence floor decides it."""
@@ -112,7 +112,7 @@ def certainty(probability: float) -> PredictiveDistribution:
     inside = round(probability * 100)
     samples = tuple([BAR + 1.0] * inside + [BAR - 1.0] * (100 - inside))
     return PredictiveDistribution(
-        samples=samples, lead_time_days=5, measured=True, gold_day_probability=probability
+        samples=samples, lead_time_days=5, measured=True, height_bar_probability=probability
     )
 
 
@@ -129,16 +129,16 @@ class TestAHindcastIsUnaffected:
         assert got.status is Status.GO
         assert got.go_call_withheld_for_uncertainty is False
         assert got.plausible_range_m is None
-        assert got.gold_day_probability is None
+        assert got.height_bar_probability is None
         assert got.uncertainty_measured is None
 
     def test_a_distribution_that_never_computed_the_bar_does_not_get_to_veto(self) -> None:
-        """`gold_day_probability` is `None` when the builder was not told the height bar.
+        """`height_bar_probability` is `None` when the builder was not told the height bar.
 
         Refusing a Go Call on that would be refusing it on a number nobody calculated.
         """
         silent = PredictiveDistribution(
-            samples=(5.0, 5.0, 5.0), lead_time_days=5, measured=True, gold_day_probability=None
+            samples=(5.0, 5.0, 5.0), lead_time_days=5, measured=True, height_bar_probability=None
         )
 
         assert call_with(silent).status is Status.GO
@@ -191,12 +191,12 @@ class TestAWiderProfileProducesAMoreCautiousCall:
     def test_confidence_falls_as_the_lead_time_grows(self) -> None:
         marginal = GIANT | {"significant_wave_height": 2.8, "swell_height": 2.5}
 
-        near = BUDGET.distribution(MODEL, marginal, 1, gold_day_height_m=BAR)
-        far = BUDGET.distribution(MODEL, marginal, 7, gold_day_height_m=BAR)
+        near = BUDGET.distribution(MODEL, marginal, 1, height_bar_m=BAR)
+        far = BUDGET.distribution(MODEL, marginal, 7, height_bar_m=BAR)
 
-        assert near.gold_day_probability is not None
-        assert far.gold_day_probability is not None
-        assert far.gold_day_probability < near.gold_day_probability
+        assert near.height_bar_probability is not None
+        assert far.height_bar_probability is not None
+        assert far.height_bar_probability < near.height_bar_probability
 
     def test_a_genuine_giant_day_keeps_its_go_call_at_every_lead_time(self) -> None:
         """The measurement `GO_CALL_CONFIDENCE` rests on: this floor is inert where it would
@@ -212,10 +212,10 @@ class TestAWiderProfileProducesAMoreCautiousCall:
         reading the bar actually judges.
         """
         for lead in range(2, 8):
-            built = BUDGET.distribution(MODEL, GIANT, lead, gold_day_height_m=BAR)
+            built = BUDGET.distribution(MODEL, GIANT, lead, height_bar_m=BAR)
 
-            assert built.gold_day_probability is not None
-            assert built.gold_day_probability > GO_CALL_CONFIDENCE + 0.05, f"at {lead} days"
+            assert built.height_bar_probability is not None
+            assert built.height_bar_probability > GO_CALL_CONFIDENCE + 0.05, f"at {lead} days"
             assert decide(MODEL.predict(GIANT), lead, Agreement.AGREED, built).status is Status.GO
 
 
@@ -223,18 +223,18 @@ class TestTheCallCarriesTheRange:
     """#15's fourth and fifth criteria reach the interface through `Call`."""
 
     def test_it_carries_a_range_in_metres_and_a_probability(self) -> None:
-        built = BUDGET.distribution(MODEL, GIANT, 3, gold_day_height_m=BAR)
+        built = BUDGET.distribution(MODEL, GIANT, 3, height_bar_m=BAR)
 
         got = decide(MODEL.predict(GIANT), 3, Agreement.AGREED, built)
 
         assert got.plausible_range_m is not None
         low, high = got.plausible_range_m
         assert low < got.predicted_significant_wave_height < high
-        assert got.gold_day_probability == 1.0
+        assert got.height_bar_probability == 1.0
 
     def test_it_says_whether_the_uncertainty_was_measured(self) -> None:
-        inside = BUDGET.distribution(MODEL, GIANT, 7, gold_day_height_m=BAR)
-        beyond = BUDGET.distribution(MODEL, GIANT, 9, gold_day_height_m=BAR)
+        inside = BUDGET.distribution(MODEL, GIANT, 7, height_bar_m=BAR)
+        beyond = BUDGET.distribution(MODEL, GIANT, 9, height_bar_m=BAR)
 
         assert decide(MODEL.predict(GIANT), 7, Agreement.AGREED, inside).uncertainty_measured
         assert (

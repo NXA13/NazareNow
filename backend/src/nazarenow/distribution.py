@@ -118,11 +118,26 @@ class PredictiveDistribution:
     """The same draws on the *input* side: the perturbed incoming Combined Sea reading.
 
     Kept because the calibrated height bar is a bar on this quantity, not on `samples`. See
-    `gold_day_probability`, which is the only thing that reads it.
+    `height_bar_probability`, which is the only thing that reads it.
     """
 
-    gold_day_probability: float | None = None
+    height_bar_probability: float | None = None
     """The share of the incoming reading's draws clearing the calibrated height bar.
+
+    **One condition of the several a Go Call rests on (#66).** This is the probability of
+    clearing `minimum_significant_wave_height_m` and nothing else. `GO_CONDITIONS` also carries
+    swell direction, wind, and swell period judged against two bars — the Watch one and the
+    stricter Go one — and none of those enters this number. #15's fifth criterion asked for the
+    probability of reaching *Gold Day conditions*; that is not derivable today and the name no
+    longer claims it is.
+
+    The obstacle is archival, not arithmetical. ADR 0004's #14 amendment records that the
+    Swell partition is not archived at any Lead Time, so no Forecast Error Profile exists to
+    put a distribution around swell period — and the calibration records swell period as the
+    condition that actually binds, height and both arcs having been "verified to block no Gold
+    Day rather than fitted". So the system can state uncertainty about the condition that never
+    binds and cannot state it about the one that does. Widening this to wind, which *is*
+    archived to four days, is #68.
 
     Attached here rather than computed by `decide`, because the bar lives in `thresholds.json`
     and a `Prediction` arrives with its conditions already evaluated — the Decision Model never
@@ -238,7 +253,7 @@ class ErrorBudget:
         readings: dict[str, float],
         lead_time_days: int,
         *,
-        gold_day_height_m: float | None = None,
+        height_bar_m: float | None = None,
         model_spread: Spread | None = None,
         draws: int = DRAWS,
         seed: int = SEED,
@@ -295,11 +310,9 @@ class ErrorBudget:
             lead_time_days=lead_time_days,
             measured=measured,
         )
-        if gold_day_height_m is None:
+        if height_bar_m is None:
             return built
-        return replace(
-            built, gold_day_probability=built.probability_offshore_above(gold_day_height_m)
-        )
+        return replace(built, height_bar_probability=built.probability_offshore_above(height_bar_m))
 
     def _drift_floor(self, drift: float, model_spread: Spread | None) -> float:
         """The archive's drift, raised to the ensemble's disagreement where that is larger.

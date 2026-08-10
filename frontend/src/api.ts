@@ -88,9 +88,16 @@ export interface DayCall {
   plausible_range: HeightRange | null;
   /** How much of that distribution clears the calibrated height bar.
    *
+   * **The height condition alone (#66).** A giant day needs four quantities to hold — height,
+   * swell period, swell direction and wind — and this prices one. The other three have no
+   * archived forecast error to build a distribution from, so no probability exists for them;
+   * ADR 0004 carries the reasoning. Rendering this as the chance of a giant day would be the
+   * largest overclaim in the interface, which is why `Confidence` names the height condition
+   * and then lists what is missing.
+   *
    * A share between 0 and 1, not a percentage — the backend leaves the rounding here on
    * purpose, so the figure is stated in one place rather than two. */
-  gold_day_probability: number | null;
+  height_bar_probability: number | null;
   /** Whether a measured forecast error profile covered this call's lead time.
    *
    * False past the archive's seven days, where the width is extrapolated. The page has to be

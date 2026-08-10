@@ -971,12 +971,59 @@ describe('how sure the forecast is', () => {
     expect(panel).toHaveTextContent(`${range.low}${range.unit} to ${range.high}${range.unit}`);
   });
 
-  it('states the chance of a giant day as a percentage a reader can scan', async () => {
+  it('states the chance of clearing the height bar as a percentage a reader can scan', async () => {
     // The backend sends a share between 0 and 1 and leaves the rounding here, so the figure
     // is stated in one place. 0.82 must reach the page as 82%, not as 0.82.
     const panel = await detailFor(BIG.date);
 
     expect(panel).toHaveTextContent('82%');
+  });
+
+  it('does not offer that percentage as the chance of a giant day', async () => {
+    // #66. The number prices one of the four conditions a giant day needs, and the copy read
+    // "likely to reach the size this system calls a giant day" — careful about size, but sat
+    // close enough to the claim that a reader could take the percentage for the whole thing.
+    const panel = await detailFor(BIG.date);
+
+    expect(panel).toHaveTextContent(/clear the minimum significant wave height/i);
+    expect(panel).not.toHaveTextContent(/likely to (be|reach) a giant day/i);
+  });
+
+  it('names the quantity rather than calling it the size of the wave', async () => {
+    // CONTEXT.md puts "wave size" on Face Height's Avoid list, and this bar is on the
+    // Combined Sea 15km offshore. "The minimum size for a giant day", sitting beside the
+    // words "giant day", invites the Face Height reading the glossary exists to prevent.
+    const panel = await detailFor(BIG.date);
+
+    expect(panel).toHaveTextContent(/significant wave height/i);
+    expect(panel).not.toHaveTextContent(/minimum size/i);
+  });
+
+  it('says which conditions the percentage leaves out', async () => {
+    // Naming them, not merely hedging. "Size only" on its own asks the reader to already know
+    // what the other conditions are; the three that are missing are the useful half.
+    const panel = await detailFor(BIG.date);
+
+    expect(panel).toHaveTextContent(/swell period/i);
+    expect(panel).toHaveTextContent(/swell direction/i);
+    expect(panel).toHaveTextContent(/wind/i);
+  });
+
+  it('says nothing about scope when there is no percentage to scope', async () => {
+    // A call from before the pipeline built distributions renders no figure, and a bare
+    // "size only" under nothing at all would be a caveat on a number that is not there.
+    const withoutProbability = {
+      ...BIG,
+      call: { ...BIG_CALL, height_bar_probability: null },
+    };
+
+    const panel = await detailFor(BIG.date, [
+      forecast.days[0],
+      withoutProbability,
+      forecast.days[2],
+    ]);
+
+    expect(panel).not.toHaveTextContent(/height only/i);
   });
 
   it('says the range is not measured beyond the archive, and says why', async () => {
