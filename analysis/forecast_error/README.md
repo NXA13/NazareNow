@@ -370,7 +370,7 @@ many *false* Go Calls this floor prevents cannot be scored the same way — that
 archive deeper than the one Big-Wave Season beginning 2025-11-16. What is measured is the
 direction that can lose a Gold Day.
 
-## Finding 6 — perturbing wind is worth about 1% of the range, and would cost a boundary
+## Finding 6 — perturbing wind is worth half a percent of the range, and would cost a boundary
 
 Added by #68. `ErrorBudget.distribution` perturbs one of the Amplification Model's eight
 features and carries the other seven through unchanged. Four of those seven cannot be
@@ -379,26 +379,44 @@ above records. **Wind can be**, out to the four days finding 4 leaves trustworth
 branch that shipped #15 left it fixed without saying why.
 
 `wind_sensitivity.py` prices it, perturbing both wind variables at their own measured `noise`
-and reading the change in the p5–p95 width:
+and reading the change in the p5–p95 width. Mean over twenty seeds, with the per-seed standard
+deviation beside it:
 
 | Fixture | 1 d | 2 d | 3 d | 4 d |
 |---|---|---|---|---|
-| giant, 5.0 m | 0.86% | 0.79% | 0.85% | **1.02%** |
-| ordinary, 2.2 m | 0.91% | 0.97% | 0.97% | **1.26%** |
+| giant, 5.0 m | 0.28% | 0.32% | 0.30% | **0.54%** |
+| ordinary, 2.2 m | 0.56% | 0.69% | 0.76% | **0.96%** |
+| per-seed sd, both fixtures averaged | ±0.28pp | ±0.25pp | ±0.24pp | ±0.32pp |
 
-In metres that is 0.010 m to 0.023 m on a range 1.09 m to 2.22 m wide — below the 0.1 m the
-interface rounds to, at every Lead Time in the window and in both regimes.
+In metres that is 0.005 m to 0.014 m on a range 1.09 m to 2.22 m wide — well below the 0.1 m
+the interface rounds to, at every Lead Time in the window and in both regimes.
 
-**Two things make it that small, and only one of them is the coefficient.** Wind's
-standardised coefficient is −0.0569 against Combined Sea's 1.0893
-(`analysis/amplification_model/output/feature_reliance.csv`), so even the widest measured wind
-drift — 8.75 km/h and 36.5° at lead 4 on big swell, applied to both variables at once and in
-their worst-aligned directions — moves a prediction by about 0.11 m on either fixture. That
-0.11 m then joins terms that are already several times larger: the p5–p95 widths above
-correspond to a combined sigma of roughly 0.43 m on the ordinary fixture and 0.68 m on the
-giant one at lead 4, and a quadrature term is worth its *square* against those. A term does not
-have to be small to disappear; it has to be small beside the terms it joins. The table is the
-measurement — this paragraph is why the table reads as it does.
+**The spread is reported because the first version of this measurement was the spread.** That
+version drew wind from the same generator as the sea, which advanced it two draws per iteration
+and left the two arms comparing *independent* samples rather than paired ones. It reported
+0.86%–1.26% at its one seed; across twenty seeds the same code had a standard deviation of
+about 0.8 percentage points and individual seeds where perturbing wind appeared to make the
+range *narrower*. The estimator was measuring itself. Pairing — sharing the sea and
+output-error draws between the arms, so only wind differs — is what makes the difference
+attributable, and `SEEDS` is what would make a future regression of it visible instead of
+plausible.
+
+**Two things make the effect small, and only one of them is a coefficient.** The three wind
+features carry standardised coefficients of −0.0569, 0.0497 and 0.0334 against Combined Sea's
+1.0893 (`analysis/amplification_model/output/feature_reliance.csv`), so even the widest measured
+drift for each variable — 8.75 km/h at lead 4 on big swell and 39.9° at lead 4 on all hours,
+applied at once and in their worst-aligned directions — moves a prediction by about 0.11 m on
+the giant fixture and 0.12 m on the ordinary one. That
+0.11 m then joins terms already several times larger: the p5–p95 widths above correspond to a
+combined sigma of roughly 0.43 m on the ordinary fixture and 0.68 m on the giant one at lead 4,
+and a quadrature term is worth its *square* against those. A term does not have to be small to
+disappear; it has to be small beside the terms it joins.
+
+The figure is conservative in one further way. The script takes the drift straight off the
+band, while `ErrorBudget.distribution` passes it through `_drift_floor`, where a live ensemble
+may raise it — at one day the ensemble carries 0.263 m of sigma against 0.130 m of drift. A
+wider baseline makes wind a smaller share of it, so production sees no more than this table
+shows and often less.
 
 It also reaches no verdict. `height_bar_probability` is read off the perturbed incoming
 reading, not the model's output, so wind cannot move a tier however it is treated.

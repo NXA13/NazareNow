@@ -35,32 +35,37 @@ GIANT = {
 }
 
 WIND_SPEED_DRIFT_KMH = 8.75
-WIND_DIRECTION_DRIFT_DEG = 36.5
-"""The widest wind drift #14 measured anywhere inside the trustworthy window.
+WIND_DIRECTION_DRIFT_DEG = 39.9
+"""The widest drift #14 measured for each wind variable inside the trustworthy window.
 
-Both are the lead-4 big-swell `noise` rows of
-`analysis/forecast_error/output/drift_by_lead_time.csv` — 8.7522 km/h and 36.4724 degrees.
+Both are lead-4 rows of `analysis/forecast_error/output/drift_by_lead_time.csv`, and they come
+from **different regimes**: speed is widest on big swell at 8.7522 km/h, direction on all hours
+at 39.8536°. Taking each variable's own maximum makes this a harder question than any single
+row of the archive asks, which is the right way round for a bound.
+
+The pairing is not obvious and was got wrong first time here — big swell is the regime this
+project exists to call, so it reads as the wider one everywhere, and for direction it is not
+(36.4724° against 39.8536°).
+
 Lead 4 rather than lead 7 because README finding 4 shows leads 5 and 6 carry a provider
 artefact rather than weather, so the profile past four days is not evidence about anything.
-Big swell rather than all hours because that is the regime this project exists to call, and
-it is the wider of the two.
-
-Rounded up, so this test asks a slightly harder question than the archive does.
 """
 
 STATED_COST_M = 0.15
 """What a full one-sigma shift in both wind variables is allowed to move a prediction by.
 
-The shipped coefficients produce 0.106 m on this fixture and 0.114 m on the ordinary one
-`wind_sensitivity.py` also measures, so the margin here is about 40% — wide enough that an
-ordinary refit does not trip it, narrow enough that a wind term growing by half would.
+The shipped coefficients produce 0.111 m on this fixture and 0.119 m on the ordinary one
+`wind_sensitivity.py` also measures, so the margin here is about 25% — wide enough that an
+ordinary refit does not trip it, narrow enough that a wind term growing by a third would.
 
 This is a bound on the *mechanism*, not on the conclusion. What `distribution.py` states is
-the conclusion — about 1% of the plausible range's width — and that comes from
+the conclusion — 0.28% to 0.96% of the plausible range's width — and that comes from
 `analysis/forecast_error/wind_sensitivity.py`, which perturbs and re-samples rather than
 shifting. A bound is checked here instead because the shift is what the conclusion rests on
 and it needs no sampler: reproducing one in the test suite would be a second sampler to keep
-in step with the first, which is the shape of defect #67 has just finished removing.
+in step with the first, which is the shape of defect #67 has just finished removing. It would
+also be the harder thing to get right — the script's own first attempt at that sampler
+measured its sampling error rather than wind, and only a sweep across seeds showed it.
 """
 
 RERUN = (
