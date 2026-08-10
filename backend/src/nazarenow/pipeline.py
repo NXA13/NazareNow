@@ -16,7 +16,7 @@ import os
 import sqlite3
 import time
 from collections.abc import Callable
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import date
 from typing import Any
 
@@ -378,30 +378,45 @@ def sea_disagreement_at(ensemble: Ensemble, stamp: str) -> spread.Spread | None:
     return spread.derive(SEA, opinions_at(ensemble, stamp, SEA))
 
 
-def distribution_for(
-    budget: ErrorBudget,
-    model: AmplificationModel,
-    readings: dict[str, float],
-    lead_time_days: int,
-    ensemble: Ensemble,
-    stamp: str,
-    height_bar_m: float | None,
-) -> PredictiveDistribution:
-    """One forecast hour's Predictive Distribution, with its own hour's ensemble verdict.
+@dataclass(frozen=True)
+class RunDistributions:
+    """Everything a Predictive Distribution needs that does not change within a Pipeline Run.
 
-    A free function rather than a closure inside `derive_calls`, so the hour it is built for
-    is an argument rather than whatever the enclosing loop last bound. That distinction is
-    this module's recurring bug in miniature: a call rests on its best matching hour, and
-    anything that quietly reads a different one produces a perfectly ordinary-looking answer
-    about the wrong moment.
+    These four travelled together as four of seven parameters, constant across every day and
+    every hour of the run, re-passed at each call site (#67). A data clump wanting to be a
+    type: the run-level context is one thing, and separating it from the per-hour arguments
+    is what makes the per-hour ones visible.
+
+    Each is built once per run for a reason recorded where it is built — the model and the
+    budget so a recalibration or a re-measured profile cannot split one forecast across two
+    rules, the ensemble because it is the run's fetched members, and the bar because it must
+    be the one that actually judged these hours.
     """
-    return budget.distribution(
-        model,
-        readings,
-        lead_time_days,
-        height_bar_m=height_bar_m,
-        model_spread=sea_disagreement_at(ensemble, stamp),
-    )
+
+    budget: ErrorBudget
+    model: AmplificationModel
+    ensemble: Ensemble
+    height_bar_m: float | None
+
+    def for_hour(
+        self, readings: dict[str, float], lead_time_days: int, stamp: str
+    ) -> PredictiveDistribution:
+        """One forecast hour's Predictive Distribution, with its own hour's ensemble verdict.
+
+        The hour is an argument rather than anything this object remembers, which is the
+        property the previous free function existed to guarantee and the reason this is a
+        method on the run's context rather than on the day's loop. That distinction is this
+        module's recurring bug in miniature: a call rests on its best matching hour, and
+        anything that quietly reads a different one produces a perfectly ordinary-looking
+        answer about the wrong moment.
+        """
+        return self.budget.distribution(
+            self.model,
+            readings,
+            lead_time_days,
+            height_bar_m=self.height_bar_m,
+            model_spread=sea_disagreement_at(self.ensemble, stamp),
+        )
 
 
 def height_bar_of(model: AmplificationModel) -> float | None:
@@ -483,7 +498,9 @@ def derive_calls(hours: list[dict[str, Any]], ensemble: Ensemble) -> list[dict[s
     # Built once per run for the reason the model is, and read fresh on the next run so a
     # re-measured profile takes effect without a redeployment (#14's `PATH_VARIABLE`).
     budget = ErrorBudget.shipped()
-    height_bar_m = height_bar_of(model)
+    distributions_for = RunDistributions(
+        budget=budget, model=model, ensemble=ensemble, height_bar_m=height_bar_of(model)
+    )
 
     for day in sorted(by_date):
         readings = [
@@ -511,7 +528,7 @@ def derive_calls(hours: list[dict[str, Any]], ensemble: Ensemble) -> list[dict[s
         # — so a distribution applied to the winner alone would leave the day reporting a
         # smaller sea than an hour it had already beaten.
         distributions: list[PredictiveDistribution | None] = [
-            distribution_for(budget, model, hour, lead_time, ensemble, stamp["at"], height_bar_m)
+            distributions_for.for_hour(hour, lead_time, stamp["at"])
             if go_call_is_available(prediction, lead_time)
             else None
             for stamp, hour, prediction in zip(by_date[day], readings, predictions, strict=True)
@@ -559,15 +576,7 @@ def derive_calls(hours: list[dict[str, Any]], ensemble: Ensemble) -> list[dict[s
                 predictions[chosen],
                 lead_time,
                 agreements[chosen],
-                distribution_for(
-                    budget,
-                    model,
-                    readings[chosen],
-                    lead_time,
-                    ensemble,
-                    by_date[day][chosen]["at"],
-                    height_bar_m,
-                ),
+                distributions_for.for_hour(readings[chosen], lead_time, by_date[day][chosen]["at"]),
             )
         call = issued[chosen]
         # Counted against the conditions this call rests on, not always against all four.

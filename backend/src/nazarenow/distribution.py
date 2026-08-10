@@ -180,6 +180,30 @@ class PredictiveDistribution:
         """The plausible range in metres, which is what #15 asks the user be shown."""
         return self.p5, self.p95
 
+    def as_call_fields(self) -> dict[str, Any]:
+        """What a `Call` records about the distribution it was decided on.
+
+        Here rather than in `decide`, which was reaching back across the seam for four fields
+        in a row and re-deriving the same "or `None` if there is no distribution" for each
+        (#67). Which fields a call keeps, and how each is spelled, is knowledge about this
+        type; a decision function that has to know it will drift from it.
+
+        There is deliberately no counterpart for the no-distribution case. `Call` already
+        defaults all three to `None`, and that default *is* the documented meaning — a call
+        decided without a distribution, which is every caller scoring a Hindcast. A second
+        method spelling the same keys as `None` would be a list that could drift from this
+        one, to say what the dataclass already says.
+
+        `decide` cannot import this module at runtime — `distribution` reaches the model
+        layer, which imports back — so this is called on the instance and the absent case is
+        an empty spread at the call site.
+        """
+        return {
+            "plausible_range_m": self.range_m,
+            "height_bar_probability": self.height_bar_probability,
+            "uncertainty_measured": self.measured,
+        }
+
     def probability_above(self, metres: float) -> float:
         """The share of the predicted sea clearing a height — "how likely is it this big".
 

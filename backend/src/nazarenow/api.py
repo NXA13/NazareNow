@@ -149,6 +149,23 @@ class HeightRange(BaseModel):
     high: float
     unit: str
 
+    @classmethod
+    def of(cls, call: dict[str, Any]) -> HeightRange | None:
+        """This call's plausible range, or `None` where it was decided without one.
+
+        Named here rather than written out at each use because two responses carry the same
+        range — the current call and each superseded one beside it — and they were building
+        it identically in two places (#67). Two copies of "which key holds it, which end is
+        which, and where the unit comes from" is two places to update and one to forget.
+
+        The unit is read off the call rather than written as "m", so the numbers and the
+        symbol beside them cannot come from different sources and disagree.
+        """
+        span = call["plausible_range_m"]
+        if span is None:
+            return None
+        return cls(low=span[0], high=span[1], unit=call["unit"])
+
 
 class CurrentConditions(BaseModel):
     observed_at: str
@@ -520,15 +537,7 @@ def earlier_calls(previous: list[dict[str, Any]]) -> list[EarlierCall]:
             predicted_significant_wave_height=Reading(
                 value=call["predicted_significant_wave_height"], unit=call["unit"]
             ),
-            plausible_range=(
-                None
-                if call["plausible_range_m"] is None
-                else HeightRange(
-                    low=call["plausible_range_m"][0],
-                    high=call["plausible_range_m"][1],
-                    unit=call["unit"],
-                )
-            ),
+            plausible_range=HeightRange.of(call),
         )
         for call in previous[:-1]
     ]
@@ -566,18 +575,7 @@ def summarise(
                 None if call["model_agreement"] is None else Agreement(call["model_agreement"])
             ),
             go_call_withheld=call["go_call_withheld"],
-            plausible_range=(
-                None
-                if call["plausible_range_m"] is None
-                else HeightRange(
-                    low=call["plausible_range_m"][0],
-                    high=call["plausible_range_m"][1],
-                    # The distribution is built in the unit the call is reported in, and
-                    # sourced from the call rather than written as "m" so the two cannot
-                    # disagree about what the numbers beside them mean.
-                    unit=call["unit"],
-                )
-            ),
+            plausible_range=HeightRange.of(call),
             height_bar_probability=call["height_bar_probability"],
             uncertainty_measured=call["uncertainty_measured"],
             go_call_withheld_for_uncertainty=call["go_call_withheld_for_uncertainty"],
