@@ -1,0 +1,9 @@
+fixture,significant_wave_height_m,regime,lead_time_days,seeds,wind_speed_noise_kmh,wind_direction_noise_deg,width_m,widening_m,widening_share,widening_share_sd,widening_share_min,widening_share_max
+giant,5.0,big_swell,1,20,4.1309,20.9389,1.6635,0.0047,0.0028,0.0027,-0.0024,0.0079
+giant,5.0,big_swell,2,20,5.532,27.5096,1.8601,0.006,0.0032,0.0027,-0.0052,0.0067
+giant,5.0,big_swell,3,20,6.6731,28.608,1.9946,0.0059,0.003,0.0029,-0.0011,0.0085
+giant,5.0,big_swell,4,20,8.7522,36.4724,2.2238,0.012,0.0054,0.003,-0.0002,0.0117
+ordinary,2.2,all_hours,1,20,3.165,22.9931,1.09,0.0061,0.0056,0.0028,0.0004,0.0114
+ordinary,2.2,all_hours,2,20,4.1783,30.0524,1.2134,0.0084,0.0069,0.0022,0.0033,0.0108
+ordinary,2.2,all_hours,3,20,4.9835,33.4811,1.2934,0.0098,0.0076,0.0019,0.0044,0.0107
+ordinary,2.2,all_hours,4,20,6.4973,39.8536,1.4163,0.0136,0.0096,0.0034,0.0015,0.0167

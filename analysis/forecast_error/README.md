@@ -328,6 +328,8 @@ they stack: a wind reading a Go Call is issued on carries both.
 | `output/reference_stability.csv` | Mean drift per calendar month, the evidence behind finding 4. |
 | `confidence.py` | Prices #15's Go Call confidence floor against Gold Day recall. `--check` self-tests the arithmetic offline. |
 | `output/go_call_confidence.csv` | Every Gold Day's chance of clearing the height bar, per Lead Time. |
+| `wind_sensitivity.py` | Prices perturbing wind, the one omitted input that is archived. `--check` holds its sampler to the shipped one. |
+| `output/wind_perturbation.csv` | What wind perturbation would add to the plausible range, per fixture and Lead Time. |
 
 ## Finding 5 — the Go Call confidence floor is priceable, in the direction that can lose a day
 
@@ -367,3 +369,67 @@ both directions because the Hindcast supplies outcomes. It contains no forecast 
 many *false* Go Calls this floor prevents cannot be scored the same way — that needs a forecast
 archive deeper than the one Big-Wave Season beginning 2025-11-16. What is measured is the
 direction that can lose a Gold Day.
+
+## Finding 6 — perturbing wind is worth half a percent of the range, and would cost a boundary
+
+Added by #68. `ErrorBudget.distribution` perturbs one of the Amplification Model's eight
+features and carries the other seven through unchanged. Four of those seven cannot be
+perturbed by anything: the Swell partition is not archived at any Lead Time, as the section
+above records. **Wind can be**, out to the four days finding 4 leaves trustworthy, and the
+branch that shipped #15 left it fixed without saying why.
+
+`wind_sensitivity.py` prices it, perturbing both wind variables at their own measured `noise`
+and reading the change in the p5–p95 width. Mean over twenty seeds, with the per-seed standard
+deviation beside it:
+
+| Fixture | 1 d | 2 d | 3 d | 4 d |
+|---|---|---|---|---|
+| giant, 5.0 m | 0.28% | 0.32% | 0.30% | **0.54%** |
+| ordinary, 2.2 m | 0.56% | 0.69% | 0.76% | **0.96%** |
+| per-seed sd, both fixtures averaged | ±0.28pp | ±0.25pp | ±0.24pp | ±0.32pp |
+
+In metres that is 0.005 m to 0.014 m on a range 1.09 m to 2.22 m wide — well below the 0.1 m
+the interface rounds to, at every Lead Time in the window and in both regimes.
+
+**The spread is reported because the first version of this measurement was the spread.** That
+version drew wind from the same generator as the sea, which advanced it two draws per iteration
+and left the two arms comparing *independent* samples rather than paired ones. It reported
+0.86%–1.26% at its one seed; across twenty seeds the same code had a standard deviation of
+about 0.8 percentage points and individual seeds where perturbing wind appeared to make the
+range *narrower*. The estimator was measuring itself. Pairing — sharing the sea and
+output-error draws between the arms, so only wind differs — is what makes the difference
+attributable, and `SEEDS` is what would make a future regression of it visible instead of
+plausible.
+
+**Two things make the effect small, and only one of them is a coefficient.** The three wind
+features carry standardised coefficients of −0.0569, 0.0497 and 0.0334 against Combined Sea's
+1.0893 (`analysis/amplification_model/output/feature_reliance.csv`), so even the widest measured
+drift for each variable — 8.75 km/h at lead 4 on big swell and 39.9° at lead 4 on all hours,
+applied at once and in their worst-aligned directions — moves a prediction by about 0.11 m on
+the giant fixture and 0.12 m on the ordinary one. That
+0.11 m then joins terms already several times larger: the p5–p95 widths above correspond to a
+combined sigma of roughly 0.43 m on the ordinary fixture and 0.68 m on the giant one at lead 4,
+and a quadrature term is worth its *square* against those. A term does not have to be small to
+disappear; it has to be small beside the terms it joins.
+
+The figure is conservative in one further way. The script takes the drift straight off the
+band, while `ErrorBudget.distribution` passes it through `_drift_floor`, where a live ensemble
+may raise it — at one day the ensemble carries 0.263 m of sigma against 0.130 m of drift. A
+wider baseline makes wind a smaller share of it, so production sees no more than this table
+shows and often less.
+
+It also reaches no verdict. `height_bar_probability` is read off the perturbed incoming
+reading, not the model's output, so wind cannot move a tier however it is treated.
+
+**The cost of buying that 1% is a step at a fixed calendar boundary.** The wind profile is
+weather to four days and a provider artefact past it; a forecast here runs to fourteen. So days
+five onward would widen by a different rule than days one to four, and #15's eighth criterion
+asks a user to read exactly that kind of movement as news about the swell.
+`distribution._unmeasured_drift` refuses the same trade over a quarter of a metre — refusing it
+over a hundredth of the width follows from the rule already in place, rather than being a new
+judgement.
+
+So wind stays unperturbed, `distribution.py` says so and cites this number, and
+`backend/tests/test_wind_is_carried_through.py` fails if either half stops holding — the
+coefficient growing, the profile coming back wider, or a refit introducing a wind feature the
+measurement above does not cover.
