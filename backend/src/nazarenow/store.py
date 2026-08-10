@@ -25,7 +25,7 @@ import json
 import sqlite3
 import threading
 import urllib.parse
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -290,6 +290,29 @@ def _optional_flag(value: bool | None) -> int | None:
     `go_call_withheld`'s own docstring warns against one column up.
     """
     return None if value is None else int(value)
+
+
+def _recent_calls_sql(dates: Collection[str], limit: int) -> tuple[str, tuple[Any, ...]]:
+    """The succession query for a given set of dates, and its parameters.
+
+    Split out from `recent_calls` so the *plan* is testable without duplicating the SQL in a
+    test. What this ticket fixes is a physical property — whether SQLite walks the table —
+    and asserting on a re-typed copy of the query would prove nothing about the one that runs.
+
+    The date predicate sits **inside** the subquery, before the window. Outside it the
+    `ROW_NUMBER()` would still be computed over every row and the filter would only discard
+    the results, which is the shape being fixed. Placeholders rather than interpolation: the
+    dates come from a provider's forecast, and this is the first variable-length collection in
+    this store to reach SQL.
+    """
+    placeholders = ", ".join("?" for _ in dates)
+    return (
+        "SELECT * FROM (SELECT "
+        f"{CALL_COLUMNS}, ROW_NUMBER() OVER (PARTITION BY date ORDER BY id DESC) AS recency "
+        f"FROM day_call WHERE date IN ({placeholders})) "
+        "WHERE recency <= ? ORDER BY date, recency DESC",
+        (*dates, limit),
+    )
 
 
 def _range_columns(value: tuple[float, float] | list[float] | None) -> tuple[Any, Any]:
@@ -851,8 +874,10 @@ class Store:
         )
         return None if row is None else self._call(row)
 
-    def recent_calls(self, limit: int = 5) -> dict[str, list[dict[str, Any]]]:
-        """The last few calls made about each date, oldest first, keyed by date.
+    def recent_calls(
+        self, dates: Collection[str], limit: int = 5
+    ) -> dict[str, list[dict[str, Any]]]:
+        """The last few calls made about each of `dates`, oldest first, keyed by date.
 
         #15's eighth criterion asks a user to see how a prediction has shifted across
         successive Pipeline Runs, and this is the record that answers it. `calls()` serves
@@ -864,16 +889,24 @@ class Store:
         the succession of runs and draw a swell building when it was fading. Insertion order
         is the only total order the store has, and it is the order the runs happened in.
 
-        Bounded rather than complete. `call_history` exists for anything that wants every
-        call ever made; this feeds a response a traveller reads, and a date approached over
-        a fortnight of three-hourly runs has more than a hundred of them.
+        Bounded twice, and both bounds are load-bearing (#67). `limit` bounds how many calls
+        one date contributes, because this feeds a response a traveller reads and a fortnight
+        of three-hourly runs puts more than a hundred behind a single date. `dates` bounds how
+        much of the table is read at all: without it the window was computed over every call
+        ever stored and all but the current forecast's fortnight discarded, so a request cost
+        grew with the age of the store rather than the size of its answer. `day_call` is
+        append-only by design (ADR 0005) and #11 scores it, so that only ever gets worse.
+
+        Required rather than defaulted, because the safe default is the wrong one. An omitted
+        argument meaning "every date" is exactly the unbounded read this removed, and it would
+        come back the first time a caller forgot. `call_history` remains for anything that
+        genuinely wants the whole record.
         """
-        rows = self._connect().execute(
-            "SELECT * FROM (SELECT "
-            f"{CALL_COLUMNS}, ROW_NUMBER() OVER (PARTITION BY date ORDER BY id DESC) AS recency "
-            "FROM day_call) WHERE recency <= ? ORDER BY date, recency DESC",
-            (limit,),
-        )
+        if not dates:
+            return {}
+
+        sql, parameters = _recent_calls_sql(dates, limit)
+        rows = self._connect().execute(sql, parameters)
         history: dict[str, list[dict[str, Any]]] = {}
         for row in rows:
             history.setdefault(row["date"], []).append(self._call(row))

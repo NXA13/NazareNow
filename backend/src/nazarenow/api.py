@@ -611,8 +611,10 @@ def forecast(store: Annotated[Store, Depends(get_store)]) -> Forecast:
     stored = store.calls()
     disagreement = store.spreads()
     # The succession of runs behind each date (#15's eighth criterion). Read once for every
-    # date rather than per day, so a fortnight of forecast is one query rather than fourteen.
-    succession = store.recent_calls()
+    # date rather than per day, so a fortnight of forecast is one query rather than fourteen —
+    # and scoped to this forecast's own dates, so the query's cost tracks the answer rather
+    # than the age of an append-only table (#67).
+    succession = store.recent_calls(by_date.keys())
 
     # A forecast with no calls behind it is still served. ADR 0005 asks that the site stay
     # up and honest, and the days, their hours and their heights are all real; failing the
