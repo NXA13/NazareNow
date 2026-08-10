@@ -25,7 +25,8 @@ import json
 import sqlite3
 import threading
 import urllib.parse
-from collections.abc import Collection, Iterable
+from collections.abc import Callable, Collection, Iterable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -252,16 +253,138 @@ CREATE INDEX IF NOT EXISTS day_spread_date
 """
 
 
-# Written once. The same ten columns were spelled out in the schema probe and in every
-# read, so adding or renaming one meant finding all of them — and a rename that missed the
-# probe would pass construction and fail inside an endpoint, which is the bare-500 outcome
-# eager verification exists to prevent.
-CALL_COLUMNS = (
-    "date, issued_at, issued_for_date, status, lead_time_days, reasons, "
-    "predicted_significant_wave_height, unit, amplification_model, calibrated, calibration, "
-    "model_agreement, go_call_withheld, plausible_low_m, plausible_high_m, "
-    "height_bar_probability, uncertainty_measured, go_call_withheld_for_uncertainty"
+@dataclass(frozen=True)
+class _CallField:
+    """One thing a stored call carries, and how it crosses the SQL boundary in both
+    directions.
+
+    Declared once and used three times — to select, to insert, and to map a row back — so
+    those three cannot disagree. Before #67 they were three hand-maintained parallel lists,
+    and adding a field meant editing each. Two of the three fail loudly when they drift: a
+    missing column breaks the probe, a short value tuple breaks the insert's arity. The row
+    mapper does not, and that is the one that matters — a field it omits reads back as
+    absent, which every consumer already treats as "an older call, from before this field
+    existed". A dropped field renders as a call that predates the feature.
+
+    `columns` is a tuple because a field is not always one column: a plausible range is two,
+    and they have to be written and read as a pair or not at all — a row carrying a low with
+    no high describes a range with one end.
+
+    `encode` takes the run's timestamp as well as the call, because not everything stored
+    comes from the call. `issued_at` is the run's own stamp, and saying so here puts that
+    where a reader looking at the field will find it rather than inside the insert.
+
+    `key` is `None` for a column that is selected but not surfaced by `_call`: `date` is the
+    key callers group by, and `call_history` attaches it alongside rather than inside.
+    """
+
+    columns: tuple[str, ...]
+    encode: Callable[[dict[str, Any], str], tuple[Any, ...]]
+    key: str | None = None
+    decode: Callable[[sqlite3.Row], Any] | None = None
+
+
+def _column(name: str) -> _CallField:
+    """A field stored and read back unchanged, which is most of them."""
+    return _CallField(
+        columns=(name,),
+        encode=lambda call, stamp: (call[name],),
+        key=name,
+        decode=lambda row: row[name],
+    )
+
+
+def _flag(name: str) -> _CallField:
+    """A boolean stored as an integer, keeping absence distinct from `False`.
+
+    None-preserving on the way back. A null here means the call predates whatever added the
+    column; collapsing it to `False` would answer a question nobody put to that call.
+    """
+    return _CallField(
+        columns=(name,),
+        encode=lambda call, stamp: (_optional_flag(call.get(name)),),
+        key=name,
+        decode=lambda row: None if row[name] is None else bool(row[name]),
+    )
+
+
+CALL_FIELDS: tuple[_CallField, ...] = (
+    _CallField(columns=("date",), encode=lambda call, stamp: (call["date"],)),
+    _CallField(
+        columns=("issued_at",),
+        # The run's stamp, not the call's. Every call a run writes is issued at the same
+        # moment, and that moment is the run's, so a call arriving with its own `issued_at`
+        # would be recording something the store does not believe.
+        encode=lambda call, stamp: (stamp,),
+        key="issued_at",
+        decode=lambda row: row["issued_at"],
+    ),
+    _column("issued_for_date"),
+    _column("status"),
+    _column("lead_time_days"),
+    _CallField(
+        columns=("reasons",),
+        encode=lambda call, stamp: (json.dumps(call["reasons"]),),
+        key="reasons",
+        decode=lambda row: json.loads(row["reasons"]),
+    ),
+    _column("predicted_significant_wave_height"),
+    _column("unit"),
+    _column("amplification_model"),
+    _CallField(
+        columns=("calibrated",),
+        encode=lambda call, stamp: (int(call["calibrated"]),),
+        key="calibrated",
+        decode=lambda row: bool(row["calibrated"]),
+    ),
+    _CallField(
+        columns=("calibration",),
+        encode=lambda call, stamp: (_optional_json(call.get("calibration")),),
+        key="calibration",
+        decode=lambda row: None if row["calibration"] is None else json.loads(row["calibration"]),
+    ),
+    _column("model_agreement"),
+    _CallField(
+        columns=("go_call_withheld",),
+        encode=lambda call, stamp: (int(call["go_call_withheld"]),),
+        key="go_call_withheld",
+        decode=lambda row: (
+            None if row["go_call_withheld"] is None else bool(row["go_call_withheld"])
+        ),
+    ),
+    _CallField(
+        # Two columns, one field, and the pair travels together. A call written before the
+        # pipeline built distributions has no range, which is a different thing from a range
+        # of zero width — so both ends are null or neither is.
+        columns=("plausible_low_m", "plausible_high_m"),
+        encode=lambda call, stamp: _range_columns(call.get("plausible_range_m")),
+        key="plausible_range_m",
+        decode=lambda row: (
+            None
+            if row["plausible_low_m"] is None or row["plausible_high_m"] is None
+            else (row["plausible_low_m"], row["plausible_high_m"])
+        ),
+    ),
+    _CallField(
+        columns=("height_bar_probability",),
+        encode=lambda call, stamp: (call.get("height_bar_probability"),),
+        key="height_bar_probability",
+        decode=lambda row: row["height_bar_probability"],
+    ),
+    _flag("uncertainty_measured"),
+    _flag("go_call_withheld_for_uncertainty"),
 )
+"""Every column of a `day_call` row except the store's own `id` and its `run_id`.
+
+The order is the DDL's. Nothing depends on it — every read names its columns and every write
+pairs them with their values here — but a declaration that reads in a different order from
+the table it describes invites a reader to conclude one of them is wrong.
+"""
+
+CALL_COLUMN_NAMES: tuple[str, ...] = tuple(name for field in CALL_FIELDS for name in field.columns)
+
+CALL_COLUMNS = ", ".join(CALL_COLUMN_NAMES)
+"""The same names as a SELECT list, which is the form every read wants."""
 
 RUN_COLUMNS = "id, started_at, finished_at, outcome, failure_kind, failure_detail"
 
@@ -290,6 +413,18 @@ def _optional_flag(value: bool | None) -> int | None:
     `go_call_withheld`'s own docstring warns against one column up.
     """
     return None if value is None else int(value)
+
+
+def _call_values(call: dict[str, Any], stamp: str) -> tuple[Any, ...]:
+    """One call as its column values, in `CALL_COLUMNS` order.
+
+    Built from the declaration rather than written out, so the values cannot fall out of step
+    with the column list they are inserted against. They used to be two hand-aligned
+    sequences a dozen entries long, where inserting a column in the middle of one and not the
+    other shifts every value after it into the wrong column — which SQLite accepts happily
+    whenever the neighbouring types agree.
+    """
+    return tuple(value for field in CALL_FIELDS for value in field.encode(call, stamp))
 
 
 def _recent_calls_sql(dates: Collection[str], limit: int) -> tuple[str, tuple[Any, ...]]:
@@ -686,35 +821,9 @@ class Store:
             # the system has already made, which is what ADR 0005 promises and what
             # ticket #11 scores.
             connection.executemany(
-                "INSERT INTO day_call (run_id, date, issued_at, issued_for_date, status, "
-                "lead_time_days, reasons, predicted_significant_wave_height, unit, "
-                "amplification_model, calibrated, calibration, model_agreement, "
-                "go_call_withheld, plausible_low_m, plausible_high_m, height_bar_probability, "
-                "uncertainty_measured, go_call_withheld_for_uncertainty) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                [
-                    (
-                        run_id,
-                        call["date"],
-                        stamp,
-                        call["issued_for_date"],
-                        call["status"],
-                        call["lead_time_days"],
-                        json.dumps(call["reasons"]),
-                        call["predicted_significant_wave_height"],
-                        call["unit"],
-                        call["amplification_model"],
-                        int(call["calibrated"]),
-                        _optional_json(call.get("calibration")),
-                        call["model_agreement"],
-                        int(call["go_call_withheld"]),
-                        *_range_columns(call.get("plausible_range_m")),
-                        call.get("height_bar_probability"),
-                        _optional_flag(call.get("uncertainty_measured")),
-                        _optional_flag(call.get("go_call_withheld_for_uncertainty")),
-                    )
-                    for call in calls
-                ],
+                f"INSERT INTO day_call (run_id, {CALL_COLUMNS}) "
+                f"VALUES ({', '.join('?' * (len(CALL_COLUMN_NAMES) + 1))})",
+                [(run_id, *_call_values(call, stamp)) for call in calls],
             )
             # Appended beside the calls of the same run, never cleared, for the reason the
             # table's own comment gives: the disagreement current when a call was issued is
@@ -974,41 +1083,24 @@ class Store:
 
     @staticmethod
     def _call(row: sqlite3.Row) -> dict[str, Any]:
+        """A stored row as the call it records.
+
+        Generated from `CALL_FIELDS` rather than written out, and this is the site the
+        declaration exists for. The insert and the select both fail loudly when they drift —
+        a short value tuple is an arity error, a missing column breaks the probe. This one
+        did not: a field left out here read back as absent, and every consumer already treats
+        absence as "an older call, from before this field existed". So the field that went
+        missing rendered as a call that predates the feature, with nothing anywhere reporting
+        a problem (#67).
+
+        `date` and `run_id` are deliberately not here. Both are on the row; `call_history`
+        attaches them alongside, because which run produced a call is provenance for whoever
+        audits the record rather than part of the call itself.
+        """
         return {
-            "issued_at": row["issued_at"],
-            "issued_for_date": row["issued_for_date"],
-            "status": row["status"],
-            "lead_time_days": row["lead_time_days"],
-            "reasons": json.loads(row["reasons"]),
-            "predicted_significant_wave_height": row["predicted_significant_wave_height"],
-            "unit": row["unit"],
-            "amplification_model": row["amplification_model"],
-            "calibrated": bool(row["calibrated"]),
-            "calibration": None if row["calibration"] is None else json.loads(row["calibration"]),
-            "model_agreement": row["model_agreement"],
-            # None-preserving, like `calibration` and `model_agreement` above. A null
-            # here means the call predates the gate; collapsing it to False would report
-            # "the models did not withhold this" about a call that never asked them.
-            "go_call_withheld": (
-                None if row["go_call_withheld"] is None else bool(row["go_call_withheld"])
-            ),
-            # None-preserving in both halves, and the pair travels together. A call written
-            # before the pipeline built distributions has no range, which is a different
-            # thing from a range of zero width.
-            "plausible_range_m": (
-                None
-                if row["plausible_low_m"] is None or row["plausible_high_m"] is None
-                else (row["plausible_low_m"], row["plausible_high_m"])
-            ),
-            "height_bar_probability": row["height_bar_probability"],
-            "uncertainty_measured": (
-                None if row["uncertainty_measured"] is None else bool(row["uncertainty_measured"])
-            ),
-            "go_call_withheld_for_uncertainty": (
-                None
-                if row["go_call_withheld_for_uncertainty"] is None
-                else bool(row["go_call_withheld_for_uncertainty"])
-            ),
+            field.key: field.decode(row)
+            for field in CALL_FIELDS
+            if field.key is not None and field.decode is not None
         }
 
     def latest_conditions(self) -> dict[str, Any] | None:
