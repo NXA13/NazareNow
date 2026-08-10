@@ -149,6 +149,23 @@ class HeightRange(BaseModel):
     high: float
     unit: str
 
+    @classmethod
+    def from_call(cls, call: dict[str, Any]) -> HeightRange | None:
+        """This call's plausible range, or `None` where it was decided without one.
+
+        Named here rather than written out at each use because two responses carry the same
+        range — the current call and each superseded one beside it — and they were building
+        it identically in two places (#67). Two copies of "which key holds it, which end is
+        which, and where the unit comes from" is two places to update and one to forget.
+
+        The unit is read off the call rather than written as "m", so the numbers and the
+        symbol beside them cannot come from different sources and disagree.
+        """
+        span = call["plausible_range_m"]
+        if span is None:
+            return None
+        return cls(low=span[0], high=span[1], unit=call["unit"])
+
 
 class CurrentConditions(BaseModel):
     observed_at: str
@@ -520,15 +537,7 @@ def earlier_calls(previous: list[dict[str, Any]]) -> list[EarlierCall]:
             predicted_significant_wave_height=Reading(
                 value=call["predicted_significant_wave_height"], unit=call["unit"]
             ),
-            plausible_range=(
-                None
-                if call["plausible_range_m"] is None
-                else HeightRange(
-                    low=call["plausible_range_m"][0],
-                    high=call["plausible_range_m"][1],
-                    unit=call["unit"],
-                )
-            ),
+            plausible_range=HeightRange.from_call(call),
         )
         for call in previous[:-1]
     ]
@@ -566,18 +575,7 @@ def summarise(
                 None if call["model_agreement"] is None else Agreement(call["model_agreement"])
             ),
             go_call_withheld=call["go_call_withheld"],
-            plausible_range=(
-                None
-                if call["plausible_range_m"] is None
-                else HeightRange(
-                    low=call["plausible_range_m"][0],
-                    high=call["plausible_range_m"][1],
-                    # The distribution is built in the unit the call is reported in, and
-                    # sourced from the call rather than written as "m" so the two cannot
-                    # disagree about what the numbers beside them mean.
-                    unit=call["unit"],
-                )
-            ),
+            plausible_range=HeightRange.from_call(call),
             height_bar_probability=call["height_bar_probability"],
             uncertainty_measured=call["uncertainty_measured"],
             go_call_withheld_for_uncertainty=call["go_call_withheld_for_uncertainty"],
@@ -611,8 +609,10 @@ def forecast(store: Annotated[Store, Depends(get_store)]) -> Forecast:
     stored = store.calls()
     disagreement = store.spreads()
     # The succession of runs behind each date (#15's eighth criterion). Read once for every
-    # date rather than per day, so a fortnight of forecast is one query rather than fourteen.
-    succession = store.recent_calls()
+    # date rather than per day, so a fortnight of forecast is one query rather than fourteen —
+    # and scoped to this forecast's own dates, so the query's cost tracks the answer rather
+    # than the age of an append-only table (#67).
+    succession = store.recent_calls(by_date.keys())
 
     # A forecast with no calls behind it is still served. ADR 0005 asks that the site stay
     # up and honest, and the days, their hours and their heights are all real; failing the

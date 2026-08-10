@@ -381,10 +381,14 @@ def decide(
         predicted_significant_wave_height=prediction.significant_wave_height,
         go_call_withheld=withheld,
         model_agreement=agreement,
-        plausible_range_m=None if distribution is None else distribution.range_m,
-        height_bar_probability=(
-            None if distribution is None else distribution.height_bar_probability
-        ),
-        uncertainty_measured=None if distribution is None else distribution.measured,
+        # What the distribution contributes, asked of the distribution (#67). Three
+        # consecutive `None if distribution is None else distribution.X` lines meant this
+        # function knew the spelling of every field a `PredictiveDistribution` hands a call,
+        # and would have needed editing again for the fourth.
+        #
+        # Nothing at all when there is no distribution, rather than three explicit `None`s:
+        # the fields already default to `None` on `Call`, and that default is the documented
+        # state — a call decided without one. Spelling them here would restate the dataclass.
+        **({} if distribution is None else distribution.as_call_fields()),
         go_call_withheld_for_uncertainty=uncertain,
     )
