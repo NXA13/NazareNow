@@ -248,9 +248,9 @@ class Call:
     height_bar_probability: float | None = None
     """How much of the distribution clears the calibrated height bar.
 
-    The height condition alone — not the swell period, direction or wind conditions that a Go
-    Call also rests on. `PredictiveDistribution.height_bar_probability` records why the wider
-    number is not available (#66).
+    The height condition alone — not the swell period, swell direction or wind conditions that
+    a Go Call also rests on. `PredictiveDistribution.height_bar_probability` records why the
+    wider number is not available (#66).
     """
 
     uncertainty_measured: bool | None = None

@@ -971,7 +971,7 @@ describe('how sure the forecast is', () => {
     expect(panel).toHaveTextContent(`${range.low}${range.unit} to ${range.high}${range.unit}`);
   });
 
-  it('states the chance of clearing the minimum size as a percentage a reader can scan', async () => {
+  it('states the chance of clearing the height bar as a percentage a reader can scan', async () => {
     // The backend sends a share between 0 and 1 and leaves the rounding here, so the figure
     // is stated in one place. 0.82 must reach the page as 82%, not as 0.82.
     const panel = await detailFor(BIG.date);
@@ -985,8 +985,18 @@ describe('how sure the forecast is', () => {
     // close enough to the claim that a reader could take the percentage for the whole thing.
     const panel = await detailFor(BIG.date);
 
-    expect(panel).toHaveTextContent(/clear the minimum size/i);
+    expect(panel).toHaveTextContent(/clear the minimum significant wave height/i);
     expect(panel).not.toHaveTextContent(/likely to (be|reach) a giant day/i);
+  });
+
+  it('names the quantity rather than calling it the size of the wave', async () => {
+    // CONTEXT.md puts "wave size" on Face Height's Avoid list, and this bar is on the
+    // Combined Sea 15km offshore. "The minimum size for a giant day", sitting beside the
+    // words "giant day", invites the Face Height reading the glossary exists to prevent.
+    const panel = await detailFor(BIG.date);
+
+    expect(panel).toHaveTextContent(/significant wave height/i);
+    expect(panel).not.toHaveTextContent(/minimum size/i);
   });
 
   it('says which conditions the percentage leaves out', async () => {
@@ -1013,7 +1023,7 @@ describe('how sure the forecast is', () => {
       forecast.days[2],
     ]);
 
-    expect(panel).not.toHaveTextContent(/size only/i);
+    expect(panel).not.toHaveTextContent(/height only/i);
   });
 
   it('says the range is not measured beyond the archive, and says why', async () => {

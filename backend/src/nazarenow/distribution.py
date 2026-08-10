@@ -124,11 +124,12 @@ class PredictiveDistribution:
     height_bar_probability: float | None = None
     """The share of the incoming reading's draws clearing the calibrated height bar.
 
-    **One of the four Go conditions, not all of them (#66).** This is the probability of
-    clearing `minimum_significant_wave_height_m` and nothing else. Swell period, swell
-    direction and wind are the other three members of `GO_CONDITIONS`, and none of them enters
-    this number. #15's fifth criterion asked for the probability of reaching *Gold Day
-    conditions*; that is not derivable today and the name no longer claims it is.
+    **One condition of the several a Go Call rests on (#66).** This is the probability of
+    clearing `minimum_significant_wave_height_m` and nothing else. `GO_CONDITIONS` also carries
+    swell direction, wind, and swell period judged against two bars — the Watch one and the
+    stricter Go one — and none of those enters this number. #15's fifth criterion asked for the
+    probability of reaching *Gold Day conditions*; that is not derivable today and the name no
+    longer claims it is.
 
     The obstacle is archival, not arithmetical. ADR 0004's #14 amendment records that the
     Swell partition is not archived at any Lead Time, so no Forecast Error Profile exists to

@@ -130,9 +130,12 @@ stated". What can be built is narrower, and the gap follows directly from the un
 partition recorded two amendments above. This records it so the limitation is a stated
 consequence of this decision rather than a discrepancy a reader has to notice.
 
-A Gold Day needs four conditions: height, swell period, swell direction and wind. Putting a
-probability on a condition means putting a distribution around the forecast of it, and that
-needs a measured Forecast Error Profile for the quantity. Of the four:
+A Gold Day needs four quantities to hold: height, swell period, swell direction and wind.
+(`GO_CONDITIONS` lists five entries, because swell period is judged twice — against the Watch
+bar and against the stricter Go Call one — but that is two bars on one measurement, not two
+things to forecast.) Putting a probability on a condition means putting a distribution around
+the forecast of the quantity behind it, and that needs a measured Forecast Error Profile for
+it. Of the four:
 
 - **Height** is measurable. Combined Sea is archived to seven days, and the calibrated height
   bar is a bar on the incoming reading, so the probability of clearing it is exactly what a
@@ -152,8 +155,11 @@ showing through, and it caps how much a probability here can ever be worth.
 Two things follow, and both are now true in the code. The quantity is named for what it
 measures — `height_bar_probability` end to end, renamed from `gold_day_probability`, with the
 stored column carried across so the series #11 scores is unbroken. And the interface says
-"likely to clear the minimum size for a giant day" and then names the three conditions the
-figure leaves out, rather than letting a reader take one condition's probability for four.
+"likely to clear the minimum significant wave height a giant day needs" and then names the
+three the figure leaves out, rather than letting a reader take one condition's probability for
+all of them. It spells the quantity out rather than saying "size" because CONTEXT.md puts
+"wave size" on Face Height's Avoid list, and a percentage about the Combined Sea 15km offshore
+sitting beside the words "giant day" is precisely where that conflation would land.
 
 This does not reopen the decision above. The separation of Amplification from forecast error is
 what makes the limitation legible in the first place: because the profile is a distinct term

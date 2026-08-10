@@ -326,7 +326,7 @@ class TestModelSpreadWidensTheSameDistribution:
             )
 
 
-class TestTheGoldDayProbabilityIsAboutTheBarThatIsActuallyJudged:
+class TestTheHeightBarProbabilityIsAboutTheBarThatIsActuallyJudged:
     """#15's fifth criterion, and the quantity trap sitting under it.
 
     The calibrated height bar is fitted in operational Open-Meteo units and applied by the

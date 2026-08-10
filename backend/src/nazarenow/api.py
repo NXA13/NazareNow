@@ -267,8 +267,8 @@ class DayCall(BaseModel):
     #15's fifth criterion asked for the probability of reaching Gold Day *conditions*. This is
     the height condition alone, which is the part that can be measured — see
     `PredictiveDistribution.height_bar_probability` and ADR 0004 for why the other three are
-    not available (#66). The field name and the interface copy both say height so that a
-    client cannot read four conditions into a number that prices one.
+    not available (#66). The field name and the interface copy both name the height condition,
+    so a client cannot read the whole set into a number that prices one of them.
 
     A share between 0 and 1, not a percentage, so the interface owns the rounding — the
     difference between 0.94 and "94%" is presentation, and the backend guessing at it once
