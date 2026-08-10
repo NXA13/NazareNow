@@ -274,14 +274,36 @@ class _CallField:
     comes from the call. `issued_at` is the run's own stamp, and saying so here puts that
     where a reader looking at the field will find it rather than inside the insert.
 
-    `key` is `None` for a column that is selected but not surfaced by `_call`: `date` is the
-    key callers group by, and `call_history` attaches it alongside rather than inside.
+    `key` and `decode` are `None` together for a column that is selected but deliberately not
+    surfaced by `_call`. Exactly one field does that — `date`, which callers group by and
+    which `call_history` attaches alongside the payload rather than inside it.
+
+    **Neither has a default, and that is the point.** With defaults, the cheapest thing to
+    write was a field carrying only columns and an encoder — which is written, selected, and
+    then dropped by `_call` without a word. That is the silent absence this whole type exists
+    to prevent, reproduced inside the type, reachable by omission. Spelling `key=None,
+    decode=None` is three seconds of typing and makes not-surfacing a decision somebody made
+    rather than one they defaulted into.
     """
 
     columns: tuple[str, ...]
     encode: Callable[[dict[str, Any], str], tuple[Any, ...]]
-    key: str | None = None
-    decode: Callable[[sqlite3.Row], Any] | None = None
+    key: str | None
+    decode: Callable[[sqlite3.Row], Any] | None
+
+    def __post_init__(self) -> None:
+        """`key` and `decode` are one thing in two attributes, so they arrive together.
+
+        A field carrying a key with no decoder is written, selected, and then dropped by
+        `_call`; a decoder with no key has nothing to file its answer under. Both are cheap
+        to construct by accident and invisible afterwards, so they are refused here rather
+        than left to the tests to notice.
+        """
+        if (self.key is None) != (self.decode is None):
+            raise ValueError(
+                f"{self.columns}: a call field needs both a key and a decoder or neither; "
+                f"got key={self.key!r} and {'a' if self.decode else 'no'} decoder"
+            )
 
 
 def _column(name: str) -> _CallField:
@@ -309,7 +331,15 @@ def _flag(name: str) -> _CallField:
 
 
 CALL_FIELDS: tuple[_CallField, ...] = (
-    _CallField(columns=("date",), encode=lambda call, stamp: (call["date"],)),
+    _CallField(
+        # The only field selected but not surfaced, and said outright rather than defaulted.
+        # Callers group by it and `call_history` attaches it beside the payload, so `_call`
+        # putting it inside as well would be the same fact in two places.
+        columns=("date",),
+        encode=lambda call, stamp: (call["date"],),
+        key=None,
+        decode=None,
+    ),
     _CallField(
         columns=("issued_at",),
         # The run's stamp, not the call's. Every call a run writes is issued at the same
@@ -345,6 +375,11 @@ CALL_FIELDS: tuple[_CallField, ...] = (
     ),
     _column("model_agreement"),
     _CallField(
+        # Asymmetric on purpose, and worth naming now the two halves sit together: the write
+        # requires the key and would raise on a missing one, while the read preserves null.
+        # A call the pipeline produces always carries it — `Call` defaults it to `False` —
+        # so a null can only be a row written before the gate existed, and only the read side
+        # ever meets one. Loosening the write to match would accept a call that forgot it.
         columns=("go_call_withheld",),
         encode=lambda call, stamp: (int(call["go_call_withheld"]),),
         key="go_call_withheld",
@@ -415,6 +450,17 @@ def _optional_flag(value: bool | None) -> int | None:
     return None if value is None else int(value)
 
 
+def _placeholders(count: int) -> str:
+    """`count` bound parameters as a comma-separated list.
+
+    One spelling, because there were briefly two — `", ".join("?" for _ in dates)` in one
+    place and `", ".join("?" * n)` in another, the second of which reads as a puzzle: it
+    repeats the string and then joins its characters. Same answer, and a reader has to work
+    that out to be sure.
+    """
+    return ", ".join("?" * count)
+
+
 def _call_values(call: dict[str, Any], stamp: str) -> tuple[Any, ...]:
     """One call as its column values, in `CALL_COLUMNS` order.
 
@@ -440,7 +486,7 @@ def _recent_calls_sql(dates: Collection[str], limit: int) -> tuple[str, tuple[An
     dates come from a provider's forecast, and this is the first variable-length collection in
     this store to reach SQL.
     """
-    placeholders = ", ".join("?" for _ in dates)
+    placeholders = _placeholders(len(dates))
     return (
         "SELECT * FROM (SELECT "
         f"{CALL_COLUMNS}, ROW_NUMBER() OVER (PARTITION BY date ORDER BY id DESC) AS recency "
@@ -822,7 +868,7 @@ class Store:
             # ticket #11 scores.
             connection.executemany(
                 f"INSERT INTO day_call (run_id, {CALL_COLUMNS}) "
-                f"VALUES ({', '.join('?' * (len(CALL_COLUMN_NAMES) + 1))})",
+                f"VALUES ({_placeholders(len(CALL_COLUMN_NAMES) + 1)})",
                 [(run_id, *_call_values(call, stamp)) for call in calls],
             )
             # Appended beside the calls of the same run, never cleared, for the reason the

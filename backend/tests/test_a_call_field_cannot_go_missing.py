@@ -10,9 +10,11 @@ field existed". So a dropped field renders as a call that predates the feature: 
 no empty value, no wrong number — a plausible, ordinary-looking answer. That is this
 project's characteristic failure and the one it keeps having to design against.
 
-These tests pin the two directions drift can go now that the store has a single declaration:
-a column the table has and the declaration does not, and a column the declaration has and the
-table does not.
+These tests pin the ways drift can still happen now that the store has a single declaration:
+a column the table has and the declaration does not, a column the declaration has and the
+table does not, and a field declared without saying whether it is surfaced at all — which is
+the one a review found after the first version, because it was what the defaults made
+easiest to write.
 """
 
 from __future__ import annotations
@@ -21,7 +23,14 @@ import sqlite3
 
 import pytest
 
-from nazarenow.store import CALL_COLUMN_NAMES, CALL_FIELDS, Store, StoreUnavailable
+from nazarenow.decision import Agreement, Status
+from nazarenow.store import (
+    CALL_COLUMN_NAMES,
+    CALL_FIELDS,
+    Store,
+    StoreUnavailable,
+    _CallField,
+)
 
 
 class TestTheDeclarationAndTheTableAgree:
@@ -56,6 +65,31 @@ class TestTheDeclarationAndTheTableAgree:
         assert payload <= set(CALL_COLUMN_NAMES), (
             f"stored but never read back: {sorted(payload - set(CALL_COLUMN_NAMES))}"
         )
+
+    def test_a_field_cannot_be_declared_without_saying_whether_it_is_surfaced(self) -> None:
+        """The hole a review found in the first version of this type.
+
+        `key` and `decode` had defaults, so the cheapest declaration to write was columns and
+        an encoder alone — written, selected, and then dropped by `_call` in silence. Every
+        drift test above still passed, because a field the declaration never claims to
+        surface is not one they can miss. Removing the defaults makes not-surfacing something
+        a reader can see was chosen.
+        """
+        with pytest.raises(TypeError):
+            _CallField(  # type: ignore[call-arg]
+                columns=("invented",),
+                encode=lambda call, stamp: (call["invented"],),
+            )
+
+    def test_a_field_cannot_carry_a_key_with_no_decoder(self) -> None:
+        """Half a mapping is the same silent absence, reached the other way."""
+        with pytest.raises(ValueError, match="both a key and a decoder"):
+            _CallField(
+                columns=("invented",),
+                encode=lambda call, stamp: (call["invented"],),
+                key="invented",
+                decode=None,
+            )
 
     def test_a_store_missing_a_declared_column_refuses_to_open(self, tmp_path) -> None:
         """Verified eagerly, not on the first request.
@@ -129,6 +163,39 @@ class TestARoundTripKeepsEveryField:
                 assert read_back["issued_at"], "the run stamped nothing onto its calls"
                 continue
             assert read_back[field.key] == stored[field.key], f"{field.key} did not survive"
+
+    def test_what_a_distribution_projects_is_what_a_call_accepts(self) -> None:
+        """`decide` spreads `as_call_fields()` into `Call(...)`, which no checker verifies.
+
+        That splat is what stops the decision layer from restating three field names, and it
+        costs the one thing a keyword argument would have given: a renamed or removed `Call`
+        field becomes a `TypeError` at run time rather than an error at edit time. There is
+        no Python type checker in CI — the backend job runs ruff and pytest — so the
+        guarantee has to be bought back in the form this project actually enforces.
+        """
+        from dataclasses import fields as dataclass_fields
+
+        from nazarenow.decision import Call
+        from nazarenow.distribution import PredictiveDistribution
+
+        projected = PredictiveDistribution(
+            samples=(4.0, 5.0, 6.0), lead_time_days=3, measured=True
+        ).as_call_fields()
+        accepted = {field.name for field in dataclass_fields(Call)}
+
+        assert set(projected) <= accepted, (
+            f"a distribution projects fields no Call accepts: {sorted(set(projected) - accepted)}"
+        )
+        # And the splat itself works, which is the thing that would raise in production.
+        Call(
+            status=Status.WATCH,
+            lead_time_days=3,
+            reasons=(),
+            predicted_significant_wave_height=5.0,
+            model_agreement=Agreement.AGREED,
+            go_call_withheld=False,
+            **projected,
+        )
 
     def test_the_declaration_covers_what_a_decided_call_carries(self) -> None:
         """The declaration is checked against `Call`, not against a copy of its field list.

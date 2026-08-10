@@ -183,10 +183,10 @@ class PredictiveDistribution:
     def as_call_fields(self) -> dict[str, Any]:
         """What a `Call` records about the distribution it was decided on.
 
-        Here rather than in `decide`, which was reaching back across the seam for four fields
-        in a row and re-deriving the same "or `None` if there is no distribution" for each
-        (#67). Which fields a call keeps, and how each is spelled, is knowledge about this
-        type; a decision function that has to know it will drift from it.
+        Here rather than in `decide`, which was reaching back across the seam for three
+        fields in a row and re-deriving the same "or `None` if there is no distribution" for
+        each (#67). Which fields a call keeps, and how each is spelled, is knowledge about
+        this type; a decision function that has to know it will drift from it.
 
         There is deliberately no counterpart for the no-distribution case. `Call` already
         defaults all three to `None`, and that default *is* the documented meaning — a call

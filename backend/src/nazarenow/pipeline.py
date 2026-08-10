@@ -379,8 +379,13 @@ def sea_disagreement_at(ensemble: Ensemble, stamp: str) -> spread.Spread | None:
 
 
 @dataclass(frozen=True)
-class RunDistributions:
+class RunPricing:
     """Everything a Predictive Distribution needs that does not change within a Pipeline Run.
+
+    Named for what pricing an hour costs rather than for the distributions themselves, which
+    it does not hold — `derive_calls` already speaks of an hour being "priced" and of the
+    winning hour "paying for" a distribution, so this is that function's own word rather than
+    a new one.
 
     These four travelled together as four of seven parameters, constant across every day and
     every hour of the run, re-passed at each call site (#67). A data clump wanting to be a
@@ -498,7 +503,7 @@ def derive_calls(hours: list[dict[str, Any]], ensemble: Ensemble) -> list[dict[s
     # Built once per run for the reason the model is, and read fresh on the next run so a
     # re-measured profile takes effect without a redeployment (#14's `PATH_VARIABLE`).
     budget = ErrorBudget.shipped()
-    distributions_for = RunDistributions(
+    pricing = RunPricing(
         budget=budget, model=model, ensemble=ensemble, height_bar_m=height_bar_of(model)
     )
 
@@ -528,7 +533,7 @@ def derive_calls(hours: list[dict[str, Any]], ensemble: Ensemble) -> list[dict[s
         # — so a distribution applied to the winner alone would leave the day reporting a
         # smaller sea than an hour it had already beaten.
         distributions: list[PredictiveDistribution | None] = [
-            distributions_for.for_hour(hour, lead_time, stamp["at"])
+            pricing.for_hour(hour, lead_time, stamp["at"])
             if go_call_is_available(prediction, lead_time)
             else None
             for stamp, hour, prediction in zip(by_date[day], readings, predictions, strict=True)
@@ -576,7 +581,7 @@ def derive_calls(hours: list[dict[str, Any]], ensemble: Ensemble) -> list[dict[s
                 predictions[chosen],
                 lead_time,
                 agreements[chosen],
-                distributions_for.for_hour(readings[chosen], lead_time, by_date[day][chosen]["at"]),
+                pricing.for_hour(readings[chosen], lead_time, by_date[day][chosen]["at"]),
             )
         call = issued[chosen]
         # Counted against the conditions this call rests on, not always against all four.

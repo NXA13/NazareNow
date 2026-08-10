@@ -150,7 +150,7 @@ class HeightRange(BaseModel):
     unit: str
 
     @classmethod
-    def of(cls, call: dict[str, Any]) -> HeightRange | None:
+    def from_call(cls, call: dict[str, Any]) -> HeightRange | None:
         """This call's plausible range, or `None` where it was decided without one.
 
         Named here rather than written out at each use because two responses carry the same
@@ -537,7 +537,7 @@ def earlier_calls(previous: list[dict[str, Any]]) -> list[EarlierCall]:
             predicted_significant_wave_height=Reading(
                 value=call["predicted_significant_wave_height"], unit=call["unit"]
             ),
-            plausible_range=HeightRange.of(call),
+            plausible_range=HeightRange.from_call(call),
         )
         for call in previous[:-1]
     ]
@@ -575,7 +575,7 @@ def summarise(
                 None if call["model_agreement"] is None else Agreement(call["model_agreement"])
             ),
             go_call_withheld=call["go_call_withheld"],
-            plausible_range=HeightRange.of(call),
+            plausible_range=HeightRange.from_call(call),
             height_bar_probability=call["height_bar_probability"],
             uncertainty_measured=call["uncertainty_measured"],
             go_call_withheld_for_uncertainty=call["go_call_withheld_for_uncertainty"],
