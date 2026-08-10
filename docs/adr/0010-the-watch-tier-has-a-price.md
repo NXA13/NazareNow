@@ -123,11 +123,11 @@ in a ticket about the Watch bar.
 ## Consequences
 
 The shipped Watch bar moves from **10.1 s to 11.5 s**, and it is the only threshold that moves.
-The Go Call bar stays at 12.9 s, the height bar at 2.75 m, both arcs and the speed cap
+The Go Call bar stays at 12.9 s <!--now:go_call_minimum_swell_period_s-->, the height bar at 2.75 m <!--now:minimum_significant_wave_height_m-->, both arcs and the speed cap
 unchanged, and ADR 0009's exemption at 16.5 km/h. The Go Call tier's figures are identical
 either side of this change.
 
-**Since #60 the shipped Watch bar reads 11.4 s.** That is not a repricing and does not disturb
+**Since #60 the shipped Watch bar reads 11.4 s.** <!--now:watch_minimum_swell_period_s--> That is not a repricing and does not disturb
 this ADR's decision: the bar this ADR chooses is 12 s in the reanalysis units the fit runs in,
 and it is still 12 s. What #60 changed is the Translation that restates it into the units a
 Pipeline Run reads. The budget below — 40 Watch days per Big-Wave Season — is still the rule,

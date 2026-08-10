@@ -638,7 +638,8 @@ def describe_watch_binding_constraint(rows: list[SweepRow], watch_bar: float) ->
     # The rejected step is named in the fit's own units, which this sentence says out loud.
     # It has to: the shipped Watch bar is the *translated* number, so the file carries two
     # different quantities a tenth of a second apart — the fit chose 12 s and refused 11.5 s,
-    # and 12 s now translates to a shipped 11.4 s. Until #60 moved the swell period Translation
+    # and 12 s now translates to a shipped 11.4 s [now:watch_minimum_swell_period_s].
+    # Until #60 moved the swell period Translation
     # the two were worse than close, they were equal: 12 s translated to exactly the 11.5 s the
     # fit had refused, and unlabelled the file would have carried 11.5 twice meaning two
     # different bars. The label is kept because it was never the collision that made it
@@ -683,7 +684,8 @@ def translate(thresholds: Thresholds, translations: dict[str, measure.Translatio
     """The fitted bars, restated in the units the live Pipeline Run reads.
 
     The fit ran on the reanalysis. The deployed system reads Open-Meteo, where the same sea
-    reports a shorter swell period — so a bar fitted at 13.5 s here is about 12.9 s there,
+    reports a shorter swell period — so a bar fitted at 13.5 s here is
+    about 12.9 s there, [now:go_call_minimum_swell_period_s]
     and shipping 13.5 s would silently move the deployed bar half a second stricter than
     anything the Gold Days justify.
 
@@ -1144,7 +1146,8 @@ def main() -> int:
             "is not a threshold problem. Six fitting Gold Days are blocked by **wind**, and "
             "every one of them is blocked by the arc rather than the speed: 2013-10-28, "
             "2015-10-27, 2017-02-28, 2018-02-11, 2019-11-13 and 2020-02-17 had calmest-hour "
-            "winds of 4-16 km/h, far under the 35 km/h cap, from bearings of 225-346 degrees "
+            "winds of 4-16 km/h, far under the 35 km/h cap, "  # [now:maximum_wind_speed_kmh]
+            "from bearings of 225-346 degrees "
             "which fall outside the offshore arc. `HeuristicBaseline.predict` requires the "
             "arc AND the speed, so a dead-calm 4 km/h breeze from the wrong quarter fails the "
             "condition as surely as a gale. On the 6 recent Gold Days #12 fitted, that never "

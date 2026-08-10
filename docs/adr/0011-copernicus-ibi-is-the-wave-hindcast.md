@@ -134,7 +134,7 @@ lighter than ERA5 in the band the exemption decides in, and 2.1 km/h lighter in 
 straddling the bar. Against a bar with 0.2 km/h of margin, that is not small: it is roughly ten
 times the margin and four times the 0.5 km/h step the bar is rounded to.
 
-The exemption is therefore translated like the wave bars, and ships at **14.5 km/h** rather
+The exemption is therefore translated like the wave bars, and ships at **14.5 km/h** <!--now:light_wind_exemption_kmh--> rather
 than the fitted 16.5. Untranslated it was admitting hours the fit would have refused at nearly
 four times the rate it refused hours the fit would have admitted; translated, the two errors
 are balanced. The wind *feature* of the Amplification Model crosses the same boundary and stays
@@ -189,8 +189,8 @@ that 0.3 s belongs to the candidates that move the *height* subset as well, whic
 #58 removed.
 
 **#60 has now measured the period subset in isolation.** With height held at #58's all-hours
-fit, moving the period subset to Combined Sea ≥ 3 m leaves the **Go Call bar at 12.9 s** and the
-height bar untouched; the Watch bar reads 11.4 s against 11.5 s. Before rounding both moves are
+fit, moving the period subset to Combined Sea ≥ 3 m leaves the **Go Call bar at 12.9 s** <!--now:go_call_minimum_swell_period_s--> and the
+height bar untouched; the Watch bar reads 11.4 s against 11.5 s. <!--fixed:#60--> Before rounding both moves are
 smaller than they look — Watch shifts 0.044 s across a rounding boundary, and the Go Call bar
 moves 0.004 s *away* from one. This holds under either reading of "Combined Sea", reanalysis or
 operational, which select 4,941 and 5,501 hours and land on the same two bars.
@@ -203,7 +203,7 @@ not interchangeable on accuracy even though they agree on the bars. See
 
 So #60 was a human decision about coherence and a 4–5 m bias, not about a Go Call bar. **It was
 put to a human on those terms and taken: ship the Combined Sea subset and accept the Watch bar
-at 11.4 s.** Three things carried it.
+at 11.4 s.** <!--fixed:#60--> Three things carried it.
 
 *One concept, one definition.* `train.py` defines its big-swell regime on `combined_sea_m`;
 the Translation now selects on the same quantity. "The regime the system calls in" means one
@@ -215,7 +215,7 @@ the model's evaluation — this was that conflation, in shipped code, and it is 
 better bias in six.
 
 *The bar it moves is the one that can afford to move.* The Go Call bar — the one a traveller
-books a flight on — is unchanged at 12.9 s.
+books a flight on — is unchanged at 12.9 s <!--now:go_call_minimum_swell_period_s-->.
 
 **What it cost, stated rather than averaged away.** Two things got worse. Bias at 4–5 m goes
 −0.015 → −0.077 s, against 0.62 s of RMSE in that band. And on the whole-record backtest the

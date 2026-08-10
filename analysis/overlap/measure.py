@@ -454,7 +454,8 @@ Three things decided it, and the third is why it was a judgement call rather tha
 
 * **It cost the Watch bar 0.1 s, and the Go Call bar nothing.** #60 measured the period subset
   in isolation from #58's height refit before anything moved. The Go Call bar — the one that
-  costs a traveller a flight — is unchanged at 12.9 s. The Watch bar moves 11.5 s to 11.4 s,
+  costs a traveller a flight — is unchanged at 12.9 s. [now:go_call_minimum_swell_period_s]
+  The Watch bar moves 11.5 s to 11.4 s, [fixed:#60]
   which before rounding is a shift of 0.044 s that happens to cross the 11.45 boundary.
 
 The **reanalysis** side, not the operational one, because that is the quantity `train.py`

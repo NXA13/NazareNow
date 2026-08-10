@@ -56,7 +56,7 @@ numbers, and writes them where the running system reads them.
 > "[Only swell period is fitted per tier](#only-swell-period-is-fitted-per-tier)" below — is
 > false on the full record. It was the offshore arc rather than the speed: 2013-10-28,
 > 2015-10-27, 2017-02-28, 2018-02-11, 2019-11-13 and 2020-02-17 had calmest-hour winds of
-> **4–16 km/h**, far under the 35 km/h cap, from bearings of 225–346°. ADR 0009 fixed it by
+> **4–16 km/h**, far under the 35 km/h cap, from bearings of 225–346°. <!--fixed:#39--> ADR 0009 fixed it by
 > exempting light winds from the arc, and the exemption is itself fitted here — 16.5 km/h, the
 > lowest value admitting all six.
 >
@@ -148,7 +148,7 @@ reporting of the buoy-measured subset that #12's brief asked for.
 | Minimum swell period — Go Call | 14 s | **13 s** |
 | Swell arc | 255-330° | unchanged |
 | Offshore wind arc | 20-180° | unchanged |
-| Maximum wind speed | 35 km/h | unchanged |
+| Maximum wind speed | 35 km/h <!--now:maximum_wind_speed_kmh--> | unchanged |
 
 They live in `backend/src/nazarenow/thresholds.json`, not in code. `NAZARENOW_THRESHOLDS`
 points the running system at a different file, so recalibrating does not mean redeploying —
@@ -229,9 +229,9 @@ fitting split, with the observed range reported:
 
 | Condition | Observed across Gold Days | Threshold | Binds? |
 |---|---|---|---|
-| Significant Wave Height | 2.98-5.90 m | ≥ 2.75 m | no |
+| Significant Wave Height | 2.98-5.90 m | ≥ 2.75 m <!--now:minimum_significant_wave_height_m--> | no |
 | Swell direction | 287-331° | 255-330° | no |
-| Wind | calmest hour 0-21 km/h | ≤ 16.5 km/h, or offshore 20-180° and ≤ 35 km/h | no |
+| Wind | calmest hour 0-21 km/h | ≤ 16.5 km/h, or offshore 20-180° and ≤ 35 km/h <!--now:maximum_wind_speed_kmh--> | no |
 
 The bars in this table are the ones the fit chooses, in the reanalysis units it runs in — the
 same numbers `calibrate.py` prints. `thresholds.json` ships them translated into Open-Meteo
@@ -247,7 +247,7 @@ Fitting an arc to the Gold Days would narrow it onto noise while changing no cal
 fitted to the observed 44° would reject most of the arc the canyon is actually fed from.
 
 The height bar is the one exception: it *is* derived, as the tightest bar admitting every Gold
-Day in the fitting split, floored to 0.25 m. At 2.75 m it still does not bind — the smallest
+Day in the fitting split, floored to 0.25 m. At 2.75 m <!--now:minimum_significant_wave_height_m--> it still does not bind — the smallest
 Gold Day peak in the fitting split is 2.98 m.
 
 Ticket #15 now prices a second rule against this same margin. The Go Call confidence floor asks

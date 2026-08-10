@@ -117,8 +117,9 @@ hide in the wrong row. `output/held_out_scores.csv` carries RMSE and bias beside
 
 **The improvement is monotonic in size and the loss is confined to seas nothing is ever
 called on.** The crossover sits at 3 m, and the shipped `minimum_significant_wave_height_m`
-is 2.75 m — the same quantity, Combined Sea rather than swell height, so the two are directly
-comparable. Nothing below that bar is ever called at all.
+is 2.75 m <!--now:minimum_significant_wave_height_m--> — the same quantity, Combined Sea rather
+than swell height, so the two are directly comparable. Nothing below that bar is ever called at
+all.
 
 **The real finding is in the bias, not the MAE.** The baseline does not scatter around the
 buoy — it sits **under** it, by −0.861 m on Gold Day hours and −1.016 m above 6 m. The
@@ -464,34 +465,42 @@ reconstructions):
 ### 5. What each would do to the shipped bars
 
 `calibrate.py` restates the fitted bars through this same fit, so none of these is only an
-Amplification Model change. From the fitted 2.75 m / 12.0 s / 13.5 s (`output/translation_shipped_bars.csv`):
+Amplification Model change. From the fitted 2.75 m / 12.0 s / 13.5 s <!--fixed:#60--> (`output/translation_shipped_bars.csv`):
 
 | Candidate | Height | Watch bar | Go Call bar | Expressible as a Translation |
 |---|---|---|---|---|
-| shipped (since #60) | 2.75 m | 11.4 s | 12.9 s | yes |
-| period-sea-3m (#60) | 2.75 m | 11.4 s | 12.9 s | yes |
-| period-op-sea-3m (#60) | 2.75 m | 11.4 s | 12.9 s | yes |
-| swell-3m (pre-#58) | 2.75 m | 11.5 s | 12.9 s | yes |
-| all-hours | 2.75 m | **11.2 s** | **12.6 s** | yes |
-| combined-sea-3m | 2.75 m | 11.4 s | 12.9 s | yes |
-| band-fitted | 2.75 m | 11.4 s | 12.8 s | yes |
-| regime-aware | 2.75 m | **11.2 s** | **12.6 s** | **no — two lines** |
+| shipped (since #60) | 2.75 m | 11.4 s | 12.9 s | yes <!--now:minimum_significant_wave_height_m--><!--now:watch_minimum_swell_period_s--><!--now:go_call_minimum_swell_period_s--> |
+| period-sea-3m (#60) | 2.75 m | 11.4 s | 12.9 s | yes <!--fixed:#60--> |
+| period-op-sea-3m (#60) | 2.75 m | 11.4 s | 12.9 s | yes <!--fixed:#60--> |
+| swell-3m (pre-#58) | 2.75 m | 11.5 s | 12.9 s | yes <!--fixed:#58--> |
+| all-hours | 2.75 m | **11.2 s** | **12.6 s** | yes <!--fixed:#60--> |
+| combined-sea-3m | 2.75 m | 11.4 s | 12.9 s | yes <!--fixed:#60--> |
+| band-fitted | 2.75 m | 11.4 s | 12.8 s | yes <!--fixed:#60--> |
+| regime-aware | 2.75 m | **11.2 s** | **12.6 s** | **no — two lines** <!--fixed:#60--> |
 
-**Read this table at #58, the `swell-3m` row was identical to the then-shipped row: 2.75 m /
-11.5 s / 12.9 s.** That was the demonstration that #58 moved no decision threshold. It worked
+<!--
+Only the first row is `now:`. Every other row records what a *candidate* fit would have
+produced, measured once by #60's sweep; several coincide with today's bars, and updating them
+if a bar moves would falsify the experiment rather than refresh it. `shipped` is the only row
+that is a claim about the running system, so it is the only row a moved bar must change.
+-->
+
+**Read this table at #58, the `swell-3m` row was identical to the then-shipped
+row: 2.75 m / 11.5 s / 12.9 s.** <!--fixed:#58--> That was the demonstration that #58 moved no
+decision threshold. It worked
 because the bars are restated through the *period* transform and a height transform that both
 survive the change — the period line was untouched, and the height bar floors to the same 0.25 m
 step under either line (`0.9412 × 2.75 + 0.3435 = 2.932` and `1.0127 × 2.75 + 0.0192 = 2.804`
 both floor to 2.75).
 
-**#60 then moved the period line, and the shipped row moved with it to 11.4 s.** The `swell-3m`
+**#60 then moved the period line, and the shipped row moved with it to 11.4 s.** <!--fixed:#60--> The `swell-3m`
 row is the pre-#60 shipped bars, which is why it still reads 11.5 s and why
 `translation_shipped_bars.csv` records it as `moved_watch 0.1`. The Go Call bar and the height
 bar are unchanged, so what #60 cost is one tenth on the Watch bar and nothing else in this table.
 
 **No bar moved is not the same as nothing moved.** `backtest.py` scores the shipped bars by
 restating them *into* reanalysis units with `Translation.invert`, and that inversion did change:
-the 2.75 m bar reads 2.557 m under the old line and 2.697 m under the new one. So the whole-record
+the 2.75 m <!--now:minimum_significant_wave_height_m--> bar reads 2.557 m under the old line and 2.697 m under the new one. So the whole-record
 backtest flagged fewer days — 574 → 530 Watch and 128 → 110 Go Calls — while calling the same 33
 and 16 Gold Days. Same recall, better precision, and it is the restatement that improved rather
 than the bar that moved. The held-out figures from `calibrate.py` are untouched, because that
@@ -522,7 +531,7 @@ Sea. `period-sea-3m` and `period-op-sea-3m` hold height at the #58 fit and move 
 alone, so any movement is attributable to the subset and nothing else. `period-sea-3m` is what
 shipped.
 
-**The Go Call bar does not move.** Watch reads 11.4 s against 11.5 s; the height bar cannot move
+**The Go Call bar does not move.** Watch reads 11.4 s against 11.5 s; <!--fixed:#60--> the height bar cannot move
 by construction. The −0.3 s drop to 12.6 s belongs to `all-hours` and `regime-aware`, which are
 different changes.
 
@@ -613,7 +622,7 @@ all described it as Combined Sea — the same 3 m bar read against two different
 different 4,941 hours read the second way. Changing which hours are selected moves the period
 line and so moves a shipped bar, which made it a decision for a human rather than a bug fix.
 That decision was taken: the subset is now **reanalysis Combined Sea ≥ 3 m**, the Watch bar
-moved 11.5 s → 11.4 s, and the Go Call bar did not move. Section 5a has the measurement and
+moved 11.5 s → 11.4 s, <!--fixed:#60--> and the Go Call bar did not move. Section 5a has the measurement and
 ADR 0011 has the reasoning.
 
 **Everything except section 2 inherits `served_path.py`'s reconstruction assumption**, item 7
