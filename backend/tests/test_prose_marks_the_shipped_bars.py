@@ -76,6 +76,7 @@ COVERED = (
     "analysis/backtest/README.md",
     "analysis/calibration/README.md",
     "analysis/calibration/calibrate.py",
+    "analysis/distribution_coverage/README.md",
     "analysis/forecast_error/README.md",
     "analysis/model_spread/README.md",
     "analysis/overlap/README.md",
