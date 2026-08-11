@@ -4,6 +4,12 @@
  * Same seam as App.test.tsx: the API is mocked at the network boundary and only visible
  * behaviour is asserted. Assertions target fixture values so none can pass by matching
  * static copy — a mistake this suite has shipped twice.
+ *
+ * **`toHaveTextContent` matches substrings.** `toHaveTextContent('82%')` is satisfied by a
+ * page rendering `0.82%`, and `toHaveTextContent('6.1')` by one rendering `16.1`. Where the
+ * point of an assertion is that a number is *this* number rather than one containing it,
+ * match on `textContent` with a bounded pattern instead. The percentage test below existed
+ * to forbid `0.82` and passed on `0.82` for exactly this reason.
  */
 
 import { cleanup, render, screen, within } from '@testing-library/react';
@@ -254,6 +260,26 @@ describe('calls', () => {
     expect(note).toHaveTextContent(/very small number of days/i);
   });
 
+  it('says which Gold Days chose the thresholds and which were held back to check them', async () => {
+    // Asserting that both numbers appear leaves them free to swap places: a 6/3 split
+    // rendered as "3 to choose them and 6 held back" keeps both figures on the page and
+    // passes. It also reverses what the caveat exists to disclose, claiming the fit rests
+    // on half the days it does and that twice as many were held back to check it — the
+    // more reassuring of the two readings, which is the direction this project keeps
+    // having to undo. Each number is pinned to its own clause.
+    server.use(
+      http.get('*/api/conditions/forecast', () =>
+        HttpResponse.json({ ...forecast, calibrated: true, calibration }),
+      ),
+    );
+
+    render(<ForecastRange />);
+
+    const note = await screen.findByRole('status');
+    expect(note.textContent).toContain(`${calibration.gold_days_fitted} to choose them`);
+    expect(note.textContent).toContain(`${calibration.gold_days_validated} held back`);
+  });
+
   it('keeps the rule-of-thumb warning when a calibrated flag arrives without provenance', async () => {
     // The two halves are stored together but arrive over a network. A response claiming a
     // calibration it cannot describe must not silently drop the caveat and replace it with
@@ -305,6 +331,37 @@ describe('how much the forecasters agree', () => {
     for (const provider of spread.providers) {
       expect(panel).toHaveTextContent(provider);
     }
+  });
+
+  it('counts them in the sentence from the backend, not from a number kept here', async () => {
+    // The names above were asserted; the count beside them was not, and every fixture that
+    // reached this sentence carried the full roster of three. Freezing the number at 3
+    // passed — and on a two-forecaster day it would print "3 independent forecasters"
+    // directly above a banner reading "2 of 3 answered", contradicting itself on screen.
+    const two = {
+      ...BIG,
+      model_spread: {
+        swell_height: { ...BIG.model_spread.swell_height!, providers: ['DWD', 'NCEP'] },
+      },
+    };
+    serveDays([two]);
+
+    const panel = await agreementFor(BIG.date);
+
+    expect(panel).toHaveTextContent(/\b2 independent forecasters\b/);
+  });
+
+  it('says how far apart they are on the period, not only on the height', async () => {
+    // Nothing asserted the period clause at all, so deleting it outright passed. Period is
+    // the condition that actually binds a giant day — CONTEXT.md's Swell Period entry and
+    // #66 both turn on it — so a disagreement about it is worth at least as much to a
+    // reader as one about the height. Asserted as value-and-word in a single phrase: the
+    // number alone would be satisfied by the height sentence if the two ever coincided.
+    const period = BIG.model_spread.swell_period!;
+
+    const panel = await agreementFor(BIG.date);
+
+    expect(panel.textContent).toContain(`${period.spread}${period.unit} on the period`);
   });
 
   it('does not present the disagreement as a margin on the predicted height', async () => {
@@ -512,6 +569,34 @@ describe('the day card says how much was checked', () => {
     serveDays([
       {
         ...BIG,
+        call: {
+          ...BIG_CALL,
+          status: 'watch' as const,
+          model_agreement: 'divided' as const,
+          go_call_withheld: true,
+        },
+      },
+    ]);
+
+    render(<ForecastRange />);
+
+    expect(await screen.findByTestId(`day-agreement-${BIG.date}`)).toHaveTextContent(
+      /models divided/i,
+    );
+  });
+
+  it('puts a refused Go Call ahead of how much was checked, when a day is both', async () => {
+    // `agreementFlag` states this precedence outright — a refusal outranks both markers,
+    // because it is the only one of them that changed what the card says. Nothing tested
+    // it: every fixture with a withheld Go Call carried a full spread, and every thin
+    // spread came on a day nothing had refused. So the two branches never competed, and
+    // reordering them to let "partly checked" win passed the whole suite.
+    serveDays([
+      {
+        ...BIG,
+        model_spread: {
+          swell_height: { ...BIG.model_spread.swell_height!, providers: ['DWD'], degraded: true },
+        },
         call: {
           ...BIG_CALL,
           status: 'watch' as const,
@@ -974,9 +1059,18 @@ describe('how sure the forecast is', () => {
   it('states the chance of clearing the height bar as a percentage a reader can scan', async () => {
     // The backend sends a share between 0 and 1 and leaves the rounding here, so the figure
     // is stated in one place. 0.82 must reach the page as 82%, not as 0.82.
+    //
+    // `toHaveTextContent('82%')` could not say that. It matches substrings, and "0.82%"
+    // contains "82%" — so deleting the `* 100` rendered the raw share and passed the one
+    // assertion written to forbid exactly that. The lookbehind is what carries the claim:
+    // nothing that reads as a decimal may sit in front of the number. Derived from the
+    // fixture rather than written as a literal, so the two cannot drift apart.
+    const percentage = Math.round(BIG_CALL.height_bar_probability! * 100);
+
     const panel = await detailFor(BIG.date);
 
-    expect(panel).toHaveTextContent('82%');
+    expect(panel.textContent).toMatch(new RegExp(`(?<![\\d.])${percentage}%`));
+    expect(panel).not.toHaveTextContent(`${BIG_CALL.height_bar_probability}%`);
   });
 
   it('does not offer that percentage as the chance of a giant day', async () => {
@@ -1124,6 +1218,46 @@ describe('how the prediction has moved', () => {
     const panel = await detailFor(BIG.date, [forecast.days[0], fading, forecast.days[2]]);
 
     expect(panel).toHaveTextContent(/2m smaller|down 2m/i);
+  });
+
+  it('says a run that barely moved did not move, rather than drawing a change of zero', async () => {
+    // The whole `Unchanged since the run before` branch was dead to this suite: both
+    // fixtures moved by metres, so the threshold that selects it could be deleted and
+    // nothing noticed. A 0.02m move is below the rounding the page displays at, and
+    // reporting it as "0m larger" is a sentence about nothing dressed as a finding.
+    const steady = {
+      ...BIG,
+      call: {
+        ...BIG_CALL,
+        predicted_significant_wave_height: { value: 6.4, unit: 'm' },
+        previous_runs: [earlier(6.42, 8, '2026-02-09T06:00:00Z')],
+      },
+    };
+
+    const panel = await detailFor(BIG.date, [forecast.days[0], steady, forecast.days[2]]);
+
+    expect(panel).toHaveTextContent(/unchanged since the run before/i);
+    expect(panel.textContent).not.toMatch(/larger|smaller/i);
+  });
+
+  it('names the lead time the earlier run spoke at', async () => {
+    // A range narrowing as the date approaches is the forecast doing its job; the same
+    // narrowing at a fixed lead time is something else entirely, and a reader cannot tell
+    // which they are looking at without this. The clause was unasserted, so dropping it
+    // passed — leaving a comparison against a run whose distance from the day is unstated.
+    const previous = earlier(5.2, 8, '2026-02-09T06:00:00Z');
+    const building = {
+      ...BIG,
+      call: {
+        ...BIG_CALL,
+        predicted_significant_wave_height: { value: 6.4, unit: 'm' },
+        previous_runs: [previous],
+      },
+    };
+
+    const panel = await detailFor(BIG.date, [forecast.days[0], building, forecast.days[2]]);
+
+    expect(panel).toHaveTextContent(`${previous.lead_time_days} days out`);
   });
 
   it('says nothing about movement on the first run that mentions a date', async () => {

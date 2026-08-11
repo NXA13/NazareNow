@@ -138,6 +138,22 @@ describe('the two tiers', () => {
     expect(within(watch).getByText(/32\.2 per Big-Wave Season/)).toBeInTheDocument();
   });
 
+  it('states a tier’s wasted days as a share of the days it flagged, not the reverse', async () => {
+    // `days_flagged` was asserted on its own, so the pair in the waste row could be
+    // swapped without moving it — "at most 193 of 181", a subset larger than the set it
+    // is drawn from. Nonsense on its face, and nothing on the page objected.
+    const tier = trackRecord.held_out.watch_or_better;
+
+    render(<TrackRecordPage />);
+
+    const heldOut = await screen.findByTestId('panel-held-out');
+    const watch = within(heldOut).getByLabelText('Watch');
+
+    expect(
+      within(watch).getByText(`at most ${tier.days_wasted_upper_bound} of ${tier.days_flagged}`),
+    ).toBeInTheDocument();
+  });
+
   it('keeps the held-out panel and the whole record apart', async () => {
     // Averaging them would give a reader neither: one is measured on seasons the
     // thresholds never saw, the other partly on the seasons they were chosen against.
@@ -164,6 +180,22 @@ describe('the wasted-trip figure', () => {
 
     expect(statement).toHaveTextContent('at most 34 of 43 trips');
     expect(statement).toHaveTextContent('79%');
+  });
+
+  it('says how many Go Calls landed on a confirmed giant day, not how many did not', async () => {
+    // The sentence carries two counts out of the same tier, and only the wasted one was
+    // asserted. Rendering `days_wasted_upper_bound` where `gold_days_called` belongs makes
+    // the page say 34 of 43 Go Calls landed on a confirmed giant day — when the answer is
+    // 9, and the very next clause says at most 34 of those 43 were wasted. The page
+    // contradicts itself in two adjacent sentences, in the flattering direction, and every
+    // test passed.
+    const goCall = trackRecord.held_out.go_call;
+
+    render(<TrackRecordPage />);
+
+    const statement = await screen.findByTestId('waste-statement');
+
+    expect(statement.textContent).toContain(`${goCall.gold_days_called} of them landed`);
   });
 
   it('says the figure is a worst case and why', async () => {
@@ -195,6 +227,52 @@ describe('what it refuses to leave out', () => {
     expect(screen.getByTestId('limitations')).toHaveTextContent(
       'The whole calibration rests on 38 confirmed days.',
     );
+  });
+
+  it('says which confirmed days chose the thresholds and which were held back', async () => {
+    // Only the total was pinned, leaving the split free to reverse: a 25/13 record reading
+    // "13 were used to choose the thresholds, which leaves 25 the system had never seen"
+    // nearly doubles the unseen days, which is the one number on this page a sceptical
+    // reader would go to first. Each count is tied to its own clause.
+    render(<TrackRecordPage />);
+
+    const paragraph = (await screen.findByTestId('gold-day-total')).closest('p')!;
+
+    expect(paragraph.textContent).toContain(`${trackRecord.gold_days_fitted} were used to choose`);
+    expect(paragraph.textContent).toContain(
+      `${trackRecord.gold_days_validated} the system had never seen`,
+    );
+  });
+
+  it('introduces the page with the whole record’s span, not the held-out one', async () => {
+    // The two spans are asserted inside their own panels, and the lead sentence naming one
+    // of them was covered by neither. It promises what follows covers the whole record, so
+    // quietly narrowing it to the held-out years describes a different page than the one
+    // below it.
+    render(<TrackRecordPage />);
+
+    const lead = await screen.findByText(/here is what the system would have said/);
+
+    expect(lead).toHaveTextContent(trackRecord.full_record.span);
+    expect(lead).not.toHaveTextContent(trackRecord.held_out.span);
+  });
+
+  it('lists the days most recent first, as its own caption promises', async () => {
+    // The caption says "most recent first" and nothing checked it, so dropping the reverse
+    // left the table in the record's own order — oldest first — under a caption asserting
+    // the opposite. Every row is found by date elsewhere in this suite, which is exactly
+    // why order went unnoticed.
+    render(<TrackRecordPage />);
+
+    const table = await screen.findByTestId('day-record');
+    const dates = within(table)
+      .getAllByRole('row')
+      .slice(1)
+      .map((row) => within(row).getAllByRole('rowheader')[0]?.textContent ?? '');
+
+    expect(dates).toEqual([...dates].sort().reverse());
+    // And that this is a real ordering rather than a table of one row, or of equal dates.
+    expect(new Set(dates).size).toBe(trackRecord.days.length);
   });
 
   it('explains the gap between what it predicts and the height of a wave face', async () => {
