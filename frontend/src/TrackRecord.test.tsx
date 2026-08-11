@@ -283,6 +283,29 @@ describe('what the sea delivered on the flagged days', () => {
     expect(section).toHaveTextContent(/not a promise about the\s+next one/);
   });
 
+  it('puts each tier its own lowest sea, under its own waste figure', async () => {
+    // #87 unblocked the Watch tier, whose waste figure is the harsher of the two — 94%, on a
+    // tier that has never flagged a day the sea stayed below 2.72m. The pairing is per tier
+    // and per panel, so a component reading one tier's delivery into the other's row would
+    // render the counterweight beside the wrong harsh number.
+    const panel = trackRecord.held_out;
+
+    render(<TrackRecordPage />);
+
+    const heldOut = await screen.findByTestId('panel-held-out');
+
+    for (const [label, tier] of [
+      ['Watch', panel.watch_or_better],
+      ['Go Call', panel.go_call],
+    ] as const) {
+      const row = within(heldOut).getByRole('group', { name: label });
+      expect(within(row).getByText(`${tier.delivered!.minimum_m.toFixed(2)}m`)).toBeInTheDocument();
+      expect(
+        within(row).getByText(new RegExp(`median ${tier.delivered!.median_m.toFixed(2)}m`)),
+      ).toBeInTheDocument();
+    }
+  });
+
   it('renders nothing at all for a tier the record publishes no delivery for', async () => {
     // The Watch tier today (#87). A heading with no figures under it reads as a page that
     // broke, and this section is optional in a way no other figure on the page is.

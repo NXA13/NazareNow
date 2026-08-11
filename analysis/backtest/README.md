@@ -227,10 +227,14 @@ reason `analysis/track_record/publish.py` gives about second answers.
 | peaked above 3 m | 39 of 43 |
 | peaked above 4 m | 17 of 43 |
 
-`output/delivery.csv` carries both tiers over both splits. **Only the Go Call rows are
-published**: the Watch tier's denominator disagrees between this report and `calibration/`, 199
-against 193, and #87 has the diagnosis. The two figures are rendered as statements about one set
-of days, so `publish.py` refuses the join rather than reconciling it.
+`output/delivery.csv` carries both tiers over both splits, and since #87 both are published. It
+shipped with the Go Call alone because the Watch tier's denominator disagreed between this report
+and `calibration/` — 199 days against 193 — and `publish.py` refuses to render two statements
+about one set of days when they are counted over different sets. #87 removed the disagreement at
+its source by counting both published panels from this report rather than from two.
+
+The Watch tier is where the counterweight matters most. Its waste figure reads **94%**, on a tier
+that has never flagged a day the sea stayed below 2.72 m.
 
 Every metre here is Significant Wave Height at the reanalysis node, not Face Height, and the page
 that renders it says so in its own section rather than relying on the reader having arrived from

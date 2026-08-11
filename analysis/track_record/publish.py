@@ -11,13 +11,19 @@ re-derives. So the inputs are the committed reports, each cited on the field it 
 
 | Section | Source | Ticket |
 |---|---|---|
-| held-out call record | `analysis/calibration/output/calibrated_scores.csv` | #12 |
-| whole-record call record | `analysis/backtest/output/summary.csv` | #11 |
-| day-by-day record | `analysis/backtest/output/daily_calls.csv` | #11 |
+| both panels, and the day-by-day record | `analysis/backtest/output/daily_calls.csv` | #11, #87 |
 | delivered sea per tier | `analysis/backtest/output/delivery.csv` | #83 |
 | scored height accuracy | `analysis/amplification_model/output/held_out_scores.csv` | #13 |
 | served height accuracy | `analysis/amplification_model/output/translation_shapes.csv` | #52 |
 | Gold Day split | `backend/src/nazarenow/thresholds.json` | #12 |
+
+**Both panels come from one scoring run, since #87.** They used not to: the held-out block came
+from `calibrated_scores.csv` and the whole-record block from `summary.csv`, and those two score
+the same record with different bars — the fit's, in reanalysis units, against the shipped ones
+translated into Open-Meteo units. The page renders both panels to a reader whose reason for
+having two is to compare them. `summary.csv` and `calibrated_scores.csv` are still read, but as
+independent references in `--check` rather than as sources; `tier_counts_from_days` has the whole
+argument.
 
 **The served figures are #52's, not `served_path.py`'s** — though since #58 the two nearly
 agree. `output/served_path_scores.csv` reconstructs the operational series using the shipped
@@ -45,10 +51,12 @@ The rows taken here are `translation_shapes.csv` filtered to the shipped candida
 the page cannot disagree with the counts beside it. See `backend/src/nazarenow/track_record.py`.
 
 `--check` runs offline against the committed reports and needs no credentials and no
-download. It pins the four joins that would silently publish a wrong number: the season
-counts against the rates `calibrate.py` published independently, the served rows against the
-generator they must come from, the Gold Day split against the shipped threshold file, and
-#83's delivered sea against the flagged-day count the waste figure beside it divides by.
+download. It pins the joins that would silently publish a wrong number: the season counts
+against the rates `calibrate.py` published independently; the served rows against the
+generator they must come from; the Gold Day split against the shipped threshold file; #83's
+delivered sea against the flagged-day count the waste figure beside it divides by; and, since
+#87, both published panels against the two summary reports that describe them — exactly, for
+the one scored with the same bars, and by recall alone for the one scored with the fit's.
 
 Run:
     .venv/Scripts/python.exe analysis/track_record/publish.py
@@ -110,24 +118,18 @@ TIERS = ("watch_or_better", "go_call")
 """The two tiers, under the names both the reports and the backend use. #16 requires them
 reported separately and never as one figure."""
 
-DELIVERED_TIERS = ("go_call",)
-"""The tiers whose delivered sea is published. The Go Call only, and not for long, I hope.
+DELIVERED_TIERS = TIERS
+"""The tiers whose delivered sea is published — both, since #87.
 
 #83 adds what the flagged days *did* — the sea they peaked at — beside what the Gold Days say
-about them, because the Gold Day figure alone reads as 79% waste on a rule where every held-out
-Go Call landed on a day the sea passed 2.8 m.
+about them, because the Gold Day figure alone reads as 79% waste on a Go Call tier where every
+held-out call landed on a day the sea passed 2.8 m. It reads as **94%** on the Watch tier, which
+needs the counterweight more, not less.
 
-**The Watch tier is measured by `delivery.py` and deliberately not published here.** Its
-denominators disagree between the two reports the page is built from: the held-out block says
-193 Watch days and the day record says 199, because `calibrate.py` scores with the candidate
-bars it fits in reanalysis units and `backtest.py` scores with the shipped, translated ones.
-#87 has the whole diagnosis. Publishing a delivery figure counted over 199 days beside a waste
-figure counted over 193 would put a contradiction in two adjacent sentences — which is exactly
-the defect #79 found surviving in `TrackRecord.tsx` and the reason `delivered_for` refuses the
-join rather than rounding it away.
-
-The Go Call joins exactly in both splits, at 43 and 110, so it ships. When #87 lands, add
-`watch_or_better` here and the join will either hold or stop the build.
+It shipped with the Go Call alone because the Watch tier's denominator disagreed between the two
+reports the page was assembled from, 199 against 193. #87 removed the disagreement by counting
+both panels from one scoring run rather than by reconciling two, so the join now holds for both
+tiers. `delivered_for` still refuses a mismatch; there is simply no longer one.
 """
 
 DELIVERY_LADDER = (3.0, 4.0, 5.0, 6.0)
@@ -233,12 +235,14 @@ def seasons_in(daily: list[dict[str, str]], *, held_out: bool | None = None) -> 
 def tier_counts(
     rows_in: list[dict[str, str]], path: Path, column: str, value: str
 ) -> dict[str, dict[str, int]]:
-    """Both tiers' counts from one report, selecting the panel or split by one column.
+    """Both tiers' counts from one summary report, selecting the panel or split by one column.
 
-    The held-out figures come from `calibrated_scores.csv` keyed on `split` and the
-    whole-record ones from `summary.csv` keyed on `panel`, but the join is the same shape
-    and the refusal has to be: a report missing a tier must stop the build rather than
-    publish a page that quotes one tier's figures under both headings.
+    **No longer a source for the page** (#87). Both published panels are counted from the day
+    record by `tier_counts_from_days`; this survives so `--check` can hold the summary reports
+    up against them, which is the join whose absence let the two panels disagree for a month.
+
+    The refusal stays as it was: a report missing a tier must stop the build rather than let a
+    page quote one tier's figures under both headings.
     """
     by_tier = {row["tier"]: row for row in rows_in if row[column] == value}
     missing = [tier for tier in TIERS if tier not in by_tier]
@@ -251,6 +255,58 @@ def tier_counts(
         }
         for tier in TIERS
     }
+
+
+TIER_CALLS = {
+    "watch_or_better": ("watch", "go"),
+    "go_call": ("go",),
+}
+"""Each published tier, and the `call` values in the day record that make it up.
+
+`daily_calls.csv` records the **strongest** call a day received, so its `watch` rows are
+Watch-and-not-Go. Reading them as the Watch tier would publish a tier that excludes its own
+best days. The same mapping is stated in `analysis/backtest/delivery.py`, which counts the
+delivered sea over exactly these days — and `--check` pins the two together by requiring the
+delivery's total to equal the count derived here.
+"""
+
+
+def tier_counts_from_days(
+    daily: list[dict[str, str]], *, held_out: bool | None = None
+) -> dict[str, dict[str, int]]:
+    """Both tiers' counts, derived from the day-by-day record (#87).
+
+    **One scoring run behind both published panels.** Before this, the held-out block came
+    from `calibrated_scores.csv` and the whole-record block from `summary.csv`, and the two
+    are not scored with the same bars: `calibrate.py` drives the Heuristic Baseline with the
+    candidate thresholds from its own sweep, fitted in reanalysis units, while `backtest.py`
+    scores with whatever `load_thresholds()` ships — the same fit translated into Open-Meteo
+    units. A lower period bar admits more days, so the held-out Watch tier read 193 in one
+    report and 199 in the other, and the page rendered both panels to one reader whose whole
+    reason for having two is to compare them.
+
+    Neither number was wrong. They answer different questions, correctly, and the page was
+    asking only one: **what would the running system have called.** That is what every other
+    figure here describes and what a reader is being asked to trust, so it is the day record —
+    scored with the shipped bars — that both panels now come from.
+
+    Only one published figure moved: held-out Watch days, 193 to 199. Every Gold Day count,
+    both spans and the whole-record block were already identical, which is why this was
+    invisible without a join and why `--check` grew one.
+    """
+    inside = (
+        daily
+        if held_out is None
+        else [row for row in daily if (row["season"] >= HELD_OUT_FROM) == held_out]
+    )
+    counts = {}
+    for tier, calls in TIER_CALLS.items():
+        flagged = [row for row in inside if row["call"] in calls]
+        counts[tier] = {
+            "gold_days_called": len({row["date"] for row in flagged if row["gold_day"] == "yes"}),
+            "days_flagged": len(flagged),
+        }
+    return counts
 
 
 def delivered_for(
@@ -465,9 +521,7 @@ def assemble() -> dict[str, Any]:
                 ),
                 "big_wave_seasons": float(len(seasons_in(daily, held_out=True))),
                 "tiers": with_delivery(
-                    tier_counts(calibrated, CALIBRATED, "split", "held-out"),
-                    delivery,
-                    "held_out",
+                    tier_counts_from_days(daily, held_out=True), delivery, "held_out"
                 ),
             },
             "full_record": {
@@ -475,9 +529,7 @@ def assemble() -> dict[str, Any]:
                 "basis": "Hindcast",
                 "gold_days": int(whole["gold_days_in_span"]),
                 "big_wave_seasons": float(len(seasons_in(daily))),
-                "tiers": with_delivery(
-                    tier_counts(summary, SUMMARY, "panel", PANEL), delivery, "full_record"
-                ),
+                "tiers": with_delivery(tier_counts_from_days(daily), delivery, "full_record"),
             },
         },
         "height_record": {
@@ -596,12 +648,49 @@ def check() -> int:
             "table with its columns swapped",
         )
 
+    # 4a. The join whose absence let the two panels disagree for a month (#87). Both are now
+    #     counted from the day record, so the summary reports become independent references
+    #     rather than sources — and each has to be held up against what it claims to describe.
+    published = assemble()["call_record"]
+
+    #     `summary.csv` scores the same panel with the same shipped bars, so it must agree
+    #     exactly. A divergence means the day record and the headline table came from
+    #     different runs of the backtest, and the page would be quoting the older one.
+    for tier, counts in tier_counts(summary, SUMMARY, "panel", PANEL).items():
+        for field, value in counts.items():
+            expect(
+                published["full_record"]["tiers"][tier][field] == value,
+                f"whole record {tier} {field}: the day record gives "
+                f"{published['full_record']['tiers'][tier][field]} and {SUMMARY.name} gives "
+                f"{value}; the two must be one scoring run",
+            )
+
+    #     `calibrated_scores.csv` scores with the bars the fit chose in reanalysis units, not
+    #     the translated ones the system ships, so its *cost* may legitimately differ — and
+    #     only in one direction, since a translated-down period bar cannot admit fewer days.
+    #     Its **recall** may not differ at all: if a Gold Day count moves, the two are no
+    #     longer describing one calibration and the held-out panel's caption stops being true.
+    for tier, counts in tier_counts(calibrated, CALIBRATED, "split", "held-out").items():
+        shipped = published["held_out"]["tiers"][tier]
+        expect(
+            shipped["gold_days_called"] == counts["gold_days_called"],
+            f"held-out {tier}: the shipped bars catch {shipped['gold_days_called']} Gold Days "
+            f"where the fit's own bars catch {counts['gold_days_called']}. The two are meant "
+            "to be one calibration in two unit systems, so a recall moving means they are not",
+        )
+        expect(
+            shipped["days_flagged"] >= counts["days_flagged"],
+            f"held-out {tier}: the shipped bars flag {shipped['days_flagged']} days where the "
+            f"fit's bars flag {counts['days_flagged']}. The shipped period bar is the lower of "
+            "the two, so it cannot admit fewer days — see #87",
+        )
+
     # 4b. The delivered sea is counted over the same days the waste figure divides by (#83).
     #     `delivered_for` already raises on a mismatched total, so this covers what a total
     #     agreeing cannot: a ladder counting more big days than there were calls, or one that
     #     rises as the bar rises. Both would make the page claim more than the record holds,
     #     and both are arithmetic a reader cannot check.
-    for label, panel in assemble()["call_record"].items():
+    for label, panel in published.items():
         for tier, numbers in panel["tiers"].items():
             delivered = numbers["delivered"]
             expect(

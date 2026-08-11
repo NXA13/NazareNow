@@ -87,15 +87,29 @@ class TestWhatItPublishes:
         for step in delivered["above"]:
             assert step["share"] == pytest.approx(step["days"] / step["of_days"])
 
-    def test_a_tier_the_record_publishes_no_delivery_for_says_so(
-        self, published_client: TestClient
-    ) -> None:
-        """The Watch tier today (#87). Absent rather than an empty object or a zeroed one:
-        an interface cannot tell "nothing happened" from "we did not publish this" if the
-        shape is the same, and on this page the first reading is the flattering one."""
-        panel = published_client.get("/api/track-record").json()["held_out"]
+    def test_both_tiers_carry_a_delivery(self, published_client: TestClient) -> None:
+        """Since #87, which is what made the Watch tier publishable.
 
-        assert panel["watch_or_better"]["delivered"] is None
+        It shipped with the Go Call alone because the two reports the record was assembled
+        from disagreed about how many Watch days there were — 199 against 193 — and the page
+        renders the delivered figure and the waste figure as statements about one set of days.
+        The Watch tier is where the pairing matters most: its waste figure reads 94%, on a
+        tier that never flagged a day the sea stayed below 2.72 m.
+
+        That a tier *may* carry none is still true and still exercised, in
+        `test_track_record.py`. It is no longer true of anything this release publishes, so
+        asserting it here would pin the page to a state #87 exists to have left.
+        """
+        panels = published_client.get("/api/track-record").json()
+
+        for span in ("held_out", "full_record"):
+            for tier in ("watch_or_better", "go_call"):
+                delivered = panels[span][tier]["delivered"]
+                assert delivered is not None, f"{span} {tier} carries no delivered sea"
+                assert all(
+                    step["of_days"] == panels[span][tier]["days_flagged"]
+                    for step in delivered["above"]
+                )
 
     def test_every_band_carries_both_models(self, published_client: TestClient) -> None:
         """ADR 0006, enforced at the published boundary as well as in the file.
