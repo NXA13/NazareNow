@@ -284,6 +284,22 @@ export const trackRecord: TrackRecord = {
       wasted_upper_bound: 1 - 9 / 43,
       days_wasted_upper_bound: 34,
       flags_per_big_wave_season: 43 / 6,
+      // The one tier the record publishes a delivery for. Every count here is distinct from
+      // every other number in this fixture, so a component reading the wrong field renders a
+      // number that appears nowhere it should and the assertion catches it.
+      delivered: {
+        minimum_m: 2.82,
+        median_m: 3.8,
+        maximum_m: 5.3,
+        above: [
+          { metres: 3, days: 39, of_days: 43, share: 39 / 43 },
+          { metres: 4, days: 17, of_days: 43, share: 17 / 43 },
+          { metres: 5, days: 5, of_days: 43, share: 5 / 43 },
+          // A zero rung, because the real record has one at 6 m and a renderer that
+          // filters empty rows would silently shorten the ladder.
+          { metres: 6, days: 0, of_days: 43, share: 0 },
+        ],
+      },
     },
   },
   full_record: {

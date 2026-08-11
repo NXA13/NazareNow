@@ -366,6 +366,109 @@ class TestArithmeticThatWouldOverstate:
             parse(body)
 
 
+class TestDeliveredSea:
+    """What the sea did on the flagged days (#83), and the files that would overstate it.
+
+    Every refusal here is in the same direction as the rest of this module: a file that
+    parses cleanly and makes the system look better than the record holds. The section is
+    the page's counterweight to the wasted-trip figure, so an inflated one does not read as
+    an error — it reads as reassurance, which is the expensive failure on this page.
+    """
+
+    DELIVERED = ("call_record", "held_out", "tiers", "go_call", "delivered")
+
+    def with_delivery(self, delivered: Any) -> dict[str, Any]:
+        body = deepcopy(VALID)
+        body["call_record"]["held_out"]["tiers"]["go_call"]["delivered"] = delivered
+        return body
+
+    def valid(self) -> dict[str, Any]:
+        return {
+            "minimum_m": 2.82,
+            "median_m": 3.8,
+            "maximum_m": 5.3,
+            "above": [
+                {"metres": 3.0, "days": 39},
+                {"metres": 4.0, "days": 17},
+                {"metres": 5.0, "days": 5},
+                {"metres": 6.0, "days": 0},
+            ],
+        }
+
+    def test_a_tier_without_a_delivery_parses(self) -> None:
+        """Optional, unlike every other figure. The Watch tier carries none today (#87), and
+        a page missing this sentence is worse than a page not served only in the other
+        direction — so its absence must not be an error."""
+        record = parse(deepcopy(VALID))
+
+        assert record.held_out.go_call.delivered is None
+        assert record.held_out.watch_or_better.delivered is None
+
+    def test_shares_are_derived_from_the_counts(self) -> None:
+        """The file carries counts. A file carrying a share as well would carry the same
+        fact twice, and the copies drift in the direction the module docstring names."""
+        record = parse(self.with_delivery(self.valid()))
+        delivered = record.held_out.go_call.delivered
+
+        assert delivered is not None
+        assert [step.days for step in delivered.above] == [39, 17, 5, 0]
+        assert all(step.of_days == 43 for step in delivered.above)
+        assert delivered.above[0].share == 39 / 43
+
+    def test_more_days_over_a_bar_than_were_ever_flagged_is_refused(self) -> None:
+        """The arithmetic that lets a page say "97 of 43". It renders as an ordinary
+        sentence and is the shape of `TrackRecord.tsx`'s worst survivor in #79."""
+        delivered = self.valid()
+        delivered["above"][0]["days"] = 97
+
+        with pytest.raises(TrackRecordUnusable, match="more days than the tier ever called"):
+            parse(self.with_delivery(delivered))
+
+    def test_a_ladder_that_rises_with_the_bar_is_refused(self) -> None:
+        """More days clearing 4 m than clearing 3 m cannot both be true. A file like this
+        makes the strongest-looking rung the one nothing supports."""
+        delivered = self.valid()
+        delivered["above"][1]["days"] = 40
+
+        with pytest.raises(TrackRecordUnusable, match="which cannot both be true"):
+            parse(self.with_delivery(delivered))
+
+    def test_thresholds_that_do_not_increase_are_refused(self) -> None:
+        delivered = self.valid()
+        delivered["above"][1]["metres"] = 2.0
+
+        with pytest.raises(TrackRecordUnusable, match="not increasing"):
+            parse(self.with_delivery(delivered))
+
+    def test_a_day_above_the_highest_recorded_peak_is_refused(self) -> None:
+        """A rung above the maximum with days on it means the ladder and the summary describe
+        different sets of days, and the ladder is the half a reader scans."""
+        delivered = self.valid()
+        delivered["above"][3]["days"] = 1
+
+        with pytest.raises(TrackRecordUnusable, match="highest day recorded"):
+            parse(self.with_delivery(delivered))
+
+    def test_a_summary_out_of_order_is_refused(self) -> None:
+        """A minimum above the median is the field swap that would put the flattering number
+        where the page says "the lowest peak any of them landed on"."""
+        delivered = self.valid()
+        delivered["minimum_m"], delivered["median_m"] = (
+            delivered["median_m"],
+            delivered["minimum_m"],
+        )
+
+        with pytest.raises(TrackRecordUnusable, match="not in order"):
+            parse(self.with_delivery(delivered))
+
+    def test_an_empty_ladder_is_refused(self) -> None:
+        delivered = self.valid()
+        delivered["above"] = []
+
+        with pytest.raises(TrackRecordUnusable, match="no thresholds"):
+            parse(self.with_delivery(delivered))
+
+
 class TestDays:
     def test_a_day_claiming_a_gold_tier_without_being_a_gold_day_is_refused(self) -> None:
         body = deepcopy(VALID)

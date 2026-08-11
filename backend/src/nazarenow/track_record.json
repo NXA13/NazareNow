@@ -1,5 +1,5 @@
 {
-  "published_at": "2026-08-05",
+  "published_at": "2026-08-11",
   "source": "analysis/track_record/publish.py",
   "call_record": {
     "held_out": {
@@ -10,11 +10,35 @@
       "tiers": {
         "watch_or_better": {
           "gold_days_called": 12,
-          "days_flagged": 193
+          "days_flagged": 193,
+          "delivered": null
         },
         "go_call": {
           "gold_days_called": 9,
-          "days_flagged": 43
+          "days_flagged": 43,
+          "delivered": {
+            "minimum_m": 2.82,
+            "median_m": 3.8,
+            "maximum_m": 5.3,
+            "above": [
+              {
+                "metres": 3.0,
+                "days": 39
+              },
+              {
+                "metres": 4.0,
+                "days": 17
+              },
+              {
+                "metres": 5.0,
+                "days": 5
+              },
+              {
+                "metres": 6.0,
+                "days": 0
+              }
+            ]
+          }
         }
       }
     },
@@ -26,11 +50,35 @@
       "tiers": {
         "watch_or_better": {
           "gold_days_called": 33,
-          "days_flagged": 553
+          "days_flagged": 553,
+          "delivered": null
         },
         "go_call": {
           "gold_days_called": 16,
-          "days_flagged": 110
+          "days_flagged": 110,
+          "delivered": {
+            "minimum_m": 2.7,
+            "median_m": 3.83,
+            "maximum_m": 6.38,
+            "above": [
+              {
+                "metres": 3.0,
+                "days": 97
+              },
+              {
+                "metres": 4.0,
+                "days": 46
+              },
+              {
+                "metres": 5.0,
+                "days": 12
+              },
+              {
+                "metres": 6.0,
+                "days": 1
+              }
+            ]
+          }
         }
       }
     }

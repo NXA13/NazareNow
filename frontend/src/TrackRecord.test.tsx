@@ -210,6 +210,98 @@ describe('the wasted-trip figure', () => {
   });
 });
 
+describe('what the sea delivered on the flagged days', () => {
+  /**
+   * The counterweight to the waste figure (#83), and the pair is the point: waste is scored
+   * against ratified giant days, a bar so high that a rule flagging nothing but excellent
+   * days still reads as 79% wasted. Each sentence alone misleads, in opposite directions.
+   */
+  it('states the lowest peak any Go Call landed on', async () => {
+    const delivered = trackRecord.held_out.go_call.delivered!;
+
+    render(<TrackRecordPage />);
+
+    const statement = await screen.findByTestId('delivered-statement');
+
+    // Not `toHaveTextContent`, which matches on substring: '2.82m' is contained in
+    // '12.82m' and in '2.82mm', so the assertion written to pin this number would pass on a
+    // tenfold error. #78 recorded that class after the percentage guard passed on 0.82%.
+    expect(statement.textContent).toMatch(/(^|[^\d.])2\.82m([^\d]|$)/);
+    expect(statement.textContent).toContain(`${delivered.median_m.toFixed(2)}m`);
+  });
+
+  it('renders every rung of the ladder, including one no day reached', async () => {
+    // A renderer filtering empty rows would drop the 6m rung and shorten the ladder, which
+    // reads as a record whose highest measured threshold is 5m. The zero is a finding.
+    const delivered = trackRecord.held_out.go_call.delivered!;
+
+    render(<TrackRecordPage />);
+
+    const ladder = await screen.findByTestId('delivered-ladder');
+
+    expect(within(ladder).getAllByRole('listitem')).toHaveLength(delivered.above.length);
+    for (const step of delivered.above) {
+      const rung = within(ladder).getByTestId(`delivered-above-${step.metres}`);
+      expect(rung.textContent).toContain(`${step.days} of ${step.of_days}`);
+    }
+  });
+
+  it('counts the delivered days out of the same total the waste figure divides by', async () => {
+    // The two statements describe one set of days. If they were counted over different sets
+    // the page would contradict itself across adjacent sections while both halves looked
+    // ordinary — the shape of `TrackRecord.tsx`'s worst survivor in #79, one section further
+    // on. `publish.py` refuses the join upstream; this is the same refusal at the seam.
+    const goCall = trackRecord.held_out.go_call;
+
+    render(<TrackRecordPage />);
+
+    const ladder = await screen.findByTestId('delivered-ladder');
+
+    for (const step of goCall.delivered!.above) {
+      const rung = within(ladder).getByTestId(`delivered-above-${step.metres}`);
+      expect(rung.textContent).toContain(`of ${goCall.days_flagged}`);
+    }
+  });
+
+  it('names the quantity as Significant Wave Height in the section itself', async () => {
+    // The page states at length, further down, that it does not predict the height of a wave
+    // face. A reader arriving at these metres from the waste figure above has not read it
+    // yet, and "39 of 43 peaked above 4m" is exactly the sentence they will misread.
+    render(<TrackRecordPage />);
+
+    const section = await screen.findByTestId('delivered');
+
+    expect(section).toHaveTextContent(/Significant Wave Height/);
+    expect(section).toHaveTextContent(/not the height of a wave face/);
+  });
+
+  it('says it is a record and not a promise about the next call', async () => {
+    render(<TrackRecordPage />);
+
+    const section = await screen.findByTestId('delivered');
+
+    expect(section).toHaveTextContent(/not a promise about the\s+next one/);
+  });
+
+  it('renders nothing at all for a tier the record publishes no delivery for', async () => {
+    // The Watch tier today (#87). A heading with no figures under it reads as a page that
+    // broke, and this section is optional in a way no other figure on the page is.
+    serve({
+      held_out: {
+        ...trackRecord.held_out,
+        go_call: { ...trackRecord.held_out.go_call, delivered: null },
+      },
+    });
+
+    render(<TrackRecordPage />);
+
+    // Waited on so the assertion runs after the page has loaded, not before it renders.
+    await screen.findByTestId('waste-statement');
+
+    expect(screen.queryByTestId('delivered')).not.toBeInTheDocument();
+  });
+});
+
 describe('what it refuses to leave out', () => {
   it('states that these are reconstructed calls before showing any figure', async () => {
     render(<TrackRecordPage />);

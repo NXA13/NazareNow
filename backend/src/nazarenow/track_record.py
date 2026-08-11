@@ -64,6 +64,50 @@ class TrackRecordUnusable(ValueError):
 
 
 @dataclass(frozen=True)
+class DeliveredStep:
+    """How many of a tier's flagged days reached one height, out of how many there were.
+
+    Carries its own denominator so the share is derived here rather than by a renderer
+    holding two numbers from two places. That is the same rule the module docstring states
+    about rates, applied at the point where getting it wrong would say "97 of 43".
+    """
+
+    metres: float
+    days: int
+    of_days: int
+
+    @property
+    def share(self) -> float:
+        return self.days / self.of_days
+
+
+@dataclass(frozen=True)
+class Delivery:
+    """What the sea actually did on the days a tier flagged (#83).
+
+    The answer to a different question from everything else on this page. Recall and
+    precision are scored against the **Gold Days** — days ratified giant by a contest or a
+    record — which is the only claim here a reader can check against the outside world, and
+    is also a bar so high that a rule flagging nothing but excellent days still reads as
+    mostly waste. This says what the ocean did on those same days, in the quantity the system
+    is actually grounded in.
+
+    **It is Significant Wave Height and not Face Height.** The distinction is `CONTEXT.md`'s
+    load-bearing one: this is the sea measured at a mooring, not the wave a person watches
+    break at Praia do Norte, and the two are not convertible by any fixed ratio. A renderer
+    putting these metres beside a photograph is the failure this docstring exists to prevent.
+
+    **It is a record, not a forecast.** These are days the rule flagged in the past, scored
+    on a Hindcast. Nothing here says what the next Go Call will bring.
+    """
+
+    minimum_m: float
+    median_m: float
+    maximum_m: float
+    above: tuple[DeliveredStep, ...]
+
+
+@dataclass(frozen=True)
 class Tier:
     """One tier's record against the Gold Days in a panel.
 
@@ -74,6 +118,15 @@ class Tier:
     gold_days_in_panel: int
     days_flagged: int
     big_wave_seasons: float
+    delivered: Delivery | None = None
+    """What this tier's days delivered, or `None` where it is not published.
+
+    `None` is the Watch tier today, and the reason is a disagreement between the two reports
+    the record is built from rather than an absence of data — `publish.py`'s `DELIVERED_TIERS`
+    carries the diagnosis and #87 is the fix. Optional rather than required because a page
+    that cannot say this is a page missing a sentence, where a page that cannot say a recall
+    is a page that should not be served.
+    """
 
     @property
     def recall(self) -> float:
@@ -271,7 +324,70 @@ def _tier(raw: Any, name: str, panel: str, gold_days: int, seasons: float) -> Ti
         gold_days_in_panel=gold_days,
         days_flagged=days_flagged,
         big_wave_seasons=seasons,
+        delivered=_delivered(raw.get("delivered"), where, days_flagged),
     )
+
+
+def _delivered(raw: Any, where: str, days_flagged: int) -> Delivery | None:
+    """The delivered sea, or `None` where the record does not publish one for this tier.
+
+    Every refusal here describes a file that parses and means something wrong, in the
+    direction that flatters. A ladder counting more days than were flagged, or one that
+    admits more days as the bar rises, produces an ordinary-looking sentence claiming the
+    system did better than the record holds.
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise TrackRecordUnusable(f"{where}: delivered must be an object, got {type(raw)}")
+
+    minimum = _metres(raw, "minimum_m", where)
+    median = _metres(raw, "median_m", where)
+    maximum = _metres(raw, "maximum_m", where)
+    if not minimum <= median <= maximum:
+        raise TrackRecordUnusable(
+            f"{where}: delivered minimum {minimum}, median {median} and maximum {maximum} "
+            "are not in order, so at least one describes a different set of days"
+        )
+
+    ladder = _require(raw, "above", f"{where}.delivered")
+    if not isinstance(ladder, list) or not ladder:
+        raise TrackRecordUnusable(
+            f"{where}: delivered carries no thresholds, so it states a range with nothing inside it"
+        )
+
+    steps = []
+    for index, step in enumerate(ladder):
+        at = f"{where}.delivered.above[{index}]"
+        if not isinstance(step, dict):
+            raise TrackRecordUnusable(f"{at} is not an object")
+        metres = _metres(step, "metres", at)
+        days = _count(step, "days", at)
+        if days > days_flagged:
+            raise TrackRecordUnusable(
+                f"{at}: {days} days reached {metres} m out of {days_flagged} flagged, which "
+                "is more days than the tier ever called"
+            )
+        if metres > maximum and days:
+            raise TrackRecordUnusable(
+                f"{at}: {days} days reached {metres} m where the highest day recorded is "
+                f"{maximum} m"
+            )
+        steps.append(DeliveredStep(metres=metres, days=days, of_days=days_flagged))
+
+    for lower, higher in zip(steps, steps[1:], strict=False):
+        if higher.metres <= lower.metres:
+            raise TrackRecordUnusable(
+                f"{where}: delivered thresholds are not increasing ({lower.metres} then "
+                f"{higher.metres}), so the ladder does not read as one"
+            )
+        if higher.days > lower.days:
+            raise TrackRecordUnusable(
+                f"{where}: {higher.days} days reached {higher.metres} m but only "
+                f"{lower.days} reached {lower.metres} m, which cannot both be true"
+            )
+
+    return Delivery(minimum_m=minimum, median_m=median, maximum_m=maximum, above=tuple(steps))
 
 
 def _panel(raw: Any, name: str) -> Panel:

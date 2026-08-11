@@ -14,6 +14,7 @@ re-derives. So the inputs are the committed reports, each cited on the field it 
 | held-out call record | `analysis/calibration/output/calibrated_scores.csv` | #12 |
 | whole-record call record | `analysis/backtest/output/summary.csv` | #11 |
 | day-by-day record | `analysis/backtest/output/daily_calls.csv` | #11 |
+| delivered sea per tier | `analysis/backtest/output/delivery.csv` | #83 |
 | scored height accuracy | `analysis/amplification_model/output/held_out_scores.csv` | #13 |
 | served height accuracy | `analysis/amplification_model/output/translation_shapes.csv` | #52 |
 | Gold Day split | `backend/src/nazarenow/thresholds.json` | #12 |
@@ -44,9 +45,10 @@ The rows taken here are `translation_shapes.csv` filtered to the shipped candida
 the page cannot disagree with the counts beside it. See `backend/src/nazarenow/track_record.py`.
 
 `--check` runs offline against the committed reports and needs no credentials and no
-download. It pins the three joins that would silently publish a wrong number: the season
+download. It pins the four joins that would silently publish a wrong number: the season
 counts against the rates `calibrate.py` published independently, the served rows against the
-generator they must come from, and the Gold Day split against the shipped threshold file.
+generator they must come from, the Gold Day split against the shipped threshold file, and
+#83's delivered sea against the flagged-day count the waste figure beside it divides by.
 
 Run:
     .venv/Scripts/python.exe analysis/track_record/publish.py
@@ -71,6 +73,7 @@ SUMMARY = ROOT / "analysis" / "backtest" / "output" / "summary.csv"
 DAILY = ROOT / "analysis" / "backtest" / "output" / "daily_calls.csv"
 SCORED = ROOT / "analysis" / "amplification_model" / "output" / "held_out_scores.csv"
 SHAPES = ROOT / "analysis" / "amplification_model" / "output" / "translation_shapes.csv"
+DELIVERY = ROOT / "analysis" / "backtest" / "output" / "delivery.csv"
 THRESHOLDS = ROOT / "backend" / "src" / "nazarenow" / "thresholds.json"
 
 DESTINATION = ROOT / "backend" / "src" / "nazarenow" / "track_record.json"
@@ -106,6 +109,34 @@ publishable."""
 TIERS = ("watch_or_better", "go_call")
 """The two tiers, under the names both the reports and the backend use. #16 requires them
 reported separately and never as one figure."""
+
+DELIVERED_TIERS = ("go_call",)
+"""The tiers whose delivered sea is published. The Go Call only, and not for long, I hope.
+
+#83 adds what the flagged days *did* — the sea they peaked at — beside what the Gold Days say
+about them, because the Gold Day figure alone reads as 79% waste on a rule where every held-out
+Go Call landed on a day the sea passed 2.8 m.
+
+**The Watch tier is measured by `delivery.py` and deliberately not published here.** Its
+denominators disagree between the two reports the page is built from: the held-out block says
+193 Watch days and the day record says 199, because `calibrate.py` scores with the candidate
+bars it fits in reanalysis units and `backtest.py` scores with the shipped, translated ones.
+#87 has the whole diagnosis. Publishing a delivery figure counted over 199 days beside a waste
+figure counted over 193 would put a contradiction in two adjacent sentences — which is exactly
+the defect #79 found surviving in `TrackRecord.tsx` and the reason `delivered_for` refuses the
+join rather than rounding it away.
+
+The Go Call joins exactly in both splits, at 43 and 110, so it ships. When #87 lands, add
+`watch_or_better` here and the join will either hold or stop the build.
+"""
+
+DELIVERY_LADDER = (3.0, 4.0, 5.0, 6.0)
+"""The thresholds published from `delivery.csv`, named here rather than read off its header.
+
+The same rule `BAND_LABELS` follows: a column this script has no name for is a report that
+changed shape, and passing it through would put a threshold nobody chose on the page. Stated as
+a tuple so the order on the page is this file's decision and not the CSV writer's.
+"""
 
 GOLD_DAY_CAVEAT = (
     "120 hours across only 5 Gold Days — the held-out seasons hold 13, but training also "
@@ -219,6 +250,68 @@ def tier_counts(
             "days_flagged": int(by_tier[tier]["days_flagged"]),
         }
         for tier in TIERS
+    }
+
+
+def delivered_for(
+    delivery: list[dict[str, str]], split: str, tier: str, days_flagged: int
+) -> dict[str, Any] | None:
+    """What one tier's flagged days delivered, joined hard against the tier's own count.
+
+    `None` for a tier outside `DELIVERED_TIERS`, which is the Watch tier and why.
+
+    **The join is the whole point of this function.** The delivered figure and the Gold Day
+    figure are rendered as two statements about one set of days, so if they were counted over
+    different sets the page would contradict itself in adjacent sentences and read as more
+    confident for it. `days_flagged` here comes from the same block the page's waste statement
+    divides by, so a disagreement stops the build rather than reaching a reader.
+    """
+    if tier not in DELIVERED_TIERS:
+        return None
+
+    found = [row for row in delivery if row["split"] == split and row["tier"] == tier]
+    if len(found) != 1:
+        raise SystemExit(
+            f"{DELIVERY} carries {len(found)} rows for split={split!r} tier={tier!r}, not 1"
+        )
+    row = found[0]
+
+    counted = int(row["days_flagged"])
+    if counted != days_flagged:
+        raise SystemExit(
+            f"{DELIVERY} counts {counted} {tier} days in the {split} split where the published "
+            f"call record counts {days_flagged}. The page renders both as statements about one "
+            "set of days, so publishing them would contradict itself in adjacent sentences. "
+            "See #87."
+        )
+
+    expected = {f"days_above_{bar:g}m" for bar in DELIVERY_LADDER}
+    carried = {column for column in row if column.startswith("days_above_")}
+    if carried != expected:
+        raise SystemExit(
+            f"{DELIVERY} carries thresholds {sorted(carried)} where this script publishes "
+            f"{sorted(expected)}; a threshold nobody chose must not reach the page"
+        )
+
+    ladder = [{"metres": bar, "days": int(row[f"days_above_{bar:g}m"])} for bar in DELIVERY_LADDER]
+    return {
+        "minimum_m": float(row["minimum_m"]),
+        "median_m": float(row["median_m"]),
+        "maximum_m": float(row["maximum_m"]),
+        "above": ladder,
+    }
+
+
+def with_delivery(
+    counts: dict[str, dict[str, int]], delivery: list[dict[str, str]], split: str
+) -> dict[str, Any]:
+    """A panel's tier counts, each carrying its delivered sea where one is published."""
+    return {
+        tier: {
+            **numbers,
+            "delivered": delivered_for(delivery, split, tier, numbers["days_flagged"]),
+        }
+        for tier, numbers in counts.items()
     }
 
 
@@ -347,6 +440,7 @@ def assemble() -> dict[str, Any]:
 
     calibrated = rows(CALIBRATED)
     summary = rows(SUMMARY)
+    delivery = rows(DELIVERY)
     thresholds = json.loads(THRESHOLDS.read_text(encoding="utf-8"))
     calibration = thresholds.get("calibration")
     if calibration is None:
@@ -370,14 +464,20 @@ def assemble() -> dict[str, Any]:
                     ]
                 ),
                 "big_wave_seasons": float(len(seasons_in(daily, held_out=True))),
-                "tiers": tier_counts(calibrated, CALIBRATED, "split", "held-out"),
+                "tiers": with_delivery(
+                    tier_counts(calibrated, CALIBRATED, "split", "held-out"),
+                    delivery,
+                    "held_out",
+                ),
             },
             "full_record": {
                 "span": whole["span"],
                 "basis": "Hindcast",
                 "gold_days": int(whole["gold_days_in_span"]),
                 "big_wave_seasons": float(len(seasons_in(daily))),
-                "tiers": tier_counts(summary, SUMMARY, "panel", PANEL),
+                "tiers": with_delivery(
+                    tier_counts(summary, SUMMARY, "panel", PANEL), delivery, "full_record"
+                ),
             },
         },
         "height_record": {
@@ -495,6 +595,39 @@ def check() -> int:
             f"{label}: the Watch tier flagged fewer days than the Go Call tier, which is the "
             "table with its columns swapped",
         )
+
+    # 4b. The delivered sea is counted over the same days the waste figure divides by (#83).
+    #     `delivered_for` already raises on a mismatched total, so this covers what a total
+    #     agreeing cannot: a ladder counting more big days than there were calls, or one that
+    #     rises as the bar rises. Both would make the page claim more than the record holds,
+    #     and both are arithmetic a reader cannot check.
+    for label, panel in assemble()["call_record"].items():
+        for tier, numbers in panel["tiers"].items():
+            delivered = numbers["delivered"]
+            expect(
+                (delivered is not None) == (tier in DELIVERED_TIERS),
+                f"{label} {tier}: delivered is published for exactly {DELIVERED_TIERS}",
+            )
+            if delivered is None:
+                continue
+            flagged = numbers["days_flagged"]
+            for step in delivered["above"]:
+                expect(
+                    step["days"] <= flagged,
+                    f"{label} {tier}: {step['days']} days over {step['metres']:g} m out of "
+                    f"{flagged} flagged",
+                )
+            expect(
+                all(
+                    low["days"] >= high["days"]
+                    for low, high in zip(delivered["above"], delivered["above"][1:], strict=False)
+                ),
+                f"{label} {tier}: a higher threshold admits more days than a lower one",
+            )
+            expect(
+                delivered["minimum_m"] <= delivered["median_m"] <= delivered["maximum_m"],
+                f"{label} {tier}: minimum, median and maximum are not in order",
+            )
 
     # 5. Every day published is one of the two kinds it claims to be, and no day appears
     #    twice. A Gold Day the system issued a Go Call for is in both sets, and a union built

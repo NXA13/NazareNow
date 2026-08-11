@@ -1,0 +1,5 @@
+split,tier,days_flagged,minimum_m,median_m,maximum_m,days_above_3m,days_above_4m,days_above_5m,days_above_6m
+held_out,watch_or_better,199,2.72,4.04,8.14,180,101,47,23
+held_out,go_call,43,2.82,3.8,5.3,39,17,5,0
+full_record,watch_or_better,553,2.7,3.98,9.19,484,273,132,57
+full_record,go_call,110,2.7,3.83,6.38,97,46,12,1
