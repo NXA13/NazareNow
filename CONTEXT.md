@@ -139,16 +139,9 @@ _Avoid_: historical data, reanalysis, past weather
 **Forecast Error Profile**:
 The measured distribution of how far third-party forecasts drift from what actually happened,
 recorded separately for each Lead Time. Widens as Lead Time grows. Injected into predictions at
-serving time so the system's confidence reflects forecast range.
-_Avoid_: error bars, noise, bias
-_Binds identifiers too, with one exception_ (#65): the shipped schema and the code that reads it
-say **drift**, not `noise` — `forecast_error.json`'s band key, `Band.drift`, and the `drift`
-column of `analysis/forecast_error/output/drift_by_lead_time.csv`. `bias` is kept as a field
-name, because it is the exact statistical term for the signed component and this entry sanctions
-no replacement to coin one; the _Avoid_ on it governs prose, where "the signed part of the drift"
-says the same thing without borrowing a word that also means "prejudice". Before #65 the
-vocabulary doc and the schema contradicted each other and a reader had no way to know which was
-authoritative.
+serving time so the system's confidence reflects forecast range. The shipped schema and the code
+that read it say **drift**; `bias` is kept as a field name for the signed component, per ADR 0013.
+_Avoid_: error bars, noise, bias (in prose)
 
 **Pipeline Run**:
 One scheduled execution that fetches Offshore Conditions and buoy observations, produces

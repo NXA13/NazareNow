@@ -139,11 +139,7 @@ class Summary:
     def drift(self) -> float:
         """The part of the error a constant correction cannot remove.
 
-        Called `drift` and not `noise` since #65. CONTEXT.md's Forecast Error Profile entry
-        puts "noise" on its _Avoid_ list and defines the quantity as how far a forecast
-        *drifts*, which is also what `distribution.py` has always called it once past the
-        boundary. One quantity carrying two names across a file boundary is the hazard; this
-        is the name the domain already had.
+        Called `drift` and not `noise` since #65 — ADR 0013.
         """
         return math.sqrt(max(self.rmse**2 - self.bias**2, 0.0))
 

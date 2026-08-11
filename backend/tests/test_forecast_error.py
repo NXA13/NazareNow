@@ -173,7 +173,10 @@ class TestRefusals:
             for regime in lead.values():
                 regime["noise"] = regime.pop("drift")
 
-        with pytest.raises(ForecastErrorUnusable, match="drift"):
+        # The whole message, not just "drift" — that substring appears in most of this class's
+        # refusals, so matching it alone would pass if the file were rejected for some other
+        # reason entirely and prove nothing about the old key.
+        with pytest.raises(ForecastErrorUnusable, match="is missing 'drift'"):
             parse(pre_65)
 
     def test_inverted_percentiles_are_refused(self) -> None:

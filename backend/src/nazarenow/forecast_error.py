@@ -66,16 +66,8 @@ class Band:
     Exported rather than `rmse` by #14: bias share is under 1% at every Lead Time so the two
     are nearly equal today, and this is the field that stays correct if that stops being true.
 
-    **Called `drift`, not `noise`, since #65.** CONTEXT.md defines a Forecast Error Profile as
-    how far forecasts *drift*, and puts "noise" on the entry's _Avoid_ list. `distribution.py`
-    had always called this quantity drift on its own side of the boundary and renamed it on
-    read — `drift, bias = band.noise, band.bias` — which is one quantity wearing two names
-    with nothing checking that they mean the same thing.
-
-    The rename moved the JSON key too, so a profile written before #65 now fails to load with
-    "is missing 'drift'". That is deliberate: `ForecastErrorUnusable` exists because a wrong
-    width does not look wrong to a reader, and silently accepting the old key would be exactly
-    the quiet path this class refuses everywhere else.
+    Called `drift` and not `noise` since #65; the JSON key moved with it, so a profile written
+    before then is refused rather than read. ADR 0013 has the reasoning.
     """
 
     bias: float
