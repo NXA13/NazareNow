@@ -136,8 +136,11 @@ class Summary:
     p95: float
 
     @property
-    def noise(self) -> float:
-        """The part of the error a constant correction cannot remove."""
+    def drift(self) -> float:
+        """The part of the error a constant correction cannot remove.
+
+        Called `drift` and not `noise` since #65 — ADR 0013.
+        """
         return math.sqrt(max(self.rmse**2 - self.bias**2, 0.0))
 
     @property
@@ -355,7 +358,7 @@ def write_csv(rows: list[Summary], name: str, reference: str) -> Path:
                 "bias",
                 "mae",
                 "rmse",
-                "noise",
+                "drift",
                 "bias_share",
                 "p5",
                 "p95",
@@ -373,7 +376,7 @@ def write_csv(rows: list[Summary], name: str, reference: str) -> Path:
                     f"{row.bias:.4f}",
                     f"{row.mae:.4f}",
                     f"{row.rmse:.4f}",
-                    f"{row.noise:.4f}",
+                    f"{row.drift:.4f}",
                     f"{row.bias_share:.4f}",
                     f"{row.p5:.4f}",
                     f"{row.p95:.4f}",
@@ -413,7 +416,7 @@ def write_profile_json(drift: list[Summary]) -> Path:
     offset a second time and #15 would inject it twice. What is wanted here is how much the
     forecast *moves* as the date approaches, which is what this reference measures.
 
-    `noise` rather than `rmse` is the width, because it is the part of the error a constant
+    `drift` rather than `rmse` is the width, because it is the part of the error a constant
     correction cannot remove. At every Lead Time here the bias share is under 1%, so the two
     are nearly equal and the centre needs no correction — but exporting the field that stays
     correct if that ever stops being true is cheaper than exporting the one that does not.
@@ -475,7 +478,7 @@ def _term(row: Summary) -> dict[str, float | int]:
     rounding before squaring is how a width acquires a bias nobody can trace.
     """
     return {
-        "noise": round(row.noise, 4),
+        "drift": round(row.drift, 4),
         "bias": round(row.bias, 4),
         "p5": round(row.p5, 4),
         "p95": round(row.p95, 4),
@@ -490,12 +493,12 @@ def print_table(title: str, rows: list[Summary], subset: str) -> None:
     print(f"\n{title} — {subset}\n")
     print(
         f"  {'variable':16s} {'lead':>5s} {'hours':>7s} {'bias':>9s} {'MAE':>9s} "
-        f"{'RMSE':>9s} {'noise':>9s} {'bias share':>11s} {'5-95%':>19s}"
+        f"{'RMSE':>9s} {'drift':>9s} {'bias share':>11s} {'5-95%':>19s}"
     )
     for row in chosen:
         print(
             f"  {row.variable:16s} {row.lead:5d} {row.hours:7d} {row.bias:9.3f} "
-            f"{row.mae:9.3f} {row.rmse:9.3f} {row.noise:9.3f} {row.bias_share:10.1%} "
+            f"{row.mae:9.3f} {row.rmse:9.3f} {row.drift:9.3f} {row.bias_share:10.1%} "
             f"{row.p5:9.2f} {row.p95:8.2f}"
         )
 
@@ -543,32 +546,32 @@ def check() -> int:
         failures.append("percentile: expected a ValueError on an empty sample")
 
     # --- the summary, and the decomposition #14 is asked for ----------------------------
-    # A forecast that is always exactly half a metre high: all bias, no noise. If
+    # A forecast that is always exactly half a metre high: all bias, no drift. If
     # `bias_share` did not report ~100% here, "systematically biased" would be
     # indistinguishable from "noisy" in the published table.
     biased = summarise("wave_height", 3, "all hours", [0.5] * 20)
     expect_close("a constant offset is all bias", biased.bias, 0.5)
-    expect_close("a constant offset has no noise", biased.noise, 0.0)
+    expect_close("a constant offset has no drift", biased.drift, 0.0)
     expect_close("a constant offset is fully correctable", biased.bias_share, 1.0)
 
-    # A forecast wrong by half a metre in both directions equally: no bias, all noise. A
+    # A forecast wrong by half a metre in both directions equally: no bias, all drift. A
     # correction would achieve nothing, and MAE and RMSE agree only because every miss is
     # the same size.
     noisy = summarise("wave_height", 3, "all hours", [0.5, -0.5] * 10)
     expect_close("symmetric misses cancel in the bias", noisy.bias, 0.0)
     expect_close("but not in the MAE", noisy.mae, 0.5)
-    expect_close("noise carries the whole error", noisy.noise, 0.5)
+    expect_close("drift carries the whole error", noisy.drift, 0.5)
     expect_close("nothing here is correctable", noisy.bias_share, 0.0)
 
     # The decomposition has to hold for a sample that is neither, or the published
-    # bias/noise split is arithmetic that only happens to work on tidy inputs.
+    # bias/drift split is arithmetic that only happens to work on tidy inputs.
     mixed = summarise("wave_height", 5, "all hours", [1.0, 0.0, 2.0, -1.0])
     expect_close("bias is the mean miss", mixed.bias, 0.5)
     expect_close("mae is the mean absolute miss", mixed.mae, 1.0)
     expect_close("rmse squares before averaging", mixed.rmse, math.sqrt(1.5))
     expect_close(
-        "rmse squared is bias squared plus noise squared",
-        mixed.bias**2 + mixed.noise**2,
+        "rmse squared is bias squared plus drift squared",
+        mixed.bias**2 + mixed.drift**2,
         mixed.rmse**2,
     )
 

@@ -1,4 +1,4 @@
-variable,unit,reference,lead_time_days,subset,hours,bias,mae,rmse,noise,bias_share,p5,p95
+variable,unit,reference,lead_time_days,subset,hours,bias,mae,rmse,drift,bias_share,p5,p95
 wave_height,m,open-meteo day 0,1,all hours,6152,-0.0016,0.0583,0.0951,0.0951,0.0003,-0.1600,0.1400
 wave_height,m,open-meteo day 0,1,big swell,1634,0.0122,0.0873,0.1308,0.1303,0.0087,-0.1800,0.2470
 wave_height,m,open-meteo day 0,2,all hours,6128,0.0018,0.1209,0.1773,0.1773,0.0001,-0.2400,0.3330

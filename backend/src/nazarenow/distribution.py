@@ -4,7 +4,7 @@ Ticket #15, ADR 0004. The Amplification Model returns one number. Three measured
 sit between an incoming forecast and any honest statement about a date, and this module
 stacks them into a range a person can act on.
 
-    forecast drift            forecast_error.json, `noise`, per Lead Time and regime
+    forecast drift            forecast_error.json, `drift`, per Lead Time and regime
     the Translation residual  amplification.json, `translations.*.residual_rmse`
     the model's own error     amplification.json, `residual.*.rmse`
 
@@ -24,7 +24,7 @@ right one here. Both drift and the model's error grow with the sea, and that sha
 handled by conditioning: every term is read at the regime the reading falls in, so the
 correlation that would otherwise couple them has largely been taken out before they meet.
 
-**The centre is corrected before the spread is added.** `noise` is already
+**The centre is corrected before the spread is added.** `drift` is already
 `sqrt(rmse^2 - bias^2)`: the width that survives a constant correction. Using it without
 applying that correction centres the range on a value the archive measured to be wrong and
 then draws a confident interval around it — #14's `bias_share` docstring asks for the
@@ -329,7 +329,7 @@ class ErrorBudget:
 
         if lead is not None:
             band = lead.for_sea(sea)
-            drift, bias = band.noise, band.bias
+            drift, bias = band.drift, band.bias
         else:
             drift, bias = self._unmeasured_drift(lead_time_days, sea)
 
@@ -438,6 +438,6 @@ class ErrorBudget:
         if final is None or previous is None:  # pragma: no cover - parse() guarantees both
             raise ValueError("the forecast error profile has no measured tail to extend")
 
-        per_day = max(0.0, final.for_sea(sea).noise - previous.for_sea(sea).noise)
+        per_day = max(0.0, final.for_sea(sea).drift - previous.for_sea(sea).drift)
         beyond = max(0, lead_time_days - last)
-        return final.for_sea(sea).noise + per_day * beyond, final.for_sea(sea).bias
+        return final.for_sea(sea).drift + per_day * beyond, final.for_sea(sea).bias

@@ -55,16 +55,19 @@ class Band:
     """How far the forecast drifts, over one regime of sea at one Lead Time.
 
     Two regimes are measured separately because they differ by roughly half again: at seven
-    days the all-hours noise is 0.518 m and the big-swell noise 0.717 m. Applying the
+    days the all-hours drift is 0.518 m and the big-swell drift 0.717 m. Applying the
     all-hours figure to a big swell would understate the uncertainty on precisely the days
     this project exists to call.
     """
 
-    noise: float
+    drift: float
     """The part of the error a constant correction cannot remove.
 
     Exported rather than `rmse` by #14: bias share is under 1% at every Lead Time so the two
     are nearly equal today, and this is the field that stays correct if that stops being true.
+
+    Called `drift` and not `noise` since #65; the JSON key moved with it, so a profile written
+    before then is refused rather than read. ADR 0013 has the reasoning.
     """
 
     bias: float
@@ -147,7 +150,7 @@ def _band(raw: Any, where: str) -> Band:
     if not isinstance(raw, dict):
         raise ForecastErrorUnusable(f"{where} must be an object, got {raw!r}")
 
-    noise = _number(raw, "noise", where)
+    drift = _number(raw, "drift", where)
     p5 = _number(raw, "p5", where)
     p95 = _number(raw, "p95", where)
     bias = _number(raw, "bias", where)
@@ -156,9 +159,9 @@ def _band(raw: Any, where: str) -> Band:
     # A zero-width band is the dangerous one. Perturbing by zero is not an error — every
     # evaluation agrees, the range renders as a single number, and the interface reports
     # certainty it never measured.
-    if noise <= 0:
+    if drift <= 0:
         raise ForecastErrorUnusable(
-            f"{where} noise is {noise}, which claims the forecast does not drift at all; "
+            f"{where} drift is {drift}, which claims the forecast does not move at all; "
             "a zero-width band collapses the Predictive Distribution to a point estimate "
             "and would be published as confidence"
         )
@@ -169,7 +172,7 @@ def _band(raw: Any, where: str) -> Band:
     if hours <= 0:
         raise ForecastErrorUnusable(f"{where} rests on {hours} hours, so nothing was measured")
 
-    return Band(noise=noise, bias=bias, p5=p5, p95=p95, hours=int(hours))
+    return Band(drift=drift, bias=bias, p5=p5, p95=p95, hours=int(hours))
 
 
 def parse(body: dict[str, Any]) -> ForecastError:

@@ -146,7 +146,7 @@ def regime_of(significant_wave_height_m: float, lead: LeadTime) -> str:
 def wind_drift() -> dict[tuple[str, int, str], float]:
     """The measured drift for both wind variables, keyed by variable, Lead Time and regime.
 
-    `noise` rather than `rmse`, matching what `forecast_error.json` ships and what
+    `drift` rather than `rmse`, matching what `forecast_error.json` ships and what
     `ErrorBudget.distribution` perturbs the sea by: the width that survives a constant
     correction.
     """
@@ -159,7 +159,7 @@ def wind_drift() -> dict[tuple[str, int, str], float]:
             if row["variable"] not in ("wind_speed_10m", "wind_direction_10m"):
                 continue
             regime = "big_swell" if row["subset"] == "big swell" else "all_hours"
-            measured[(row["variable"], int(row["lead_time_days"]), regime)] = float(row["noise"])
+            measured[(row["variable"], int(row["lead_time_days"]), regime)] = float(row["drift"])
     return measured
 
 
@@ -196,7 +196,7 @@ def sample(
 
     band = lead.for_sea(sea)
     regime = regime_of(sea, lead)
-    input_sigma = math.hypot(band.noise, budget.translation_rmse)
+    input_sigma = math.hypot(band.drift, budget.translation_rmse)
     output_sigma = budget.own_error(sea)
     centre = sea - band.bias
 
@@ -284,8 +284,8 @@ def main() -> None:
                     "regime": regime,
                     "lead_time_days": lead,
                     "seeds": len(SEEDS),
-                    "wind_speed_noise_kmh": round(wind[("wind_speed_10m", lead, regime)], 4),
-                    "wind_direction_noise_deg": round(
+                    "wind_speed_drift_kmh": round(wind[("wind_speed_10m", lead, regime)], 4),
+                    "wind_direction_drift_deg": round(
                         wind[("wind_direction_10m", lead, regime)], 4
                     ),
                     "width_m": round(statistics.fmean(widths), 4),

@@ -577,7 +577,7 @@ def residual_widths(chosen: Fit, held_out: list[Row]) -> dict[str, Any]:
     figure this module publishes is an MAE, because MAE is what a reader should judge the
     model by — it is in metres and it is not dominated by the worst hours. A Predictive
     Distribution needs something else: a *width*, to combine with the Translation's
-    `residual_rmse` and the Forecast Error Profile's `noise`, both of which are RMSEs. Mixing
+    `residual_rmse` and the Forecast Error Profile's `drift`, both of which are RMSEs. Mixing
     an MAE into that sum is an apples-to-oranges error worth roughly 25% on a Gaussian, and
     it would narrow the published range without appearing anywhere as a mistake.
 
@@ -596,7 +596,7 @@ def residual_widths(chosen: Fit, held_out: list[Row]) -> dict[str, Any]:
         "measured_on": "held-out seasons, against the Proxy Target",
         "is_a_width": (
             "RMSE, for combining with translations.residual_rmse and the Forecast Error "
-            "Profile's noise. The mae beside it is the reader's figure, not the width."
+            "Profile's drift. The mae beside it is the reader's figure, not the width."
         ),
     }
 
@@ -642,7 +642,7 @@ def exported(
             for name, translation in translations.items()
         },
         # The third and largest of the three terms a Predictive Distribution stacks (#15).
-        # The other two already ship: `translations.residual_rmse` here, and `noise` in
+        # The other two already ship: `translations.residual_rmse` here, and `drift` in
         # `forecast_error.json`. This one had no home, so #15 could reach the two smaller
         # terms and not the one that dominates them both.
         "residual": residual,

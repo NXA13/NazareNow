@@ -378,7 +378,7 @@ perturbed by anything: the Swell partition is not archived at any Lead Time, as 
 above records. **Wind can be**, out to the four days finding 4 leaves trustworthy, and the
 branch that shipped #15 left it fixed without saying why.
 
-`wind_sensitivity.py` prices it, perturbing both wind variables at their own measured `noise`
+`wind_sensitivity.py` prices it, perturbing both wind variables at their own measured `drift`
 and reading the change in the p5–p95 width. Mean over twenty seeds, with the per-seed standard
 deviation beside it:
 

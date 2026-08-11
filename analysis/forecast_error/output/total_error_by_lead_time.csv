@@ -1,4 +1,4 @@
-variable,unit,reference,lead_time_days,subset,hours,bias,mae,rmse,noise,bias_share,p5,p95
+variable,unit,reference,lead_time_days,subset,hours,bias,mae,rmse,drift,bias_share,p5,p95
 wave_height,m,proxy target,1,all hours,1593,-0.1709,0.3254,0.5977,0.5728,0.0817,-0.9502,0.3898
 wave_height,m,proxy target,1,big swell,807,-0.3931,0.4699,0.8092,0.7073,0.2360,-1.2208,0.2734
 wave_height,m,proxy target,2,all hours,1593,-0.1535,0.3487,0.6098,0.5901,0.0634,-0.9868,0.4640

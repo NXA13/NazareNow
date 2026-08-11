@@ -119,7 +119,7 @@ def clears_the_bar(sea: float, lead_time_days: int, budget: ErrorBudget, bar: fl
     if band is None:
         raise ValueError(f"no measured profile at {lead_time_days} days")
     measured = band.for_sea(sea)
-    sigma = math.hypot(measured.noise, budget.translation_rmse)
+    sigma = math.hypot(measured.drift, budget.translation_rmse)
     centre = sea - measured.bias
     return 0.5 * math.erfc((bar - centre) / (sigma * math.sqrt(2)))
 

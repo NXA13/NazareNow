@@ -7,7 +7,7 @@ day". Three measured error terms stack between an incoming forecast and that ran
 Two choices decide whether the range is honest, and both are asserted here rather than left
 to a docstring.
 
-**The centre is corrected before the spread is added.** `noise` in `forecast_error.json` is
+**The centre is corrected before the spread is added.** `drift` in `forecast_error.json` is
 already `sqrt(rmse^2 - bias^2)` — the width that remains *after* a constant correction. Using
 that width without applying the correction it presupposes centres the distribution on a value
 the archive measured to be wrong, and then reports a confident interval around it. #14's own
@@ -140,7 +140,7 @@ class TestTheCentreIsCorrectedBeforeTheSpreadIsAdded:
         assert got.median < point
 
     def test_correcting_does_not_narrow_the_range(self) -> None:
-        """`noise` is already bias-removed, so the correction moves the centre and must not
+        """`drift` is already bias-removed, so the correction moves the centre and must not
         also buy back width. A distribution that narrowed as it corrected would be claiming
         the correction was perfect."""
         got = BUDGET.distribution(MODEL, GIANT, lead_time_days=7)
@@ -229,7 +229,7 @@ class TestErrorsArePropagatedRatherThanSummed:
         # exceed what those same terms give if the input ones are not amplified.
         drift = BUDGET.forecast.at(7)
         assert drift is not None
-        input_sigma = (drift.for_sea(5.0).noise ** 2 + BUDGET.translation_rmse**2) ** 0.5
+        input_sigma = (drift.for_sea(5.0).drift ** 2 + BUDGET.translation_rmse**2) ** 0.5
         unamplified = 3.29 * (input_sigma**2 + BUDGET.own_error(5.0) ** 2) ** 0.5
 
         assert spread_at(7) > unamplified

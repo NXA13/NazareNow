@@ -26,7 +26,7 @@ than leaving two copies of one rule to drift apart.
 the Pipeline Run consumes Open-Meteo, which `analysis/overlap/README.md` measured reads about
 half a second short on swell period, with a compressed range rather than a clean offset. This
 is the second train/serve skew — the one ADR 0004 does not cover, because a Forecast Error
-Profile corrects forecast noise and not a fixed difference between two products. The
+Profile corrects forecast drift and not a fixed difference between two products. The
 translation constants ride in the parameter file so this module needs no analysis code.
 """
 
