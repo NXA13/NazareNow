@@ -55,8 +55,11 @@ STATED_COST_M = 0.15
 """What a full one-sigma shift in both wind variables is allowed to move a prediction by.
 
 The shipped coefficients produce 0.111 m on this fixture and 0.119 m on the ordinary one
-`wind_sensitivity.py` also measures, so the margin here is about 25% — wide enough that an
-ordinary refit does not trip it, narrow enough that a wind term growing by a third would.
+`wind_sensitivity.py` also measures, so the wind term has to grow by **35%** before this
+trips — wide enough that an ordinary refit does not, narrow enough that a term growing by
+half does. An earlier version of this said "about 25%" and "a third would": #75 measured the
+headroom at 34.9%, so a third leaves 0.148 m and passes. The bound is stated rather than
+derived, so the sensitivity it buys is worth stating correctly.
 
 This is a bound on the *mechanism*, not on the conclusion. What `distribution.py` states is
 the conclusion — 0.28% to 0.96% of the plausible range's width — and that comes from

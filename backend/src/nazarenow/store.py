@@ -480,11 +480,18 @@ def _recent_calls_sql(dates: Collection[str], limit: int) -> tuple[str, tuple[An
     test. What this ticket fixes is a physical property — whether SQLite walks the table —
     and asserting on a re-typed copy of the query would prove nothing about the one that runs.
 
-    The date predicate sits **inside** the subquery, before the window. Outside it the
-    `ROW_NUMBER()` would still be computed over every row and the filter would only discard
-    the results, which is the shape being fixed. Placeholders rather than interpolation: the
-    dates come from a provider's forecast, and this is the first variable-length collection in
-    this store to reach SQL.
+    The shape being fixed is the query with **no date predicate at all**, which is what this
+    was before #67: `SCAN day_call`, and a cost that grows with the record. Measured on a
+    200,000-row store, that query takes 1119 ms against this one's 0.08 ms.
+
+    The predicate is written **inside** the subquery, before the window, because that is where
+    it belongs — the window is per-date, so the rows it should see are the asked-for dates.
+    Written outside, SQLite 3.50 pushes it down anyway and produces a byte-identical plan and
+    the same timing; an earlier version of this docstring claimed otherwise and #75 measured
+    it. So the placement is for the reader, and the *predicate* is what buys the bound.
+
+    Placeholders rather than interpolation: the dates come from a provider's forecast, and
+    this is the first variable-length collection in this store to reach SQL.
     """
     placeholders = _placeholders(len(dates))
     return (

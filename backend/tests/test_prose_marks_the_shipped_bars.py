@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -86,6 +87,8 @@ COVERED = (
     "docs/adr/0009-light-wind-has-no-direction.md",
     "docs/adr/0010-the-watch-tier-has-a-price.md",
     "docs/adr/0011-copernicus-ibi-is-the-wave-hindcast.md",
+    "docs/adr/0012-prose-says-whether-a-number-is-current.md",
+    "docs/adr/0013-the-profiles-width-is-called-drift.md",
 )
 """The files this rule covers, named rather than globbed.
 
@@ -97,9 +100,36 @@ the rule would be relaxed within a week to keep it quiet.
 
 A new file asserting a bar is not covered until it is added here. That is a real hole, and the
 smaller one: a rule nobody can read the boundary of gets disabled instead of extended.
+
+**ADRs 0012 and 0013 were in that hole, and 0012 is this rule's own decision record** (#75).
+It states the convention with a live `now:` marker on a real bar value, so a bar move left the
+document defining "prose says whether a number is current" teaching the convention with a
+number that was not. Covering it needs `without_specimens`, because a document explaining the
+notation necessarily writes the notation down.
 """
 
 MARKER = re.compile(r"(?:<!--\s*|\[)(now|fixed):([^\s\]>-]+)\s*(?:-->|\])")
+
+CODE_SPAN = re.compile(r"`[^`]*`")
+
+
+def without_specimens(line: str) -> str:
+    """The line with its inline code spans blanked out.
+
+    A marker or a bar value inside backticks is a **specimen of the notation, not a use of
+    it**. ADR 0012 has to be able to write `[now:key]` while explaining what `now:` means,
+    and `value_pattern` below illustrates the unit rule with a bar value. Reading those as
+    claims makes the convention impossible to document — and a rule that cannot be written
+    down without tripping itself is one that gets switched off rather than extended.
+
+    This is what lets `COVERED` include the ADRs that define the rule. Without it the two
+    documents most worth policing are the two it cannot read.
+
+    Blanked to the same width rather than deleted, so a column position in the blanked line
+    still refers to the same character of the original.
+    """
+    return CODE_SPAN.sub(lambda span: " " * len(span.group()), line)
+
 
 RERUN = (
     "mark it <!--now:KEY--> if it states what ships today, or <!--fixed:REF--> if it is a "
@@ -141,9 +171,10 @@ def superseded_blocks(lines: list[str]) -> set[int]:
     quoted = [number for number, line in enumerate(lines, 1) if line.lstrip().startswith(">")]
     covered: set[int] = set()
     for number in quoted:
-        if not MARKER.search(lines[number - 1]):
+        scanned = without_specimens(lines[number - 1])
+        if not MARKER.search(scanned):
             continue
-        if not any(kind == "fixed" for kind, _ in MARKER.findall(lines[number - 1])):
+        if not any(kind == "fixed" for kind, _ in MARKER.findall(scanned)):
             continue
         block = {number}
         for step in (-1, 1):
@@ -155,20 +186,34 @@ def superseded_blocks(lines: list[str]) -> set[int]:
     return covered
 
 
-def sites() -> list[tuple[str, int, str, str, set[str]]]:
-    """Every covered line holding a current bar value, with the markers that apply to it."""
-    current = shipped()
+def sites(
+    root: Path = ROOT,
+    covered: Iterable[str] = COVERED,
+    current: dict[str, float] | None = None,
+) -> list[tuple[str, int, str, str, set[str]]]:
+    """Every covered line holding a current bar value, with the markers that apply to it.
+
+    `root`, `covered` and `current` are parameters so the rule can be run against a tree whose
+    right answer is known — see `TestTheRuleCatchesWhatItIsFor`. Defaulted to the repository,
+    which is what the four tests below scan. #64's hole survived because this walked only the
+    real tree: the sole way to try it was to move a bar by hand and read the output, and a
+    check nobody can feed a known-bad input to is a check nobody re-runs.
+    """
+    current = shipped() if current is None else current
     found = []
-    for relative in COVERED:
-        path = ROOT / relative
+    for relative in covered:
+        path = root / relative
         if not path.exists():
             raise AssertionError(f"{relative} is listed in COVERED but does not exist")
         lines = path.read_text(encoding="utf-8").splitlines()
         scoped = superseded_blocks(lines)
         for number, line in enumerate(lines, 1):
-            for key, unit in COVERED_BARS.items():
-                if value_pattern(current[key], unit).search(line):
-                    markers = {f"{kind}:{ref}" for kind, ref in MARKER.findall(line)}
+            scanned = without_specimens(line)
+            # Over the bars `current` carries, not over `COVERED_BARS`, so a fixture can name
+            # one bar without supplying values for the other four.
+            for key, value in current.items():
+                if value_pattern(value, COVERED_BARS[key]).search(scanned):
+                    markers = {f"{kind}:{ref}" for kind, ref in MARKER.findall(scanned)}
                     if number in scoped:
                         markers.add("fixed:block")
                     found.append((relative, number, key, line.strip(), markers))
@@ -198,7 +243,7 @@ def test_every_current_bar_value_in_prose_is_marked() -> None:
     )
 
 
-def claims() -> list[tuple[str, int, str, str]]:
+def claims(root: Path = ROOT, covered: Iterable[str] = COVERED) -> list[tuple[str, int, str, str]]:
     """Every `now:` marker in a covered file, found without reference to any value.
 
     **Not derived from `sites()`, and the difference is the whole check.** `sites()` finds
@@ -215,11 +260,11 @@ def claims() -> list[tuple[str, int, str, str]]:
     sentence is the claim.
     """
     found = []
-    for relative in COVERED:
+    for relative in covered:
         for number, line in enumerate(
-            (ROOT / relative).read_text(encoding="utf-8").splitlines(), 1
+            (root / relative).read_text(encoding="utf-8").splitlines(), 1
         ):
-            for kind, reference in MARKER.findall(line):
+            for kind, reference in MARKER.findall(without_specimens(line)):
                 if kind == "now":
                     found.append((relative, number, reference, line.strip()))
     return found
@@ -271,3 +316,88 @@ def test_the_rule_covers_the_sites_the_review_found() -> None:
         f"these files carried #64's evidence and are no longer covered: "
         f"{sorted(from_the_review - set(COVERED))}"
     )
+
+
+class TestTheRuleCatchesWhatItIsFor:
+    """The rule, run against a tree whose right answer is known in advance.
+
+    #64's first version passed the whole suite while missing the one site guaranteed to be
+    stale, and it was found by simulating a moved bar by hand and reading the output. #75
+    re-ran that simulation and the rule held — but "somebody ran it once" is exactly the state
+    the hole was found in, and a checker that can only be pointed at the real repository can
+    never be handed an input whose answer is known.
+
+    So these plant the defect instead of hoping it never returns. Each names a bar value in a
+    fixture file, sets `current` to something else, and asserts the rule says so.
+    """
+
+    BAR = "watch_minimum_swell_period_s"
+    MOVED = {"watch_minimum_swell_period_s": 11.3}
+    CURRENT = {"watch_minimum_swell_period_s": 11.4}
+
+    def tree(self, tmp_path: Path, body: str) -> tuple[Path, tuple[str, ...]]:
+        (tmp_path / "doc.md").write_text(body, encoding="utf-8")
+        return tmp_path, ("doc.md",)
+
+    def test_a_now_marker_left_on_a_moved_bar_is_reported(self, tmp_path: Path) -> None:
+        """The defect the rule exists for, and the one its first version could not see.
+
+        The line holds 11.4 and claims it is current; the shipped bar is 11.3. Because the
+        line no longer holds *any* current value it never appears in `sites()`, which is why
+        `claims()` is scanned independently.
+        """
+        root, covered = self.tree(tmp_path, f"the Watch bar is 11.4 s <!--now:{self.BAR}-->\n")
+
+        stale = [
+            (relative, number)
+            for relative, number, reference, line in claims(root, covered)
+            if not value_pattern(self.MOVED[reference], COVERED_BARS[reference]).search(line)
+        ]
+
+        assert stale == [("doc.md", 1)]
+
+    def test_an_unmarked_current_value_is_reported(self, tmp_path: Path) -> None:
+        root, covered = self.tree(tmp_path, "the Watch bar is 11.4 s today\n")
+
+        found = sites(root, covered, self.CURRENT)
+
+        assert [(f, n, k) for f, n, k, _, _ in found] == [("doc.md", 1, self.BAR)]
+        assert found[0][4] == set(), "an unmarked line must carry no markers"
+
+    def test_a_fixed_marker_exempts_the_line(self, tmp_path: Path) -> None:
+        """`fixed:` is never verified, which is the half that must not be tightened."""
+        root, covered = self.tree(tmp_path, "#43 set it at 11.4 s <!--fixed:#43-->\n")
+
+        markers = sites(root, covered, self.CURRENT)[0][4]
+
+        assert markers == {"fixed:#43"}
+
+    def test_a_specimen_in_backticks_is_not_a_claim(self, tmp_path: Path) -> None:
+        """What lets `COVERED` include the ADRs that define the rule.
+
+        ADR 0012 writes `[now:key]` while explaining the notation. Read as a use rather than a
+        mention, that is a marker naming a bar called "key", and the rule cannot be documented
+        without tripping itself.
+        """
+        root, covered = self.tree(
+            tmp_path, "markers are written `[now:key]` and the bar is `11.4 s`\n"
+        )
+
+        assert sites(root, covered, self.CURRENT) == []
+        assert claims(root, covered) == []
+
+    def test_one_fixed_marker_scopes_its_whole_blockquote(self, tmp_path: Path) -> None:
+        """The concession that keeps thirty markers out of the superseded blocks."""
+        root, covered = self.tree(
+            tmp_path,
+            "> a superseded block <!--fixed:#43-->\n> the Watch bar was 11.4 s\n\n"
+            "the Watch bar is 11.4 s today\n",
+        )
+
+        found = {
+            (number, tuple(sorted(markers)))
+            for _, number, _, _, markers in sites(root, covered, self.CURRENT)
+        }
+
+        assert (2, ("fixed:block",)) in found, "the quoted line is covered by the block"
+        assert (4, ()) in found, "prose after the block is not"
