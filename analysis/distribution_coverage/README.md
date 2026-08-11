@@ -118,9 +118,10 @@ term is largest relative to drift (0.130 m against 0.095 m):
 | 0.6–0.7 | 59 → 1.000 | 39 → 1.000 |
 | 0.9–1.0 | 1,687 → 1.000 | 1,800 → 1.000 |
 
-Removing the term **sharpens the predictions without fixing them**: it moves 113 hours out of
-the middle and into the top bin, and the one graded bin becomes ungraded. The step survives.
-Whatever is making the gate under-confident, it is not the bar's own translation uncertainty.
+Removing the term **sharpens the predictions without fixing them**: the top bin gains 113 hours,
+the 0.5–0.6 bin loses two thirds of its own, and what is left of it stops being graded. The step
+survives. Whatever is making the gate under-confident, it is not the bar's own translation
+uncertainty.
 
 ### What that costs the tier it gates
 
