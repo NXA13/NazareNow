@@ -66,9 +66,10 @@ saying one thing thirty times is a rule nobody keeps.
 
 The first version verified `now:` markers only on lines that still held some current value.
 Simulating a one-step move of the Watch bar surfaced three sites and silently passed two — ADR
-0010's "the shipped Watch bar reads 11.4 s" and `calibrate.py`'s translation comment — because
-those lines name that bar *and nothing else*, so once it moved they held no current value and
-were never scanned. **The two that slipped were the two whose entire sentence is the claim.**
+0010's "the shipped Watch bar reads 11.4 s" <!--fixed:#64--> and `calibrate.py`'s translation
+comment — because those lines name that bar *and nothing else*, so once it moved they held no
+current value and were never scanned. **The two that slipped were the two whose entire
+sentence is the claim.**
 
 Verifying marked claims independently of any value match fixes it, and the simulated move now
 surfaces all four while flagging none of the historical mentions. That experiment is the
@@ -84,3 +85,36 @@ the change it exists to catch.
 - Writing a new current-state claim without a marker fails the suite, so the convention is
   self-enforcing for anything inside the covered files.
 - No shipped bar moves as part of this decision.
+
+## Amendment (#75): the rule now covers the document you are reading
+
+This ADR was not in `COVERED`. It states the convention with a live `now:` marker on a real
+bar value, so moving that bar left **the decision record defining "prose says whether a number
+is current" teaching the convention with a number that was not**. Nothing could have caught
+it: the rule's own boundary is a named list, and the list omitted the two ADRs written in the
+same commit as the rule.
+
+That omission was documented at the time as the smaller hole — "a new file asserting a bar is
+not covered until it is added here". It is smaller. It was also, immediately, this file.
+
+**A document explaining the notation has to write the notation down**, so covering it needs a
+distinction the first version did not draw: `[now:key]` inside backticks is a *specimen* of
+the marker, not a use of one. `without_specimens` blanks inline code spans before scanning,
+which is what makes the rule describable in its own terms. Without it, covering this ADR
+reports four failures against sentences that are teaching the reader what a marker looks like.
+
+The prose *example* above — the indented `the Watch bar is 11.4 s <!--now:...-->` — is
+deliberately still checked. It is not in backticks, it names the real current value, and if a
+bar moved while it sat here unchanged this ADR would be illustrating the rule with exactly the
+defect the rule exists to prevent.
+
+### And the rule is now tested against a tree whose answer is known
+
+`sites()` and `claims()` take a root. `TestTheRuleCatchesWhatItIsFor` plants a stale `now:`
+marker, an unmarked current value, an exempt `fixed:` line, a backticked specimen and a
+scoped blockquote in a fixture directory, and asserts what the rule says about each.
+
+The original hole survived because this checker could only ever be pointed at the real
+repository: the sole way to try it was to move a bar by hand and read the output, which is
+what the section above describes doing. #75 re-ran that simulation and the rule held — but
+"somebody ran it once" is precisely the state the hole was found in.

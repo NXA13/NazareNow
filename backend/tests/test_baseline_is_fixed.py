@@ -195,6 +195,40 @@ class TestTheLightWindExemption:
         assert model.predict(at_the_bar).matches_rule
         assert not model.predict(just_over).matches_rule
 
+    def test_the_sentence_turns_at_the_same_speed_the_rule_does(self) -> None:
+        """The exemption speed is spelled twice, and only one spelling was checked here.
+
+        `predict` decides the condition with `wind_speed <= light_wind_exemption_kmh`, and
+        `_wind_held` picks between its two sentences with a second copy of the same
+        comparison. Nothing held them in step. Writing the second as `<` leaves a day at
+        exactly the bar from an onshore bearing still earning its Go Call while being
+        described as "offshore and light" — a wind actively grooming the face, said of one
+        that is merely absent, which is the reading `_wind_held`'s own docstring exists to
+        prevent. That desync passed all 445 tests.
+
+        Every other test in this class probes 4 km/h, comfortably inside the exemption, where
+        the two comparisons cannot disagree. This one sits on the boundary and comes at it
+        from the onshore side, which is the only place they can come apart.
+
+        Read from the shipped file rather than spelled, because the property is that the two
+        comparisons agree — not what they compare against. `test_the_exemption_stops_exactly
+        _at_its_speed` above is where the value itself is pinned, and one site for that is
+        enough.
+        """
+        onshore_at_the_bar = GIANT | {
+            "wind_speed": SHIPPED.light_wind_exemption_kmh,
+            "wind_direction": 225.0,
+        }
+
+        prediction = HeuristicBaseline().predict(onshore_at_the_bar)
+        wind = next(o for o in prediction.conditions if o.condition.value == "wind")
+
+        assert wind.holds, RERUN
+        assert "too light to matter" in wind.explanation, (
+            f"a day the exemption admitted is described as {wind.explanation!r}, which claims "
+            "an offshore wind for a bearing that is onshore"
+        )
+
     def test_an_onshore_gale_still_fails(self) -> None:
         """The exemption must not have quietly become a licence for any onshore wind."""
         prediction = HeuristicBaseline().predict(
