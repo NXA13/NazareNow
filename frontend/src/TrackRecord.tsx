@@ -91,6 +91,64 @@ function TierRow({ label, meaning, tier }: { label: string; meaning: string; tie
   );
 }
 
+/** What the sea did on the days a tier flagged — the counterweight to the waste statement.
+ *
+ * **This must never be rendered without the waste statement above it, and vice versa.** The two
+ * answer different questions about one set of days and each misleads alone, in opposite
+ * directions. Waste is scored against ratified giant days, a bar so high that a rule flagging
+ * nothing but excellent days still reads as 79% wasted; this says what the ocean actually did,
+ * and on its own it would read as a system that never misses.
+ *
+ * **The minimum is the headline and the ladder is the detail.** "No Go Call landed on a day the
+ * sea peaked below 2.82m" is one number, checkable, and the strongest true sentence available
+ * here. A percentage in its place would invite a reader to wonder about the other tail; there
+ * isn't one.
+ *
+ * **Every metre here is Significant Wave Height.** The page says elsewhere, at length, that it
+ * does not predict the height of a wave face — so this section names the quantity in its own
+ * heading rather than relying on a reader having arrived from there. The failure mode is
+ * specific: a reader who takes "above 4m" as a wave face reads a 4m sea as a small day, and one
+ * who takes it the other way books a flight on a number that means something else.
+ *
+ * Renders nothing when the record publishes no delivery for this tier, which is the Watch tier
+ * today. Nothing rather than an empty section: a heading with no figures under it reads as a
+ * page that broke, and the absence has a reason the backend records.
+ */
+function Delivered({ tier }: { tier: TierRecord }) {
+  const delivered = tier.delivered;
+  if (!delivered) return null;
+
+  return (
+    <section data-testid="delivered">
+      <h3>And what did the sea actually do on those days?</h3>
+      <p data-testid="delivered-statement">
+        The figure above asks whether a day was <em>recorded</em> as giant. This asks whether the
+        ocean showed up. Across the same <strong>{tier.days_flagged}</strong> Go Calls, the lowest
+        peak any of them landed on was <strong>{metres(delivered.minimum_m)}</strong> of Significant
+        Wave Height — not one landed on a flat day — and the median was{' '}
+        <strong>{metres(delivered.median_m)}</strong>.
+      </p>
+      <ul data-testid="delivered-ladder">
+        {delivered.above.map((step) => (
+          <li key={step.metres} data-testid={`delivered-above-${step.metres}`}>
+            <strong>
+              {step.days} of {step.of_days}
+            </strong>{' '}
+            peaked above {metres(step.metres)}{' '}
+            <span className="aside">({percent(step.share)})</span>
+          </li>
+        ))}
+      </ul>
+      <p className="aside">
+        Significant Wave Height at the buoy, not the height of a wave face — the distinction below
+        applies to every number in this section. And a record of what past calls landed on, scored
+        against a reconstruction of conditions as they turned out. It is not a promise about the
+        next one.
+      </p>
+    </section>
+  );
+}
+
 /** One span, with both tiers. Never one tier, and never the two averaged together. */
 function Panel({
   panel,
@@ -285,6 +343,8 @@ export function TrackRecordPage() {
         giant with nobody there to write it down. The true figure can only be kinder, and it is
         quoted the unkind way round because this number is asking you to spend money.
       </p>
+
+      <Delivered tier={goCall} />
 
       <h3>How close was the predicted size?</h3>
       <p>

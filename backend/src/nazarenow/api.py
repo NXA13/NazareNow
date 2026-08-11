@@ -647,6 +647,35 @@ def forecast(store: Annotated[Store, Depends(get_store)]) -> Forecast:
     )
 
 
+class DeliveredStepRecord(BaseModel):
+    """One rung of the delivered-sea ladder, as a count and the share already worked out."""
+
+    metres: float
+    days: int
+    of_days: int
+    share: float
+
+
+class DeliveryRecord(BaseModel):
+    """What the sea did on the days a tier flagged (#83).
+
+    A different question from every other figure in this response, and the interface has to
+    keep it that way. Recall and precision are scored against the **Gold Days** — ratified
+    giant days, the only claim here checkable against the outside world, and a bar high enough
+    that a rule flagging nothing but excellent days still reads as mostly waste. This is what
+    the ocean did on those same days.
+
+    **Significant Wave Height, not Face Height**, measured at a mooring rather than at the
+    beach, and not convertible to the other by any fixed ratio (`CONTEXT.md`). The interface
+    must render it inside that framing.
+    """
+
+    minimum_m: float
+    median_m: float
+    maximum_m: float
+    above: list[DeliveredStepRecord]
+
+
 class TierRecord(BaseModel):
     """One tier's record against the Gold Days, with every rate already worked out.
 
@@ -672,6 +701,14 @@ class TierRecord(BaseModel):
     share and a count, because a share is comparable and a count is what a reader pictures."""
 
     flags_per_big_wave_season: float
+
+    delivered: DeliveryRecord | None = None
+    """What this tier's flagged days delivered, or absent where the record does not publish it.
+
+    Optional, unlike every other field here, because a tier without it is a page missing a
+    sentence rather than a page that should not be served. It is `None` for the Watch tier
+    today: the two reports the record is assembled from disagree about how many Watch days
+    there were, so a delivered figure beside the waste figure would contradict it. #87."""
 
 
 class PanelRecord(BaseModel):
@@ -805,6 +842,24 @@ def as_tier(tier: Tier) -> TierRecord:
         wasted_upper_bound=tier.wasted_upper_bound,
         days_wasted_upper_bound=tier.days_wasted_upper_bound,
         flags_per_big_wave_season=tier.flags_per_big_wave_season,
+        delivered=(
+            None
+            if tier.delivered is None
+            else DeliveryRecord(
+                minimum_m=tier.delivered.minimum_m,
+                median_m=tier.delivered.median_m,
+                maximum_m=tier.delivered.maximum_m,
+                above=[
+                    DeliveredStepRecord(
+                        metres=step.metres,
+                        days=step.days,
+                        of_days=step.of_days,
+                        share=step.share,
+                    )
+                    for step in tier.delivered.above
+                ],
+            )
+        ),
     )
 
 

@@ -58,6 +58,45 @@ class TestWhatItPublishes:
         assert tier["wasted_upper_bound"] == pytest.approx(1 - tier["precision_lower_bound"])
         assert tier["days_wasted_upper_bound"] == tier["days_flagged"] - tier["gold_days_called"]
 
+    def test_the_go_call_delivery_arrives_counted_over_the_days_it_flagged(
+        self, published_client: TestClient
+    ) -> None:
+        """#83's counterweight to the waste figure, at the seam.
+
+        The two are rendered as statements about one set of days, so the denominator is the
+        assertion: a delivery counted over a different set would let the page say "97 of 43"
+        beside "at most 34 of 43 wasted" with both halves looking ordinary.
+        """
+        tier = published_client.get("/api/track-record").json()["held_out"]["go_call"]
+        delivered = tier["delivered"]
+
+        assert delivered is not None
+        assert all(step["of_days"] == tier["days_flagged"] for step in delivered["above"])
+        assert all(step["days"] <= tier["days_flagged"] for step in delivered["above"])
+        assert delivered["minimum_m"] <= delivered["median_m"] <= delivered["maximum_m"]
+
+    def test_the_delivery_shares_are_divided_here_and_not_by_the_interface(
+        self, published_client: TestClient
+    ) -> None:
+        """Same rule as every other rate in this response. The interface holding two counts
+        and dividing them is a second implementation of a published figure."""
+        delivered = published_client.get("/api/track-record").json()["held_out"]["go_call"][
+            "delivered"
+        ]
+
+        for step in delivered["above"]:
+            assert step["share"] == pytest.approx(step["days"] / step["of_days"])
+
+    def test_a_tier_the_record_publishes_no_delivery_for_says_so(
+        self, published_client: TestClient
+    ) -> None:
+        """The Watch tier today (#87). Absent rather than an empty object or a zeroed one:
+        an interface cannot tell "nothing happened" from "we did not publish this" if the
+        shape is the same, and on this page the first reading is the flattering one."""
+        panel = published_client.get("/api/track-record").json()["held_out"]
+
+        assert panel["watch_or_better"]["delivered"] is None
+
     def test_every_band_carries_both_models(self, published_client: TestClient) -> None:
         """ADR 0006, enforced at the published boundary as well as in the file.
 

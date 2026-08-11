@@ -209,6 +209,33 @@ This is also why #12 calibrated the Go Call tier against a stated *call budget* 
 against a precision figure. Optimising the number above would have optimised against who was
 carrying a camera in 2022.
 
+### The other half of the same question — `delivery.py`
+
+The bound above is as tight as the Gold Days can make it, and it is still loose enough that the
+site read as **79% wasted** on a rule that has never issued a Go Call for a flat day. `delivery.py`
+answers the question the Gold Days cannot: not "was it documented" but **"did the ocean show up"**,
+which every flagged day can answer.
+
+It reads `peak_significant_wave_height_m` out of `output/daily_calls.csv` — a column this report
+has always written and nothing has ever read — and groups it. It measures nothing new, for the
+reason `analysis/track_record/publish.py` gives about second answers.
+
+| Held-out Go Calls (43) | |
+|---|---|
+| lowest peak any landed on | **2.82 m** |
+| median peak | 3.80 m |
+| peaked above 3 m | 39 of 43 |
+| peaked above 4 m | 17 of 43 |
+
+`output/delivery.csv` carries both tiers over both splits. **Only the Go Call rows are
+published**: the Watch tier's denominator disagrees between this report and `calibration/`, 199
+against 193, and #87 has the diagnosis. The two figures are rendered as statements about one set
+of days, so `publish.py` refuses the join rather than reconciling it.
+
+Every metre here is Significant Wave Height at the reanalysis node, not Face Height, and the page
+that renders it says so in its own section rather than relying on the reader having arrived from
+the one further down.
+
 ## Why there are two panels
 
 The Hindcast is not uniform, and the join is where a benchmark could quietly become fiction.
@@ -322,8 +349,10 @@ This section inverted at #12, and the change is the most important caveat on the
 | `hindcast.py` | Fetches and caches the three series. Validates units, timezone and completeness on arrival. |
 | `swell.py` | The Combined Sea → Swell reconstruction and its scoring. `--check` self-tests the arithmetic. |
 | `backtest.py` | Scores the real `HeuristicBaseline` and `decide`, writes the tables. |
+| `delivery.py` | Groups the day record into what each tier's flagged days delivered (#83). `--check` re-derives it. |
 | `output/summary.csv` | The headline table. |
 | `output/daily_calls.csv` | Every scored day, its call, and whether it is a Gold Day. |
+| `output/delivery.csv` | What the sea peaked at on the days each tier flagged, per split. |
 | `output/period_sensitivity.csv` | The threshold sweep. |
 
 Per the ticket, this backtest is **not** wired into the automated test suite: a test that

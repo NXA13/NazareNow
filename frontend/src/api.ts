@@ -280,6 +280,39 @@ export interface TierRecord {
   wasted_upper_bound: number;
   days_wasted_upper_bound: number;
   flags_per_big_wave_season: number;
+  /** What the sea actually did on the days this tier flagged, or absent where the record
+   * does not publish it — the Watch tier today, for a reason the backend states.
+   *
+   * The counterweight to `wasted_upper_bound`, and the two must always be rendered together.
+   * Waste is scored against ratified giant days, a bar so high that a rule flagging nothing
+   * but excellent days still reads as mostly wasted; this says what the ocean did on the
+   * same days. Either one alone misleads, in opposite directions. */
+  delivered?: DeliveryRecord | null;
+}
+
+/** What the sea did on the days a tier flagged.
+ *
+ * **These metres are Significant Wave Height, not Face Height.** The sea measured at a
+ * mooring 15 km offshore, not the wave a person watches break at Praia do Norte, and not
+ * convertible to it by any fixed ratio. Rendering "above 4 m" anywhere a reader could read it
+ * as the height of a wave face is the failure this comment exists to prevent — the page
+ * already carries that distinction and this has to sit inside it, never above it.
+ *
+ * A record of past calls scored on a reconstruction, never a promise about the next one. */
+export interface DeliveryRecord {
+  minimum_m: number;
+  median_m: number;
+  maximum_m: number;
+  above: DeliveredStepRecord[];
+}
+
+/** One rung of the ladder: how many flagged days reached this height, of how many there were. */
+export interface DeliveredStepRecord {
+  metres: number;
+  days: number;
+  of_days: number;
+  /** Already divided by the backend. This layer does no arithmetic on it. */
+  share: number;
 }
 
 /** One span the record was scored over.
