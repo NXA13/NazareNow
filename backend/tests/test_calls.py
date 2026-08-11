@@ -48,7 +48,7 @@ from nazarenow.pipeline import DEFAULT_MODEL, amplification_model
 # stated price (ADR 0010) instead of requiring it to catch every Gold Day whatever that cost.
 # Only this bar moved: the Go Call bar, the height bar and the wind exemption are unchanged.
 #
-# #60 moved it once more, 11.5 s to 11.4 s, and the reason is worth separating from the
+# #60 moved it once more, 11.5 s to 11.4 s [fixed:#60], and the reason is worth separating from the
 # others: the fitted bar did not move. It is still 12 s in the reanalysis units the fit runs
 # in. What moved is the Translation that restates it in Open-Meteo units, because #60 settled
 # that the swell period transform is fitted on hours selected by *Combined Sea* >= 3 m rather
@@ -130,7 +130,8 @@ class TestThresholdBoundaries:
     def test_wave_height_boundary(self, store, client, value, expected) -> None:
         """The bar still divides silence from a call; #15 changed which call it buys.
 
-        **The bar has not moved.** 2.75 m still holds the height condition and 2.65 m still
+        **The bar has not moved.** 2.75 m [now:minimum_significant_wave_height_m] still
+        holds the height condition and 2.65 m still
         fails it, which is what this case pins and what `thresholds.json` still ships.
 
         What changed is that a Go Call now also requires confidence the reading genuinely
@@ -144,7 +145,8 @@ class TestThresholdBoundaries:
         fitted to that budget — `analysis/forecast_error/confidence.py` takes the strictest
         value refusing none of the 37 Gold Days the height bar admits, which the two 3.04 m
         days of 2016-12-20 and 2018-11-16 set at 0.72. So the rule's active band is exactly
-        the gap between the bar and the smallest Gold Day, 2.75 m to about 3.0 m, where no
+        the gap between the bar and the smallest Gold Day,
+        2.75 m [now:minimum_significant_wave_height_m] to about 3.0 m, where no
         Gold Day has ever been observed.
         """
         assert status_for(store, client, {**GIANT, "significant_wave_height": value}) == expected
@@ -257,7 +259,8 @@ class TestAGoCallRestsOnTheModelsAgreeing:
     # Per-model offsets in metres of swell height; `helpers.ensemble_body_from` moves swell
     # period by twice that, which is the reading this rule is written in.
     #
-    # Every organisation clears the 12.9 s bar here. Deliberately not identical: members that
+    # Every organisation clears the 12.9 s bar here [now:go_call_minimum_swell_period_s].
+    # Deliberately not identical: members that
     # agreed exactly would also satisfy a rule that had stopped looking past the first one.
     AGREEING = {
         "meteofrance_wave": 0.0,

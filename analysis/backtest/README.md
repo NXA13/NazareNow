@@ -23,7 +23,7 @@ Ticket #11. The benchmark every later Amplification Model must beat, per ADR 000
 > `analysis/calibration/` is where the thresholds come from and why.
 
 > ## Re-run after #43: the Watch tier costs half as much and gives up nothing held out
->
+> <!--fixed:#43-->
 > #43 gave the Watch tier a stated price — 40 Watch days per Big-Wave Season, ADR 0010 — where
 > it previously had to catch every Gold Day in the calibration's fitting split whatever that
 > cost. The shipped Watch bar moves from **10.1 s to 11.5 s** and nothing else moves.

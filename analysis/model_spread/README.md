@@ -124,7 +124,7 @@ Swell period disagreement between providers ran **0.22 s to 4.15 s** across this
 and exceeded 1.4 s on six of the seven days sampled.
 
 That number is worth stating precisely because of what it sits next to. The calibrated Watch bar
-is 11.4 s and the Go Call bar is 12.9 s (`analysis/calibration/`), so **1.5 s is the entire gap
+is 11.4 s <!--now:watch_minimum_swell_period_s--> and the Go Call bar is 12.9 s <!--now:go_call_minimum_swell_period_s--> (`analysis/calibration/`), so **1.5 s is the entire gap
 between the recall tier and the precision tier**. It was 1.4 s until #60 moved the Watch bar down
 a tenth, and the count above is unchanged by that: six of the seven days exceed 1.5 s as well,
 so the tier gap widened without buying any margin against this disagreement. Where the providers

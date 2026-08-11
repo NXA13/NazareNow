@@ -2,7 +2,7 @@
 
 The Heuristic Baseline's wind condition requires the wind to be inside the offshore arc **and**
 at or below the speed cap, with no interaction between the two. A 4 km/h breeze from 225° fails
-it exactly as a 35 km/h onshore gale does.
+it exactly as a 35 km/h <!--now:maximum_wind_speed_kmh--> onshore gale does.
 
 That is not what the rule of thumb means. Wind matters at Praia do Norte because it grooms or
 wrecks the wave face. A wind too light to raise a ripple cannot wreck anything, whichever way it
@@ -43,7 +43,7 @@ none by the speed:
 | 2019-11-13 | 15.8 km/h | 339° | 4.33 m |
 | 2020-02-17 | 16.3 km/h | 265° | 4.98 m |
 
-The arc is 20–180° and the cap is 35 km/h. Every one of these days sits far under the cap and
+The arc is 20–180° and the cap is 35 km/h <!--now:maximum_wind_speed_kmh-->. Every one of these days sits far under the cap and
 outside the arc. These are documented XXL Days — contests run, records ratified — and the rule
 that is supposed to describe them says they were unsurfable because of a breeze.
 

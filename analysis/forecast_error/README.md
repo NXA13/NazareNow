@@ -314,7 +314,7 @@ What this adds is a second, independent reason the margin is thin, and the two t
 the same size. The exemption's margin is **0.2 km/h**. Open-Meteo's wind moves by **3.18 km/h
 RMSE** between one day out and its own settled analysis, and #51 measured the product boundary
 at **3.45 km/h** residual on top of a 1.5 km/h offset. The offset was correctable and has been
-corrected — the exemption now ships translated, at 14.5 km/h. The two scatters were not, and
+corrected — the exemption now ships translated, at 14.5 km/h <!--now:light_wind_exemption_kmh-->. The two scatters were not, and
 they stack: a wind reading a Go Call is issued on carries both.
 
 ## Files
@@ -340,7 +340,7 @@ belief that it was inert on the days that matter.
 It is not inert, and the belief came from measuring the wrong quantity. The probability had
 been read off the Amplification Model's *output* against a bar that judges the *incoming
 reading*; the model amplifies, so every marginal day looked further clear of the bar than it
-was — a 2.75 m sea sitting exactly on the bar read 0.84 rather than 0.52.
+was — a 2.75 m <!--now:minimum_significant_wave_height_m--> sea sitting exactly on the bar read 0.84 rather than 0.52.
 
 Corrected, `confidence.py` prices it against the 38 Gold Days on record, restated into
 operational units through the same Translation `calibrate.py` ships the bars through:
@@ -358,7 +358,7 @@ operational units through the same Translation `calibrate.py` ships the bars thr
 and 2018-11-16, which bottom out at 0.72 at five days out. Floored to a 0.05 step rather than
 placed on them, for the reason `calibrate.fit_height` gives about the next Gold Day slightly
 smaller. The rule's active band is then exactly the gap between the height bar and the
-smallest Gold Day — 2.75 m to about 3.0 m, where no Gold Day has ever been observed.
+smallest Gold Day — 2.75 m <!--now:minimum_significant_wave_height_m--> to about 3.0 m, where no Gold Day has ever been observed.
 
 One Gold Day, 2021-11-19, peaks at 2.11 m and sits *below* the height bar. It earns no Go Call
 at any confidence because the height condition already refuses it, so this floor is not
