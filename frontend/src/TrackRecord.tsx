@@ -86,6 +86,22 @@ function TierRow({ label, meaning, tier }: { label: string; meaning: string; tie
             <span className="aside">({percent(tier.wasted_upper_bound)})</span>
           </dd>
         </div>
+        {/* Directly under the waste figure, which is the only place it belongs. That figure
+            is scored against ratified giant days — a bar high enough that this tier reads as
+            94% wasted while never having flagged a day the sea stayed below 2.72m. A reader
+            scanning the panel meets the harsh number and the measured one together, or the
+            harsh one alone. Absent for a tier the record publishes no delivery for. */}
+        {tier.delivered && (
+          <div>
+            <dt>Lowest sea any of them reached</dt>
+            <dd>
+              <strong>{metres(tier.delivered.minimum_m)}</strong>{' '}
+              <span className="aside">
+                median {metres(tier.delivered.median_m)}, Significant Wave Height
+              </span>
+            </dd>
+          </div>
+        )}
       </dl>
     </div>
   );

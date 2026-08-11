@@ -57,9 +57,10 @@ scored against a different product each time — which is the same refusal `publ
 HELD_OUT_FROM = "2020/21"
 """The first held-out Big-Wave Season, matching `thresholds.json`'s `validated_on`.
 
-Duplicated from `publish.py` rather than imported, and `--check` pins the two together. A split
-that disagreed between the report and the thing publishing it would put a held-out delivery
-figure beside a whole-record waste figure under one heading, which is precisely the comparison
+Duplicated from `publish.py` rather than imported, and pinned there rather than here: its
+`delivered_for` refuses to publish a delivery whose total disagrees with the tier's own count,
+so a split boundary that drifted between the two files stops the build. A held-out delivery
+figure rendered beside a whole-record waste figure under one heading is exactly the comparison
 this ticket exists to make trustworthy.
 """
 

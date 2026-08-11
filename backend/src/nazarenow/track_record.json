@@ -10,8 +10,30 @@
       "tiers": {
         "watch_or_better": {
           "gold_days_called": 12,
-          "days_flagged": 193,
-          "delivered": null
+          "days_flagged": 199,
+          "delivered": {
+            "minimum_m": 2.72,
+            "median_m": 4.04,
+            "maximum_m": 8.14,
+            "above": [
+              {
+                "metres": 3.0,
+                "days": 180
+              },
+              {
+                "metres": 4.0,
+                "days": 101
+              },
+              {
+                "metres": 5.0,
+                "days": 47
+              },
+              {
+                "metres": 6.0,
+                "days": 23
+              }
+            ]
+          }
         },
         "go_call": {
           "gold_days_called": 9,
@@ -51,7 +73,29 @@
         "watch_or_better": {
           "gold_days_called": 33,
           "days_flagged": 553,
-          "delivered": null
+          "delivered": {
+            "minimum_m": 2.7,
+            "median_m": 3.98,
+            "maximum_m": 9.19,
+            "above": [
+              {
+                "metres": 3.0,
+                "days": 484
+              },
+              {
+                "metres": 4.0,
+                "days": 273
+              },
+              {
+                "metres": 5.0,
+                "days": 132
+              },
+              {
+                "metres": 6.0,
+                "days": 57
+              }
+            ]
+          }
         },
         "go_call": {
           "gold_days_called": 16,

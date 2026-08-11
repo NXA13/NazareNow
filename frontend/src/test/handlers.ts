@@ -274,6 +274,20 @@ export const trackRecord: TrackRecord = {
       wasted_upper_bound: 1 - 12 / 193,
       days_wasted_upper_bound: 181,
       flags_per_big_wave_season: 193 / 6,
+      // Both tiers carry a delivery since #87. Deliberately different figures from the Go
+      // Call's below, so a component reading one tier's delivery into the other's row
+      // renders a number that belongs somewhere else on the same page.
+      delivered: {
+        minimum_m: 2.72,
+        median_m: 4.04,
+        maximum_m: 8.14,
+        above: [
+          { metres: 3, days: 180, of_days: 193, share: 180 / 193 },
+          { metres: 4, days: 101, of_days: 193, share: 101 / 193 },
+          { metres: 5, days: 47, of_days: 193, share: 47 / 193 },
+          { metres: 6, days: 23, of_days: 193, share: 23 / 193 },
+        ],
+      },
     },
     go_call: {
       gold_days_called: 9,
