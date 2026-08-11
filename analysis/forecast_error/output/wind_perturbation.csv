@@ -1,4 +1,4 @@
-fixture,significant_wave_height_m,regime,lead_time_days,seeds,wind_speed_noise_kmh,wind_direction_noise_deg,width_m,widening_m,widening_share,widening_share_sd,widening_share_min,widening_share_max
+fixture,significant_wave_height_m,regime,lead_time_days,seeds,wind_speed_drift_kmh,wind_direction_drift_deg,width_m,widening_m,widening_share,widening_share_sd,widening_share_min,widening_share_max
 giant,5.0,big_swell,1,20,4.1309,20.9389,1.6635,0.0047,0.0028,0.0027,-0.0024,0.0079
 giant,5.0,big_swell,2,20,5.532,27.5096,1.8601,0.006,0.0032,0.0027,-0.0052,0.0067
 giant,5.0,big_swell,3,20,6.6731,28.608,1.9946,0.0059,0.003,0.0029,-0.0011,0.0085

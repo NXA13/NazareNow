@@ -30,8 +30,8 @@ from nazarenow.forecast_error import (
 )
 
 
-def band(noise: float = 0.1, bias: float = 0.0, p5: float = -0.2, p95: float = 0.2) -> dict:
-    return {"noise": noise, "bias": bias, "p5": p5, "p95": p95, "hours": 1000}
+def band(drift: float = 0.1, bias: float = 0.0, p5: float = -0.2, p95: float = 0.2) -> dict:
+    return {"drift": drift, "bias": bias, "p5": p5, "p95": p95, "hours": 1000}
 
 
 def profile(through: int = 3, **overrides) -> dict:
@@ -43,7 +43,7 @@ def profile(through: int = 3, **overrides) -> dict:
         "only_term": "Forecast drift alone. The Translation residual and the Amplification "
         "Model's own error are the other two terms",
         "by_lead_time": {
-            str(lead): {"all_hours": band(), "big_swell": band(noise=0.2)}
+            str(lead): {"all_hours": band(), "big_swell": band(drift=0.2)}
             for lead in range(1, through + 1)
         },
         "method": {
@@ -137,23 +137,44 @@ class TestRefusals:
     """Files that parse and mean something wrong."""
 
     def test_a_zero_width_band_is_refused(self) -> None:
-        """Zero noise is a claim of certainty, and it would collapse the distribution.
+        """Zero drift is a claim of certainty, and it would collapse the distribution.
 
         The mechanism would keep working: perturbing by zero returns the point estimate,
         every evaluation agrees, and the range renders as a single number with no warning.
         """
         body = profile()
-        body["by_lead_time"]["1"]["all_hours"] = band(noise=0.0)
+        body["by_lead_time"]["1"]["all_hours"] = band(drift=0.0)
 
-        with pytest.raises(ForecastErrorUnusable, match="noise"):
+        with pytest.raises(ForecastErrorUnusable, match="drift"):
             parse(body)
 
     def test_a_negative_width_is_refused(self) -> None:
         body = profile()
-        body["by_lead_time"]["1"]["big_swell"] = band(noise=-0.1)
+        body["by_lead_time"]["1"]["big_swell"] = band(drift=-0.1)
 
-        with pytest.raises(ForecastErrorUnusable, match="noise"):
+        with pytest.raises(ForecastErrorUnusable, match="drift"):
             parse(body)
+
+    def test_a_profile_written_before_the_drift_rename_is_refused(self) -> None:
+        """#65 renamed the band's width key from `noise` to `drift`. Old files must not load.
+
+        This is the one way the rename can reach a running system, and it is not
+        hypothetical: `NAZARENOW_FORECAST_ERROR` exists so the profile can be re-measured
+        without a redeploy, so a deployment can be pointed at a file written before #65.
+
+        The tempting kindness — accept either key — is the failure this class is built to
+        refuse everywhere else. A width is the one field whose wrongness does not look wrong,
+        and silently reading `noise` would make the two spellings mean the same thing again,
+        which is the ambiguity the rename removed. Refusing costs a clear error at startup;
+        accepting costs a vocabulary that quietly has two words for one quantity forever.
+        """
+        pre_65 = profile()
+        for lead in pre_65["by_lead_time"].values():
+            for regime in lead.values():
+                regime["noise"] = regime.pop("drift")
+
+        with pytest.raises(ForecastErrorUnusable, match="drift"):
+            parse(pre_65)
 
     def test_inverted_percentiles_are_refused(self) -> None:
         """p5 above p95 describes no distribution, and both are valid floats."""

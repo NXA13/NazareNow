@@ -58,7 +58,7 @@ def widened(tmp_path, factor: float) -> str:
     body = json.loads(DEFAULT_PATH.read_text(encoding="utf-8"))
     for bands in body["by_lead_time"].values():
         for band in bands.values():
-            band["noise"] *= factor
+            band["drift"] *= factor
     path = tmp_path / f"forecast_error_x{factor}.json"
     path.write_text(json.dumps(body), encoding="utf-8")
     return str(path)

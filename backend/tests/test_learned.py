@@ -264,7 +264,7 @@ class TestTheShippedParameterFile:
     def test_it_carries_the_models_own_error_as_a_width(self) -> None:
         """#15's third and largest uncertainty term.
 
-        The other two already shipped — `translations.residual_rmse` here and `noise` in
+        The other two already shipped — `translations.residual_rmse` here and `drift` in
         `forecast_error.json` — so a Predictive Distribution could reach the two smaller
         terms and not the one that dominates them both.
 
