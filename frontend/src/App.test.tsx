@@ -161,12 +161,57 @@ describe('current conditions', () => {
     expect(provenance).not.toHaveTextContent(/sea measured at/i);
   });
 
+  it('says outright that no buoy reading reaches this page', async () => {
+    // The other half of the same disclosure, and the half nothing held. "Modelled, not
+    // measured" tells a reader the figure was computed; this tells them no instrument is
+    // involved anywhere in the live system, which is the fact that makes the first one
+    // permanent rather than a stage the project will grow out of. Deleting the sentence
+    // passed every test.
+    render(<App />);
+
+    const provenance = await screen.findByTestId('provenance');
+
+    expect(provenance).toHaveTextContent(/no buoy reading reaches this page/i);
+    // And that wind is not even from the same grid point as the sea.
+    expect(provenance).toHaveTextContent(/nearest land forecast cell/i);
+  });
+
+  it('places the site west of Greenwich rather than negating its own hemisphere', async () => {
+    // The bearing letter is written into the copy and the number is taken absolute, so
+    // dropping the `Math.abs` renders "−9.21°W" — a coordinate that reads as both west and
+    // negative, which is either the wrong side of the meridian or nonsense. Nothing looked
+    // at the number at all.
+    render(<App />);
+
+    const provenance = await screen.findByTestId('provenance');
+
+    expect(provenance).toHaveTextContent(`${Math.abs(currentConditions.longitude).toFixed(2)}°W`);
+    expect(provenance.textContent).not.toMatch(/[−-]\d+\.\d+°W/);
+  });
+
   it('exposes the raw timestamps in machine-readable form', async () => {
     render(<App />);
 
     const freshness = await screen.findByTestId('freshness');
     const times = within(freshness).getAllByText(/\d{2}:\d{2}/);
     expect(times[0]).toHaveAttribute('datetime', currentConditions.observed_at);
+  });
+
+  it('carries the track record on the page, not behind a link', async () => {
+    // The track record is tested thoroughly — by rendering `TrackRecordPage` directly. So
+    // the component was covered and its *presence* was not: removing it from `App` left
+    // every test green while the entire limitations section vanished from the product.
+    //
+    // On the page rather than behind a link is a decision, stated in App.tsx: a track
+    // record nobody navigates to is a limitation nobody reads. That makes its being here
+    // the thing worth asserting, and this is the only place that can assert it.
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: /track record/i })).toBeInTheDocument();
+    // The forecast too, for the same reason and by the same accident. Awaited separately:
+    // the three sections fetch independently, which is the point — a failure in one costs
+    // that section and not the others — so they do not arrive together.
+    expect(await screen.findByRole('heading', { name: /the next \d+ days/i })).toBeInTheDocument();
   });
 
   it('tells the user when no conditions have been ingested yet', async () => {
