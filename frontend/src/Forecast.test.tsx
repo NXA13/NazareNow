@@ -17,6 +17,7 @@ import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { type CallStatus } from './api';
 import { ForecastRange } from './Forecast';
 import { compassPoint } from './format';
 import { calibration, dayFrom, forecast, unmeasurableSpread } from './test/handlers';
@@ -1174,10 +1175,10 @@ describe('how the prediction has moved', () => {
     return screen.findByTestId(`shift-${date}`);
   }
 
-  const earlier = (value: number, lead: number, issued: string) => ({
+  const earlier = (value: number, lead: number, issued: string, status: CallStatus = 'watch') => ({
     issued_at: issued,
     lead_time_days: lead,
-    status: 'watch' as const,
+    status,
     predicted_significant_wave_height: { value, unit: 'm' },
     plausible_range: { low: value - 1.2, high: value + 1.9, unit: 'm' },
   });
@@ -1267,5 +1268,115 @@ describe('how the prediction has moved', () => {
     await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
 
     expect(screen.queryByTestId(`shift-${BIG.date}`)).not.toBeInTheDocument();
+  });
+
+  describe('when the verdict itself has moved', () => {
+    /**
+     * Story 21 of #1. `EarlierCall` has always carried `status` and nothing read it, so a day
+     * that carried a Watch last run and nothing this run rendered exactly like a day that had
+     * never been called — for a reader who has spent a week watching flights.
+     *
+     * No fixture had ever set an earlier status differing from the current one, which is why
+     * the whole branch could not have failed.
+     */
+    async function tierChangeFor(now: CallStatus, before: CallStatus) {
+      const day = {
+        ...BIG,
+        call: {
+          ...BIG_CALL,
+          status: now,
+          previous_runs: [earlier(5.0, 8, '2026-02-09T06:00:00Z', before)],
+        },
+      };
+      server.use(
+        http.get('*/api/conditions/forecast', () =>
+          HttpResponse.json({ ...forecast, days: [forecast.days[0], day, forecast.days[2]] }),
+        ),
+      );
+      render(<ForecastRange />);
+      await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
+      return screen.findByTestId(`tier-change-${BIG.date}`);
+    }
+
+    it('says a Watch has been withdrawn, and names the tier that was withdrawn', async () => {
+      // Naming the tier is half the sentence. Rendering the *current* status where the
+      // earlier one belongs makes a withdrawn Watch read "The No call on this day has been
+      // withdrawn" — a sentence about nothing, in a paragraph that still looks right.
+      const statement = await tierChangeFor('none', 'watch');
+
+      expect(statement).toHaveTextContent(/withdrawn/i);
+      expect(statement.textContent).toContain('Watch');
+      expect(statement.textContent).not.toContain('No call on this day has been withdrawn');
+    });
+
+    it('tells a reader to stop watching flights for a withdrawn day', async () => {
+      // The story is not "show a state change". It is that somebody stops spending attention
+      // on a swell that has evaporated, which is the sentence that does the work.
+      const statement = await tierChangeFor('none', 'watch');
+
+      expect(statement).toHaveTextContent(/stop watching flights/i);
+    });
+
+    it('says a day has become a Go Call, which is the transition worth catching', async () => {
+      const statement = await tierChangeFor('go', 'watch');
+
+      expect(statement).toHaveTextContent(/now a go call/i);
+      expect(statement.textContent).toContain('Watch');
+      expect(statement).not.toHaveTextContent(/withdrawn/i);
+    });
+
+    it('says a day never called before has been newly raised', async () => {
+      const statement = await tierChangeFor('watch', 'none');
+
+      expect(statement).toHaveTextContent(/newly raised/i);
+      expect(statement).not.toHaveTextContent(/withdrawn/i);
+    });
+
+    it('states a change between two calls without ranking them', async () => {
+      // Confirmed is not a stronger Go. ADR 0003 makes it a short-range statement to somebody
+      // already travelling, carrying no booking recommendation — so a day moving from Go to
+      // Confirmed as it approaches has not weakened, and printing a judgement word on it would
+      // invent a scale the domain does not have.
+      const statement = await tierChangeFor('confirmed', 'go');
+
+      expect(statement.textContent).toContain('Go');
+      expect(statement.textContent).toContain('Confirmed');
+      expect(statement).not.toHaveTextContent(/withdrawn|weaker|weakened|downgrad/i);
+    });
+
+    it('says nothing when the tier has not moved, however far the height has', async () => {
+      // The height sentence and the tier sentence answer different questions, and a tier
+      // paragraph on every day would train a reader to skip the one day it matters on.
+      const unchanged = {
+        ...BIG,
+        call: {
+          ...BIG_CALL,
+          status: 'go' as const,
+          predicted_significant_wave_height: { value: 6.4, unit: 'm' },
+          previous_runs: [earlier(3.1, 8, '2026-02-09T06:00:00Z', 'go')],
+        },
+      };
+
+      const panel = await detailFor(BIG.date, [forecast.days[0], unchanged, forecast.days[2]]);
+
+      expect(panel).toHaveTextContent(/larger/);
+      expect(screen.queryByTestId(`tier-change-${BIG.date}`)).not.toBeInTheDocument();
+    });
+
+    it('says nothing about the tier on the first run that mentions a date', async () => {
+      render(<ForecastRange />);
+      await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
+
+      expect(screen.queryByTestId(`tier-change-${BIG.date}`)).not.toBeInTheDocument();
+    });
+
+    it('does not call a withdrawal a withholding', async () => {
+      // The page already says "withheld" of the Model Spread gate refusing a Go Call within a
+      // single run. This is a different event — the system changing its mind between runs —
+      // and a reader meeting both words on one page must not read them as one. #76.
+      const statement = await tierChangeFor('none', 'watch');
+
+      expect(statement).not.toHaveTextContent(/withheld|withhold/i);
+    });
   });
 });

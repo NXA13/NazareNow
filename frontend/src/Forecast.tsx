@@ -392,26 +392,85 @@ function Shift({ day }: { day: ForecastDay }) {
   const moved = Math.abs(change) >= 0.05;
 
   return (
-    <p className="shift" data-testid={`shift-${day.date}`}>
-      {moved ? (
+    <>
+      <p className="shift" data-testid={`shift-${day.date}`}>
+        {moved ? (
+          <>
+            <strong>
+              {formatValue(Math.abs(change))}
+              {now.unit} {change > 0 ? 'larger' : 'smaller'}
+            </strong>{' '}
+            than the run before, which put this day at {formatValue(before.value)}
+            {before.unit}
+          </>
+        ) : (
+          <>
+            Unchanged since the run before, which also put this day at {formatValue(before.value)}
+            {before.unit}
+          </>
+        )}
+        {/* The lead time the earlier run spoke at, because a range narrowing as a date
+            approaches is the forecast doing its job and the same narrowing at a fixed lead
+            time would be something else entirely. */}
+        {` from ${previous.lead_time_days} days out.`}
+      </p>
+      <TierChange date={day.date} before={previous.status} now={call.status} />
+    </>
+  );
+}
+
+/** That the *verdict* moved, and not only the number under it.
+ *
+ * Story 21 of #1, and the case it names is the one that was invisible: a day carrying a Watch
+ * last run and nothing this run rendered exactly like a day that had never been called at all.
+ * The reader it is written for — somebody who has spent a week watching flights — was told
+ * nothing. `EarlierCall` has always carried `status` for this; nothing read it.
+ *
+ * **The firming direction is not a bonus.** The same silence hid a Watch becoming a Go Call,
+ * which is the transition a Traveller most needs to catch, so it is stated too.
+ *
+ * **No ranking of the tiers.** `Confirmed` is not a stronger `Go` — ADR 0003 and `CONTEXT.md`
+ * make it a short-range statement to somebody already travelling, carrying no booking
+ * recommendation — so a day moving from Go to Confirmed as it approaches has not weakened.
+ * Ordering the four statuses would invent a scale the domain does not have and would print a
+ * judgement word on an ordinary progression. The branches below turn only on whether a call
+ * exists on each side, plus the one status that means *book*.
+ *
+ * **Withdrawn, not withheld.** The page already says "withheld" of the Model Spread gate
+ * refusing a Go Call within a single run. This is a different event — the system changing its
+ * mind between runs — and the two must not be able to read as one. #76 is the same problem
+ * elsewhere.
+ *
+ * **It says the tier changed, never why.** `EarlierCall` deliberately drops the reasons and
+ * the withholding flags of a superseded call, because rendering a stale explanation beside a
+ * current one is worse than rendering none.
+ */
+function TierChange({ date, before, now }: { date: string; before: CallStatus; now: CallStatus }) {
+  if (before === now) return null;
+
+  const label = (status: CallStatus) => CALL_LABELS[status];
+
+  return (
+    <p className="tier-change" data-testid={`tier-change-${date}`}>
+      {now === 'none' ? (
         <>
-          <strong>
-            {formatValue(Math.abs(change))}
-            {now.unit} {change > 0 ? 'larger' : 'smaller'}
-          </strong>{' '}
-          than the run before, which put this day at {formatValue(before.value)}
-          {before.unit}
+          <strong>The {label(before)} on this day has been withdrawn.</strong> The run before called
+          it {label(before)}; this one makes no call. Stop watching flights for it.
+        </>
+      ) : before === 'none' ? (
+        <>
+          <strong>Newly raised to {label(now)}.</strong> The run before made no call for this day.
+        </>
+      ) : now === 'go' ? (
+        <>
+          <strong>Now a Go Call</strong>, where the run before said {label(before)}.
         </>
       ) : (
         <>
-          Unchanged since the run before, which also put this day at {formatValue(before.value)}
-          {before.unit}
+          Changed from <strong>{label(before)}</strong> to <strong>{label(now)}</strong> since the
+          run before.
         </>
       )}
-      {/* The lead time the earlier run spoke at, because a range narrowing as a date
-          approaches is the forecast doing its job and the same narrowing at a fixed lead
-          time would be something else entirely. */}
-      {` from ${previous.lead_time_days} days out.`}
     </p>
   );
 }
