@@ -123,10 +123,10 @@ function Delivered({ tier }: { tier: TierRecord }) {
       <h3>And what did the sea actually do on those days?</h3>
       <p data-testid="delivered-statement">
         The figure above asks whether a day was <em>recorded</em> as giant. This asks whether the
-        ocean showed up. Across the same{' '}
-        <strong>{tier.days_flagged}</strong> Go Calls, the lowest peak any of them landed on was{' '}
-        <strong>{metres(delivered.minimum_m)}</strong> of Significant Wave Height — not one landed
-        on a flat day — and the median was <strong>{metres(delivered.median_m)}</strong>.
+        ocean showed up. Across the same <strong>{tier.days_flagged}</strong> Go Calls, the lowest
+        peak any of them landed on was <strong>{metres(delivered.minimum_m)}</strong> of Significant
+        Wave Height — not one landed on a flat day — and the median was{' '}
+        <strong>{metres(delivered.median_m)}</strong>.
       </p>
       <ul data-testid="delivered-ladder">
         {delivered.above.map((step) => (
@@ -134,7 +134,8 @@ function Delivered({ tier }: { tier: TierRecord }) {
             <strong>
               {step.days} of {step.of_days}
             </strong>{' '}
-            peaked above {metres(step.metres)} <span className="aside">({percent(step.share)})</span>
+            peaked above {metres(step.metres)}{' '}
+            <span className="aside">({percent(step.share)})</span>
           </li>
         ))}
       </ul>
