@@ -135,6 +135,38 @@ footer p {
 
 /* --- forecast range ------------------------------------------------------- */
 
+/* The multi-day windows, above the range (#85).
+ *
+ * A surface rather than an alert. It is the first answer a trip-planner wants and sits above
+ * everything, so it needs to read as the summary of what follows — not as a warning, which is
+ * what `.alert`'s amber would make of "there is a three-day swell here". */
+.windows {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin: 0 0 1rem;
+}
+
+.windows h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+
+.windows ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.windows li + li {
+  margin-top: 0.4rem;
+}
+
+.windows p {
+  margin: 0.5rem 0 0;
+}
+
 .days {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
@@ -393,6 +425,16 @@ footer p {
 .shift {
   color: var(--muted);
   font-size: 0.9rem;
+}
+
+/* That the verdict moved, not only the number under it (#84).
+ *
+ * Full-strength ink where `.shift` above it is muted. A withdrawn Watch is the one sentence
+ * on this panel that asks a reader to stop doing something they have been doing all week, and
+ * styling it as quietly as the height change would bury it under the number it outranks. */
+.tier-change {
+  margin: 0.25rem 0 0;
+  font-size: 0.95rem;
 }
 
 /* How much the forecasters agree.

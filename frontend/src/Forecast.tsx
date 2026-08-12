@@ -616,6 +616,184 @@ function HourTable({ day }: { day: ForecastDay }) {
   );
 }
 
+/** A run of consecutive days all carrying a call, and the largest day inside it. */
+interface SwellWindow {
+  days: ForecastDay[];
+  peak: ForecastDay;
+  goCallDays: number;
+}
+
+/** A calendar date as a whole number of days, or null if it is not one.
+ *
+ * `Date.UTC` is used for the arithmetic and not `new Date(y, m, d)`, because the question is
+ * whether two **Nazaré-local days** are adjacent (ADR 0008) and local-time construction makes
+ * that depend on the reader's own zone and its daylight saving. Two dates a clock-change apart
+ * are 23 or 25 hours apart locally and exactly one day apart on this scale, which is the one
+ * the backend grouped them on.
+ *
+ * The round-trip is not ceremony. `Date.UTC` **rolls over** rather than failing —
+ * `Date.UTC(2026, 12, 45)` is a real instant in February 2027 — so a malformed date would
+ * otherwise be silently adjacent to something, which is this project's characteristic failure
+ * and the same trap `dayLabel` documents.
+ */
+function dayNumber(date: string): number | null {
+  const [year, month, day] = date.split('-').map(Number);
+  if (!year || !month || !day) return null;
+
+  const stamp = Date.UTC(year, month - 1, day);
+  const back = new Date(stamp);
+  if (
+    back.getUTCFullYear() !== year ||
+    back.getUTCMonth() !== month - 1 ||
+    back.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return stamp / 86_400_000;
+}
+
+/** Whether a day is one the system has called, as opposed to judged and dismissed.
+ *
+ * `none` is a verdict and does not belong in a window; `null` is the absence of one. Story 12
+ * requires both to keep appearing as themselves in the range below, and neither is a day
+ * somebody would fly for. */
+function isCalled(day: ForecastDay): boolean {
+  return day.call != null && day.call.status !== 'none';
+}
+
+/**
+ * Consecutive called days, grouped into the thing a person actually books.
+ *
+ * Story 25 of #1. Nobody flies to Portugal for an afternoon, and #1's solution statement is
+ * about committing money to a trip — but the range renders a swell spanning three days as
+ * three independent verdicts that happen to sit next to each other.
+ *
+ * **A quiet day ends a window, and that is the rule that under-claims.** Two Go Calls either
+ * side of a day judged `none` may be one swell with a lull or two swells; nothing here can
+ * tell them apart, and the page states the rule rather than leaving a reader to infer it. The
+ * failure this guards against is somebody booking five nights against a three-night event, so
+ * where the two readings differ this takes the shorter one.
+ *
+ * **A window of one is not a window.** A single called day is already a card in the range, and
+ * announcing it as a swell spanning one day is a sentence about nothing.
+ *
+ * **It invents no status.** The days inside keep their own calls, which is why this returns the
+ * days themselves rather than a verdict about them — a window that promoted its members would
+ * break story 12 in the one place a reader is most likely to act.
+ */
+function swellWindows(days: ForecastDay[]): SwellWindow[] {
+  const windows: SwellWindow[] = [];
+  let run: ForecastDay[] = [];
+
+  const close = () => {
+    if (run.length > 1) {
+      windows.push({
+        // Ties go to the earlier day, which `reduce` gives by keeping the accumulator on
+        // equality. Two identical peaks are one swell with a flat top, and naming its first
+        // day is the reading that leaves a traveller more room either side.
+        peak: run.reduce((best, day) =>
+          day.peak_swell_height.value > best.peak_swell_height.value ? day : best,
+        ),
+        goCallDays: run.filter((day) => day.call?.status === 'go').length,
+        days: run,
+      });
+    }
+    run = [];
+  };
+
+  for (const day of days) {
+    // A quiet day is skipped and does not close the run, because it does not have to: the
+    // adjacency test below is what enforces the gap rule. Dropping 14 February leaves the
+    // 15th sitting beside the 13th, which are two days apart, so the window ends there anyway.
+    //
+    // Closing here as well was the first version and it was **unobservable** — no fixture
+    // could distinguish the two, which #75's method surfaced immediately. One mechanism that
+    // every test can reach beats two where only one is live. It does rest on the range
+    // arriving in date order, which is what `/api/conditions/forecast` returns.
+    if (!isCalled(day)) continue;
+
+    const previous = run.at(-1);
+    const here = dayNumber(day.date);
+    const before = previous ? dayNumber(previous.date) : null;
+    // A date this cannot place is not adjacent to anything. It still renders as its own card
+    // below; it simply cannot be grouped, which is the safe direction.
+    if (here === null) {
+      close();
+      continue;
+    }
+    if (previous && (before === null || here - before !== 1)) close();
+    run.push(day);
+  }
+  close();
+
+  return windows;
+}
+
+/** The windows, above the range, because the answer should not need navigating to (story 28). */
+function SwellWindows({ days }: { days: ForecastDay[] }) {
+  const windows = swellWindows(days);
+
+  return (
+    <section className="windows" aria-labelledby="windows-heading" data-testid="swell-windows">
+      <h3 id="windows-heading">Swells spanning more than a day</h3>
+
+      {windows.length === 0 ? (
+        // Stated rather than left blank, for story 12's reason one level up: an absent section
+        // reads as a page that failed, and "nothing spans more than a day" is a real answer to
+        // somebody deciding whether there is a trip here at all.
+        <p data-testid="no-windows">
+          Nothing in this range runs for more than a single day. There is no multi-day window to
+          plan a trip around.
+        </p>
+      ) : (
+        <ul>
+          {windows.map((window) => {
+            const first = window.days[0]!;
+            const last = window.days[window.days.length - 1]!;
+            return (
+              <li key={first.date} data-testid={`window-${first.date}`}>
+                {/* Each date is a `time` carrying the day it means, so the sentence is
+                    machine-readable and its three roles are distinguishable from one another
+                    — a locale that renders "13 Feb" and one that renders "Feb 13" must not be
+                    the difference between a start date and a peak. */}
+                <strong>{window.days.length} days</strong>,{' '}
+                <time dateTime={first.date} data-testid="window-start">
+                  {dayLabel(first.date)}
+                </time>{' '}
+                to{' '}
+                <time dateTime={last.date} data-testid="window-end">
+                  {dayLabel(last.date)}
+                </time>
+                . The largest swell falls on{' '}
+                <strong>
+                  <time dateTime={window.peak.date} data-testid="window-peak">
+                    {dayLabel(window.peak.date)}
+                  </time>
+                </strong>
+                .{' '}
+                {window.goCallDays === 0 ? (
+                  <>None of those days carries a Go Call.</>
+                ) : (
+                  <>
+                    {window.goCallDays} of those days{' '}
+                    {window.goCallDays === 1 ? 'carries' : 'carry'} a Go Call.
+                  </>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      <p className="aside">
+        A window is an unbroken run of days the system called. A quiet day ends one, so a swell
+        either side of a lull is counted as two windows and not one — the reading that risks booking
+        too few nights rather than too many. Each day keeps its own verdict in the range below.
+      </p>
+    </section>
+  );
+}
+
 export function ForecastRange() {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const [openDate, setOpenDate] = useState<string | null>(null);
@@ -649,6 +827,8 @@ export function ForecastRange() {
   return (
     <section aria-labelledby="forecast-heading">
       <h2 id="forecast-heading">The next {state.forecast.days.length} days</h2>
+
+      <SwellWindows days={state.forecast.days} />
 
       <div className="days">
         {state.forecast.days.map((day) => (
