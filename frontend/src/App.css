@@ -137,10 +137,10 @@ footer p {
 
 /* The one sentence a Traveller came for (#86).
  *
- * Larger than the copy under it and quiet in colour. It is the loudest thing in this section
- * by size alone, which is what a reader scanning for the answer needs — but it is not an
- * alert, because most weeks it says "nothing to book yet" and an amber panel saying that
- * every week would train a reader to skip the week it changes. */
+ * Larger than the copy under it, in the page's ordinary ink rather than `.alert`'s amber and
+ * with no panel around it. Size is the whole emphasis, which is what a reader scanning for
+ * the answer needs — but most weeks this sentence says "nothing to book yet", and a warning
+ * panel saying that every week would train a reader to skip the week it changes. */
 .earliest {
   margin: 0 0 1rem;
   font-size: 1.05rem;

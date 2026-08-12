@@ -729,6 +729,14 @@ function swellWindows(days: ForecastDay[]): SwellWindow[] {
   return windows;
 }
 
+/** The two ends of a window — the days a sentence about it names.
+ *
+ * Both sentences that describe a window take their endpoints from here rather than each
+ * indexing the array itself, so "which day does this swell start on" has one answer. */
+function spanOf(window: SwellWindow): [ForecastDay, ForecastDay] {
+  return [window.days[0]!, window.days[window.days.length - 1]!];
+}
+
 /** The windows, above the range, because the answer should not need navigating to (story 28). */
 function SwellWindows({ days }: { days: ForecastDay[] }) {
   const windows = swellWindows(days);
@@ -748,8 +756,7 @@ function SwellWindows({ days }: { days: ForecastDay[] }) {
       ) : (
         <ul>
           {windows.map((window) => {
-            const first = window.days[0]!;
-            const last = window.days[window.days.length - 1]!;
+            const [first, last] = spanOf(window);
             return (
               <li key={first.date} data-testid={`window-${first.date}`}>
                 {/* Each date is a `time` carrying the day it means, so the sentence is
@@ -800,8 +807,7 @@ function SwellWindows({ days }: { days: ForecastDay[] }) {
  * inside is rendered from `swellWindows` rather than re-derived — two answers to "which days
  * is this swell" is exactly the drift #85 was written to prevent. */
 function WindowSpan({ window }: { window: SwellWindow }) {
-  const first = window.days[0]!;
-  const last = window.days[window.days.length - 1]!;
+  const [first, last] = spanOf(window);
 
   return (
     <>
@@ -841,6 +847,14 @@ function WindowSpan({ window }: { window: SwellWindow }) {
  * day in range would make the second one false, and this sentence sits above the range that
  * would contradict it.
  *
+ * **The date leads and the window follows, which is the arguable half of #86.** The ticket
+ * says the earliest thing worth acting on is a window rather than a date, and a window is
+ * indeed what somebody books — but only the Go Call day is a recommendation to spend money.
+ * A sentence opening "book the three-day swell" would be recommending nights against days
+ * that carry a Watch, which is the over-claim #85 took the shorter reading to avoid. So the
+ * Go Call is the commitment, the window is the shape around it, and the two compose in that
+ * order rather than competing.
+ *
  * **The Lead Time is `lead_time_days` and is not a countdown.** `DayCall` fixes it when the
  * call is issued rather than recomputing it against the clock, so it is stated as *issued
  * three days ahead* and never as "in three days" — which would be a claim about today that
@@ -859,7 +873,9 @@ function EarliestWorthActingOn({ days }: { days: ForecastDay[] }) {
   const go = first('go');
   const watch = go ? null : first('watch');
   const day = go ?? watch;
-  const window = day ? (swellWindows(days).find((w) => w.days.includes(day)) ?? null) : null;
+  // Named for what it is rather than `window`, which would shadow the browser global in a
+  // component whose other reads are all of the DOM's.
+  const containing = day ? (swellWindows(days).find((w) => w.days.includes(day)) ?? null) : null;
 
   return (
     <p className="earliest" data-testid="earliest-call">
@@ -879,7 +895,7 @@ function EarliestWorthActingOn({ days }: { days: ForecastDay[] }) {
             .
           </strong>{' '}
           The earliest Go Call in this range, issued {go.call!.lead_time_days} days ahead.
-          {window && <WindowSpan window={window} />}
+          {containing && <WindowSpan window={containing} />}
         </>
       ) : (
         <>
@@ -889,7 +905,7 @@ function EarliestWorthActingOn({ days }: { days: ForecastDay[] }) {
           </time>
           , a Watch issued {day.call!.lead_time_days} days ahead. Start watching flights; do not
           book on it.
-          {window && <WindowSpan window={window} />}
+          {containing && <WindowSpan window={containing} />}
         </>
       )}
     </p>

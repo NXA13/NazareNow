@@ -23,6 +23,11 @@ import { compassPoint } from './format';
 import { calibration, dayFrom, forecast, unmeasurableSpread } from './test/handlers';
 import { server } from './test/server';
 
+/** The date a `time` element means, read off the attribute rather than its rendered text:
+ * the suite pins the zone and not the locale, so "13 Feb" and "Feb 13" are both correct. */
+const dateOf = (scope: HTMLElement, testId: string) =>
+  within(scope).getByTestId(testId).getAttribute('datetime');
+
 const QUIET = forecast.days[0]!;
 const BIG = forecast.days[1]!;
 const BIG_CALL = BIG.call!;
@@ -1185,9 +1190,6 @@ describe('swells spanning more than a day', () => {
     return screen.findByTestId('swell-windows');
   }
 
-  const dateOf = (scope: HTMLElement, testId: string) =>
-    within(scope).getByTestId(testId).getAttribute('datetime');
-
   it('gathers a run of called days into one window and names its span', async () => {
     const days = [
       dayFrom('2026-02-12', 4.0, 14, 300, 'watch', 3),
@@ -1375,9 +1377,6 @@ describe('the earliest date worth acting on', () => {
     render(<ForecastRange />);
     return screen.findByTestId('earliest-call');
   }
-
-  const dateOf = (scope: HTMLElement, testId: string) =>
-    within(scope).getByTestId(testId).getAttribute('datetime');
 
   it('names the earliest Go Call and says to book it', async () => {
     const statement = await statementFor([
