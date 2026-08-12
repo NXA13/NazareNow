@@ -59,15 +59,21 @@ if TYPE_CHECKING:  # `distribution` reaches the model layer, which would import 
 CONFIRMED_THROUGH = 1
 GO_CALL_THROUGH = 7
 
-GO_CALL_CONFIDENCE = 0.70
+GO_CALL_MINIMUM_HEIGHT_PROBABILITY = 0.70
 """How much of the incoming reading must clear the height bar for a Go Call (#15).
 
-The same trade ADR 0003 makes for Model Spread, arrived at from a third direction: a day the
-system is not confident about falls to a Watch — the swell is still worth watching, it is
+The same trade ADR 0003 makes for Model Spread, arrived at from a third direction: a day whose
+height is not probable enough falls to a Watch — the swell is still worth watching, it is
 simply not yet worth a flight.
 
+**Named for the height bar, not for confidence (#76, ADR 0014).** The glossary assigns
+"confidence" to Model Spread, which `decide()` reads as its own gate a line from this one and
+which withholds a Go Call for a different reason. The floor follows the shipped bars' naming —
+`go_call_minimum_swell_period_s`, `watch_minimum_swell_period_s` — rather than a shorter name
+that would read as the probability itself instead of the floor under it.
+
 **Priced against Gold Day recall, in ADR 0010's shape.** The strictest floor that refuses a
-Go Call to no Gold Day the height condition admits. `analysis/forecast_error/confidence.py`
+Go Call to no Gold Day the height condition admits. `analysis/forecast_error/height_probability.py`
 runs the measurement: every Gold Day's own peak sea, restated into operational units, scored
 against the shipped Forecast Error Profile at each Lead Time it could be called at. The
 binding days are the two 3.04 m Gold Days, which bottom out at 0.72 at five days; 0.70 is the
@@ -297,7 +303,7 @@ def go_call_is_available(prediction: Prediction, lead_time_days: int) -> bool:
 _UNCERTAIN_REASON = "the forecast is too uncertain at this range to book on"
 
 
-def _confident_enough(distribution: PredictiveDistribution | None) -> bool:
+def _height_probable_enough(distribution: PredictiveDistribution | None) -> bool:
     """Whether a distribution supports a Go Call, and `True` when there is none.
 
     Two separate cases return `True` without consulting a probability, and both are
@@ -307,7 +313,7 @@ def _confident_enough(distribution: PredictiveDistribution | None) -> bool:
     """
     if distribution is None or distribution.height_bar_probability is None:
         return True
-    return distribution.height_bar_probability >= GO_CALL_CONFIDENCE
+    return distribution.height_bar_probability >= GO_CALL_MINIMUM_HEIGHT_PROBABILITY
 
 
 def decide(
@@ -353,11 +359,15 @@ def decide(
     available = go_call_is_available(prediction, lead_time_days)
     withheld = available and agreement is not Agreement.AGREED
 
-    # The distribution's own refusal, kept apart from the models'. `confident` is True when
+    # The distribution's own refusal, kept apart from the models'. `probable` is True when
     # there is no distribution at all, because a Hindcast carries no forecast to be uncertain
     # about and scoring one must not silently become stricter than the rule it is scoring.
-    confident = _confident_enough(distribution)
-    uncertain = available and agreement is Agreement.AGREED and not confident
+    #
+    # Named for the height bar rather than for how sure the system is, because `agreement` on
+    # the next line is Model Spread — the quantity the glossary assigns "confidence" to — and
+    # the two gates produce different Watches on purpose (ADR 0014).
+    probable = _height_probable_enough(distribution)
+    uncertain = available and agreement is Agreement.AGREED and not probable
 
     reasons = prediction.matched + prediction.unmatched
     if available:
@@ -367,7 +377,7 @@ def decide(
 
     if prediction.holds(*GO_CONDITIONS) and lead_time_days <= CONFIRMED_THROUGH:
         status = Status.CONFIRMED
-    elif available and agreement is Agreement.AGREED and confident:
+    elif available and agreement is Agreement.AGREED and probable:
         status = Status.GO
     elif prediction.holds(*WATCH_CONDITIONS) and lead_time_days > CONFIRMED_THROUGH:
         status = Status.WATCH

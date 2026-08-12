@@ -71,7 +71,7 @@ way. That is the subset a Go Call is issued on, and it is the more forgiving of 
 ## Finding 2 — the gate's probability is under-confident, and only some of that is by construction
 
 `output/gate_reliability.csv`. `decide` withholds a Go Call unless `height_bar_probability`
-reaches `GO_CALL_CONFIDENCE`, 0.70. That is a probability of an event that either happened or
+reaches `GO_CALL_MINIMUM_HEIGHT_PROBABILITY`, 0.70. That is a probability of an event that either happened or
 did not — the sea clearing the calibrated height bar — so it can be scored the way any
 probability is: group the hours by what was predicted, and count what happened.
 
@@ -125,7 +125,7 @@ uncertainty.
 
 ### What that costs the tier it gates
 
-`GO_CALL_CONFIDENCE` is 0.70, so the 0.6–0.7 bin is withheld. Every hour in it, at every Lead
+`GO_CALL_MINIMUM_HEIGHT_PROBABILITY` is 0.70, so the 0.6–0.7 bin is withheld. Every hour in it, at every Lead
 Time, cleared the bar: 59 hours at one day, 163 at five, 254 at seven. Those are hours where the
 height condition refused a Go Call and the sea did what the bar asks.
 
@@ -186,8 +186,8 @@ here certifies a tail, and no figure in it is a calibration certificate.
 
 **Not a repair in this ticket.** #80 was filed to measure, and the numbers point at a change
 with a price that has to be paid deliberately: narrowing the range moves every
-`height_bar_probability`, and `GO_CALL_CONFIDENCE` was priced against the current one
-(`decision.py`, and `analysis/forecast_error/confidence.py` is the measurement). A narrower
+`height_bar_probability`, and `GO_CALL_MINIMUM_HEIGHT_PROBABILITY` was priced against the current one
+(`decision.py`, and `analysis/forecast_error/height_probability.py` is the measurement). A narrower
 distribution with the old floor is a different Decision Model, not a better-calibrated one.
 
 The interesting part is that the repair is not obviously in the user's favour. A range that is

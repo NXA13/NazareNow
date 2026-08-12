@@ -1,0 +1,142 @@
+# An _Avoid_ list forbids naming the thing, not using the word
+
+ADR 0013 renamed the Forecast Error Profile's width to `drift` and left two neighbouring cases
+open, because neither had been measured:
+
+> - Model Spread avoids "confidence", and `analysis/forecast_error/confidence.py` is named for it.
+> - Predictive Distribution avoids "prediction", and `decision.py` carries `Prediction` and
+>   `prediction` throughout.
+>
+> Both may be fine, or may be the same defect. Neither was measured, so neither is ruled on.
+
+Both are now measured (#76). They are not the same defect: one is nothing, one is real, and the
+question underneath them has an answer the glossary was already carrying.
+
+## The rule
+
+**An _Avoid_ list forbids calling *that concept* by the listed word** — as an identifier or as a
+noun in prose. It does not reserve the word. "Confidence" may not name Model Spread; it remains
+ordinary English for other quantities.
+
+This is not a new invention. Three things in the repository already assume it:
+
+- **CONTEXT.md annotates one entry `bias (in prose)`.** ADR 0013 kept `bias` as a field name
+  while it sat on the Forecast Error Profile's own _Avoid_ list. An unqualified list that bound
+  every identifier would have made that decision incoherent rather than merely narrow.
+- **The glossary uses "confidence" in three of its own definitions** — Watch, Forecast Error
+  Profile, and Model Spread itself: "Narrow spread means confidence; wide spread means doubt",
+  one line above the list forbidding it. A list banning the English word would be violated by
+  the entry that carries it.
+- **ADR 0013 says the hazard in its own words**: "One quantity wearing two names across a file
+  boundary, with nothing checking they mean the same thing. That is the hazard, not the
+  wording." `noise` → `drift` bound identifiers because the schema and the glossary disagreed
+  about one quantity, not because a word was on a list.
+
+The rule is now written into the Model Spread entry, so the next reader does not re-derive it.
+
+## `Prediction` is fine, and that is the ruling
+
+`Prediction` (`backend/src/nazarenow/models/base.py`) is the Amplification Model's output, and
+the glossary sanctions that word for exactly that thing: "Produces a **prediction** and an
+uncertainty." The Predictive Distribution is a separate type with a separate name, threaded
+separately through `decide()` and serialised as `plausible_range` / `height_bar_probability`.
+
+Two concepts, two names, nothing crossing. This is the inverse of #65 and needed no change.
+
+## The height bar's share borrows the name it already had
+
+The other case is real, and it is #65 mirrored: not one quantity wearing two words, but one word
+wearing several quantities. The sharpest instance sat inside `decide()`, where two independent
+gates stood three lines apart:
+
+```python
+confident = _confident_enough(distribution)          # the height bar probability
+uncertain = available and agreement is Agreement.AGREED and not confident
+```
+
+`agreement` is Model Spread — the quantity the glossary assigns "confidence" to. `confident` was
+the share of the Predictive Distribution above the height bar. Nothing checked that an editor
+attached the right gate to the right word, and the two produce different Watches on purpose
+(`go_call_withheld` against `go_call_withheld_for_uncertainty`).
+
+**No name was coined, because the codebase already had one.** `height_bar_probability` names
+this quantity in eighteen files — the API schema, the store column, the frontend type, the
+Predictive Distribution that computes it. Only the floor on it and the predicate reading it had
+borrowed "confidence". So the identifiers were derived from the name the quantity already
+answered to:
+
+| Was | Is |
+|---|---|
+| `GO_CALL_CONFIDENCE` | `GO_CALL_MINIMUM_HEIGHT_PROBABILITY` |
+| `_confident_enough` | `_height_probable_enough` |
+| local `confident` | local `probable` |
+| `analysis/forecast_error/confidence.py` | `analysis/forecast_error/height_probability.py` |
+| `output/go_call_confidence.csv` | `output/go_call_height_probability.csv` |
+
+The constant follows the shipped bars' own pattern — `go_call_minimum_swell_period_s`,
+`watch_minimum_swell_period_s` — rather than a shorter name that would read as the probability
+itself instead of the floor under it.
+
+This is ADR 0013's reasoning about `bias` applied from the other side. There, a coined word would
+have been worse than a borrowed one. Here the word did not even need borrowing from statistics:
+it was already in the schema, and inventing a domain term for a quantity eighteen files agree on
+would have added a third vocabulary rather than removing a second.
+
+The analysis script moved with the constant it measures. Leaving `confidence.py` named for a
+`GO_CALL_CONFIDENCE` that no longer exists would have re-created ADR 0013's stated hazard exactly
+— one quantity wearing two names across a file boundary. Its table was regenerated by running the
+script, never hand-typed, per #39; it needs no credentials and no network.
+
+## ADR 0013 misfiled this case, and is left as written
+
+ADR 0013 recorded `confidence.py` as a possible *Model Spread* violation. It was not: its first
+docstring line was "What `GO_CALL_CONFIDENCE` costs, priced against the Gold Days it can refuse."
+It was named for the height-bar floor, which is the sense this ADR renames — so the open case was
+real but filed under the wrong concept.
+
+ADR 0013 is not edited. An ADR records what was decided when, and correcting one in place would
+destroy the record that the mistake was made; that is the same reasoning ADR 0012 applies to
+prose about superseded bars.
+
+## The frontend block is a `PlausibleRange`
+
+The interface case is the one a user could be misled by. The block was *identified* as
+`Confidence` — component name, `className="confidence"`, `data-testid`, `.confidence-scope` —
+while the paragraph inside it exists to say the percentage prices height and not the swell
+period, swell direction or wind a giant day also needs (#66). The identifier contradicted the
+caveat it wrapped.
+
+It is now `PlausibleRange`, after `plausible_range`, the field it leads with and its first
+rendered words. `api.ts` also asserted that "`Confidence` names the height condition", which was
+false of what the component renders: the range in metres, the percentage, the height-only caveat,
+the uncertainty-withheld paragraph and the extrapolation caveat. That claim is corrected rather
+than carried across.
+
+## What this does not decide
+
+**The provenance sense stays.** `analysis/buoy_coverage/analyse_coverage.py` and the Gold Days
+README call a historical record's evidence tier its "confidence". Under the rule above that is
+legal — it names neither Model Spread nor a forecast quantity, and it never appears in the same
+file as one. Its data file is also headed "PROVISIONAL. Not the curated Gold Day set — that is
+issue #10", so renaming a column there would churn a file already destined for replacement.
+
+## A guard, because nothing enforced any of this
+
+#65 and #76 both exist because a naming collision can sit in the codebase indefinitely with CI
+green. `backend/tests/test_no_identifier_is_named_for_confidence.py` walks `backend/src` with
+`ast` and scans `frontend/src` for component names, class names and test ids, failing if any
+identifier contains "confiden". Prose and comments are ignored, which is the rule above made
+executable rather than a blanket ban.
+
+It is scoped to the two shipped trees. `analysis/` is deliberately outside it, because that is
+where the legal provenance sense lives.
+
+## Consequences
+
+- The two cases ADR 0013 left open are both answered, and the general question underneath them
+  is answered once rather than per-term.
+- `GO_CALL_MINIMUM_HEIGHT_PROBABILITY` is gone from an interface other code imports; anything reading it by name
+  fails loudly at import rather than silently.
+- The generated table changes filename. Its contents are identical — the measurement did not
+  move, only what it is called.
+- No number changes anywhere: the floor is still 0.70, priced against the same Gold Days.

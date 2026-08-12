@@ -18,7 +18,7 @@ because it is what keeps every calibrated bar meaning what it meant when it was 
 
 from __future__ import annotations
 
-from nazarenow.decision import GO_CALL_CONFIDENCE, Agreement, Status, decide
+from nazarenow.decision import GO_CALL_MINIMUM_HEIGHT_PROBABILITY, Agreement, Status, decide
 from nazarenow.distribution import ErrorBudget, PredictiveDistribution
 from nazarenow.models.learned import LearnedAmplification
 from nazarenow.thresholds import load as load_thresholds
@@ -41,9 +41,9 @@ GIANT = {
 # system reads. Literals, deliberately, for the reason `test_calls.py` gives about shipped
 # bars: importing them would move both sides of the assertion together.
 #
-# Written by `analysis/forecast_error/confidence.py`, which restates each Gold Day's own
+# Written by `analysis/forecast_error/height_probability.py`, which restates each Gold Day's own
 # reanalysis peak through the same Translation `calibrate.py` ships the bars through. The full
-# table is `analysis/forecast_error/output/go_call_confidence.csv`; these are the ones that
+# table is `analysis/forecast_error/output/go_call_height_probability.csv`; these are the ones that
 # bind, the rest sitting from 3.28 m up to 5.99 m.
 #
 # 2021-11-19 is the one Gold Day below the height bar. It earns no Go Call at any confidence
@@ -52,8 +52,8 @@ SMALLEST_GOLD_DAYS_M = (3.04, 3.04, 3.10, 3.28)
 GOLD_DAY_BELOW_THE_BAR_M = 2.11
 
 
-class TestTheConfidenceFloorCostsNoGoldDay:
-    """The budget `GO_CALL_CONFIDENCE` is priced against, in ADR 0010's shape.
+class TestTheHeightProbabilityFloorCostsNoGoldDay:
+    """The budget `GO_CALL_MINIMUM_HEIGHT_PROBABILITY` is priced against, in ADR 0010's shape.
 
     A rule meant to stop somebody booking a flight on a coin flip must not also stop them
     booking one on a day the ocean actually delivered. The floor is therefore the strictest
@@ -76,7 +76,7 @@ class TestTheConfidenceFloorCostsNoGoldDay:
                 )
 
                 assert built.height_bar_probability is not None
-                assert built.height_bar_probability >= GO_CALL_CONFIDENCE, (
+                assert built.height_bar_probability >= GO_CALL_MINIMUM_HEIGHT_PROBABILITY, (
                     f"a {peak} m Gold Day loses its Go Call at {lead} days"
                 )
 
@@ -94,10 +94,10 @@ class TestTheConfidenceFloorCostsNoGoldDay:
         )
 
         assert built.height_bar_probability is not None
-        assert built.height_bar_probability < GO_CALL_CONFIDENCE
+        assert built.height_bar_probability < GO_CALL_MINIMUM_HEIGHT_PROBABILITY
 
     def test_the_one_gold_day_under_the_bar_is_not_this_rules_to_lose(self) -> None:
-        """It fails the height condition outright, so no confidence floor decides it."""
+        """It fails the height condition outright, so no probability floor decides it."""
         assert GOLD_DAY_BELOW_THE_BAR_M < BAR
 
 
@@ -105,8 +105,8 @@ def certainty(probability: float) -> PredictiveDistribution:
     """A distribution of a chosen confidence, built rather than sampled.
 
     The shipped profile puts a genuine giant day at 1.000 at every Lead Time, which is the
-    point of `GO_CALL_CONFIDENCE` — so the marginal cases this rule exists for cannot be
-    reached from realistic readings without also changing the sea, and changing the sea
+    point of `GO_CALL_MINIMUM_HEIGHT_PROBABILITY` — so the marginal cases this rule exists for
+    cannot be reached from realistic readings without also changing the sea, and changing the sea
     changes the conditions too. Constructing the distribution isolates the one variable.
     """
     inside = round(probability * 100)
@@ -145,7 +145,7 @@ class TestAHindcastIsUnaffected:
 
 
 class TestUncertaintyFallsToAWatch:
-    def test_a_confident_distribution_still_earns_a_go_call(self) -> None:
+    def test_a_probable_enough_distribution_still_earns_a_go_call(self) -> None:
         got = call_with(certainty(1.0))
 
         assert got.status is Status.GO
@@ -160,8 +160,9 @@ class TestUncertaintyFallsToAWatch:
     def test_the_bar_is_inclusive(self) -> None:
         """Checked from both sides at the tightest step, as every other bar in this project
         is, so a comparison written `>` rather than `>=` fails here rather than in a season."""
-        assert call_with(certainty(GO_CALL_CONFIDENCE)).status is Status.GO
-        assert call_with(certainty(GO_CALL_CONFIDENCE - 0.01)).status is Status.WATCH
+        floor = GO_CALL_MINIMUM_HEIGHT_PROBABILITY
+        assert call_with(certainty(floor)).status is Status.GO
+        assert call_with(certainty(floor - 0.01)).status is Status.WATCH
 
     def test_the_reason_says_which_refusal_it_was(self) -> None:
         """Two different facts about the world end in a Watch, and a reader deserves to know
@@ -188,7 +189,7 @@ class TestUncertaintyFallsToAWatch:
 class TestAWiderProfileProducesAMoreCautiousCall:
     """#15's final criterion, second half, end to end through the shipped profile."""
 
-    def test_confidence_falls_as_the_lead_time_grows(self) -> None:
+    def test_height_probability_falls_as_the_lead_time_grows(self) -> None:
         marginal = GIANT | {"significant_wave_height": 2.8, "swell_height": 2.5}
 
         near = BUDGET.distribution(MODEL, marginal, 1, height_bar_m=BAR)
@@ -199,9 +200,9 @@ class TestAWiderProfileProducesAMoreCautiousCall:
         assert far.height_bar_probability < near.height_bar_probability
 
     def test_a_genuine_giant_day_keeps_its_go_call_at_every_lead_time(self) -> None:
-        """The measurement `GO_CALL_CONFIDENCE` rests on: this floor is inert where it would
-        be dangerous. A 5 m sea clears a 2.75 m bar whatever the forecast does, so the rule
-        can only ever take a Go Call from the margin.
+        """The measurement `GO_CALL_MINIMUM_HEIGHT_PROBABILITY` rests on: this floor is inert
+        where it would be dangerous. A 5 m sea clears a 2.75 m bar whatever the forecast does,
+        so the rule can only ever take a Go Call from the margin.
 
         Stated as "far clear of the floor" rather than as exactly 1.0. The probability is
         read off the incoming reading's own draws, and at seven days those are 0.72 m wide on
@@ -215,7 +216,8 @@ class TestAWiderProfileProducesAMoreCautiousCall:
             built = BUDGET.distribution(MODEL, GIANT, lead, height_bar_m=BAR)
 
             assert built.height_bar_probability is not None
-            assert built.height_bar_probability > GO_CALL_CONFIDENCE + 0.05, f"at {lead} days"
+            clear_of_the_floor = GO_CALL_MINIMUM_HEIGHT_PROBABILITY + 0.05
+            assert built.height_bar_probability > clear_of_the_floor, f"at {lead} days"
             assert decide(MODEL.predict(GIANT), lead, Agreement.AGREED, built).status is Status.GO
 
 

@@ -1,4 +1,4 @@
-"""What `GO_CALL_CONFIDENCE` costs, priced against the Gold Days it can refuse.
+"""What `GO_CALL_MINIMUM_HEIGHT_PROBABILITY` costs, priced against the Gold Days it can refuse.
 
 Ticket #15. The Decision Model withholds a Go Call when too little of the incoming reading's
 Predictive Distribution clears the calibrated height bar. That floor is a bar like any other
@@ -23,8 +23,8 @@ and recall is the direction that can lose a Gold Day.
 
 Run, from the repository root:
 
-    .venv/Scripts/python.exe analysis/forecast_error/confidence.py
-    .venv/Scripts/python.exe analysis/forecast_error/confidence.py --check
+    .venv/Scripts/python.exe analysis/forecast_error/height_probability.py
+    .venv/Scripts/python.exe analysis/forecast_error/height_probability.py --check
 
 No credentials, no network. Reads the Gold Days, the reanalysis Hindcast the calibration runs
 on, and the shipped `forecast_error.json`. The table lands in `output/`.
@@ -43,7 +43,7 @@ sys.path.insert(0, str(ROOT / "analysis" / "calibration"))
 sys.path.insert(0, str(ROOT / "backend" / "src"))
 
 import calibrate  # noqa: E402
-from nazarenow.decision import GO_CALL_CONFIDENCE  # noqa: E402
+from nazarenow.decision import GO_CALL_MINIMUM_HEIGHT_PROBABILITY  # noqa: E402
 from nazarenow.distribution import ErrorBudget  # noqa: E402
 from nazarenow.thresholds import load as load_thresholds  # noqa: E402
 
@@ -144,7 +144,7 @@ def price(days: list[GoldDay], budget: ErrorBudget, bar: float) -> tuple[float, 
 
 def write_csv(days: list[GoldDay], budget: ErrorBudget, bar: float) -> Path:
     OUTPUT.mkdir(parents=True, exist_ok=True)
-    path = OUTPUT / "go_call_confidence.csv"
+    path = OUTPUT / "go_call_height_probability.csv"
     leads = list(range(1, budget.forecast.measured_through_lead_days + 1))
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
@@ -197,11 +197,11 @@ def check() -> int:
 
     rising = [clears_the_bar(3.2, lead, budget, bar) for lead in (1, 3, 5)]
     if not rising[0] > rising[1] > rising[2]:
-        failures.append(f"confidence should fall as Lead Time grows, got {rising}")
+        failures.append(f"height probability should fall as Lead Time grows, got {rising}")
 
     for line in failures:
         print(f"  FAIL {line}")
-    print("confidence.py --check: " + ("FAILED" if failures else "all checks passed"))
+    print("height_probability.py --check: " + ("FAILED" if failures else "all checks passed"))
     return 1 if failures else 0
 
 
@@ -233,11 +233,11 @@ def main() -> int:
     for candidate in (0.60, 0.70, 0.75, 0.80, 0.85, 0.90):
         print(f"  {candidate:.2f}: {cost_of(candidate, days, budget, bar):2d}")
 
-    print(f"\nShipped: GO_CALL_CONFIDENCE = {GO_CALL_CONFIDENCE:g}")
-    if floor < GO_CALL_CONFIDENCE:
+    print(f"\nShipped: GO_CALL_MINIMUM_HEIGHT_PROBABILITY = {GO_CALL_MINIMUM_HEIGHT_PROBABILITY:g}")
+    if floor < GO_CALL_MINIMUM_HEIGHT_PROBABILITY:
         print(
             f"  WARNING: the shipped floor is stricter than {floor:.2f} and costs "
-            f"{cost_of(GO_CALL_CONFIDENCE, days, budget, bar)} Gold Days"
+            f"{cost_of(GO_CALL_MINIMUM_HEIGHT_PROBABILITY, days, budget, bar)} Gold Days"
         )
 
     print(f"\nWrote {write_csv(days, budget, bar)}")

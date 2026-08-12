@@ -250,7 +250,8 @@ The height bar is the one exception: it *is* derived, as the tightest bar admitt
 Day in the fitting split, floored to 0.25 m. At 2.75 m <!--now:minimum_significant_wave_height_m--> it still does not bind — the smallest
 Gold Day peak in the fitting split is 2.98 m.
 
-Ticket #15 now prices a second rule against this same margin. The Go Call confidence floor asks
+Ticket #15 now prices a second rule against this same margin. The Go Call height probability
+floor asks
 how sure the forecast is that a day clears this bar, and the gap between the bar and that
 smallest Gold Day is the band it is allowed to refuse in — see
 `analysis/forecast_error/README.md`, finding 5.

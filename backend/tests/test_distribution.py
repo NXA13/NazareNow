@@ -358,9 +358,9 @@ class TestTheHeightBarProbabilityIsAboutTheBarThatIsActuallyJudged:
         assert 0.4 < got.height_bar_probability < 0.6
 
     def test_a_genuine_giant_clears_it_at_every_lead_time(self) -> None:
-        """The inertness `GO_CALL_CONFIDENCE` is documented to have, on the corrected
-        quantity. A 5 m sea clears a 2.75 m bar whatever the forecast does, so this floor
-        cannot take a Go Call from a day anyone would fly for."""
+        """The inertness `GO_CALL_MINIMUM_HEIGHT_PROBABILITY` is documented to have, on the
+        corrected quantity. A 5 m sea clears a 2.75 m bar whatever the forecast does, so this
+        floor cannot take a Go Call from a day anyone would fly for."""
         for lead in (1, 3, 7):
             got = BUDGET.distribution(MODEL, GIANT, lead, height_bar_m=2.75)
             assert got.height_bar_probability == pytest.approx(1.0, abs=0.02), f"at {lead} days"
