@@ -190,6 +190,15 @@ with a price that has to be paid deliberately: narrowing the range moves every
 (`decision.py`, and `analysis/forecast_error/height_probability.py` is the measurement). A narrower
 distribution with the old floor is a different Decision Model, not a better-calibrated one.
 
+**Said on the page, though, since #94.** The repair is one ticket; stating the finding was
+another, and it needed no refit. `analysis/track_record/publish.py` now reads
+`output/interval_coverage.csv` and the track record page carries the table under "Does the range
+it prints mean what it says?" — with both subsets, both caveats from "What this cannot settle",
+and a verdict derived from the numbers rather than written into the copy, so the page stays true
+if the distribution is ever narrowed. Until then the site stated a range in metres and said
+nothing about having measured it, which made this the one published claim with evidence against
+it and no mention of it.
+
 The interesting part is that the repair is not obviously in the user's favour. A range that is
 too wide is a system claiming less than it knows — honest in one direction, and the direction
 that costs a Traveller a trip they would have taken rather than one they should not have. Both

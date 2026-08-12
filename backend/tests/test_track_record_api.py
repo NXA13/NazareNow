@@ -111,6 +111,75 @@ class TestWhatItPublishes:
                     for step in delivered["above"]
                 )
 
+    def test_the_range_calibration_arrives_with_both_subsets_at_every_lead_time(
+        self, published_client: TestClient
+    ) -> None:
+        """#94. The interface prints a range in metres and this is the measurement of it.
+
+        Both subsets are asserted at every Lead Time because the big-swell rows are the sea a
+        Go Call is issued on and read kinder than the whole; a response able to carry one of
+        them alone is a page able to publish the kinder number as the finding.
+        """
+        calibration = published_client.get("/api/track-record").json()["range_calibration"]
+
+        assert 0 < calibration["claimed"] < 1
+        assert calibration["leads"]
+        for lead in calibration["leads"]:
+            for subset in ("all_hours", "big_swell"):
+                measured = lead[subset]
+                assert measured["hours"] > 0, f"{lead['lead_days']} d {subset}"
+                assert 0 <= measured["covered"] <= 1
+                assert measured["median_width_m"] > 0
+            assert lead["big_swell"]["hours"] <= lead["all_hours"]["hours"]
+
+    def test_the_width_the_outcomes_asked_for_is_divided_here_and_not_by_the_interface(
+        self, published_client: TestClient
+    ) -> None:
+        """Same rule as every other derived figure in this response."""
+        calibration = published_client.get("/api/track-record").json()["range_calibration"]
+
+        for lead in calibration["leads"]:
+            for subset in ("all_hours", "big_swell"):
+                measured = lead[subset]
+                assert measured["justified_width_m"] == pytest.approx(
+                    measured["median_width_m"] * measured["widening_factor"]
+                )
+
+    def test_the_two_qualifications_travel_with_the_figures(
+        self, published_client: TestClient
+    ) -> None:
+        """Without them the table reads as a calibration certificate.
+
+        One says the shipped range is wider than the one measured — every distribution scored
+        was built without the wave models' disagreement term, which only widens. The other
+        says the whole table rests on one partial Big-Wave Season with a single confirmed
+        giant day in it. Neither is derivable from the numbers beside them.
+        """
+        calibration = published_client.get("/api/track-record").json()["range_calibration"]
+
+        assert calibration["understates_because"].strip()
+        assert calibration["rests_on"].strip()
+
+    def test_no_verdict_on_the_range_is_sent_over_the_wire(
+        self, published_client: TestClient
+    ) -> None:
+        """The direction is derived by whatever renders this, never asserted in the schema.
+
+        #82 exists to narrow this distribution. A field saying "too wide" would outlive the
+        refit that makes it false — the failure #76 and ADR 0014 are both about. What travels
+        is the claim, the measurement, and the two qualifications.
+        """
+        calibration = published_client.get("/api/track-record").json()["range_calibration"]
+
+        assert set(calibration) == {"claimed", "understates_because", "rests_on", "leads"}
+        assert set(calibration["leads"][0]["all_hours"]) == {
+            "hours",
+            "covered",
+            "median_width_m",
+            "justified_width_m",
+            "widening_factor",
+        }
+
     def test_every_band_carries_both_models(self, published_client: TestClient) -> None:
         """ADR 0006, enforced at the published boundary as well as in the file.
 

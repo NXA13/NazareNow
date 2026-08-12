@@ -223,6 +223,84 @@ class Band:
 
 
 @dataclass(frozen=True)
+class RangeCoverage:
+    """How often the printed range held the outcome, over one subset of hours at one Lead Time.
+
+    Every other figure in this record is scored against the **Gold Days** — days ratified giant
+    by a contest or a record. This one is scored against the sea itself, hour by hour, and it
+    is the only published claim measured against what the range said rather than against what
+    the call said.
+    """
+
+    hours: int
+    covered: float
+    """The share of outcomes that fell inside the range. Compared against the claim on
+    `RangeCalibration`, which is one number for the whole table rather than a copy per row."""
+
+    median_width_m: float
+    widening_factor: float
+    """What the half-width would have to be multiplied by for the claimed share of outcomes to
+    fall inside it. Above one, the range is narrower than the outcomes justify; below one, it
+    is wider. `analysis/distribution_coverage/README.md` defines it and #80 measured it."""
+
+    @property
+    def justified_width_m(self) -> float:
+        """The width these outcomes actually asked for.
+
+        The whole finding in one number a reader can picture beside the one the site prints:
+        a range spanning 2.19 m that would have held the same share of outcomes at 1.15 m.
+        Derived rather than stored, for the reason the module docstring gives about rates —
+        a file carrying both this and the width it comes from carries one fact twice.
+        """
+        return self.median_width_m * self.widening_factor
+
+
+@dataclass(frozen=True)
+class RangeLead:
+    """One Lead Time, with both subsets as fields.
+
+    The pair is structural for the same reason `Panel`'s two tiers are. The `big_swell` rows
+    describe the sea a Go Call is actually issued on and are the more flattering of the two,
+    so a shape that could carry one alone is a shape that could publish the kinder number
+    under a heading a reader takes for the whole finding.
+    """
+
+    lead_days: int
+    all_hours: RangeCoverage
+    big_swell: RangeCoverage
+
+
+@dataclass(frozen=True)
+class RangeCalibration:
+    """What the range the interface prints claims to hold, against what it held (#80, #94).
+
+    **This section states nothing about which way the miss runs.** It carries the claim, the
+    measurement and the two caveats, and whatever renders it derives the direction. #82 exists
+    to change the direction, and a verdict baked in here would outlive the refit that falsifies
+    it — the failure ADR 0014 and #76 are both about, in a different costume.
+
+    **Required, not optional**, unlike `Delivery`. A record that cannot say this renders a page
+    that prints a range and says nothing about whether it means what it says, which is exactly
+    the flattering omission `TrackRecordUnusable` exists to refuse.
+    """
+
+    claimed: float
+    """The share the range says it holds — the 5th to 95th percentile of the draws, so 0.9."""
+
+    understates_because: str
+    rests_on: str
+    """The two qualifications that must travel with the table, as fields rather than a list.
+
+    A list can arrive with one element and render a page that looks complete. The first says
+    the shipped range is wider than the one measured; the second says the whole table rests on
+    one partial Big-Wave Season. Neither is derivable from the numbers, and a reader given the
+    figures without them has been handed a calibration certificate, which this is not.
+    """
+
+    leads: tuple[RangeLead, ...]
+
+
+@dataclass(frozen=True)
 class RecordedDay:
     """One past day: what was called, and what the Hindcast then held for it."""
 
@@ -256,6 +334,12 @@ class TrackRecord:
     scored: list[Band]
     """Both models on identical hours, each reading the Hindcast directly. What the fit is
     worth, in the units it was fitted in."""
+
+    range_calibration: RangeCalibration
+    """How often the range the interface prints held the outcome, against how often it claims
+    to (#94). The only figure in this record scored against the sea rather than against the
+    Gold Days, and until #94 the only published claim with a measurement behind it that the
+    page did not mention."""
 
     served: list[Band]
     """The same comparison along the path a Pipeline Run actually takes, where the learned
@@ -301,6 +385,129 @@ def _metres(body: dict[str, Any], field: str, where: str) -> float:
     if value < 0:
         raise TrackRecordUnusable(f"{where}: {field} must not be negative, got {value!r}")
     return float(value)
+
+
+def _share(body: dict[str, Any], field: str, where: str) -> float:
+    value = _require(body, field, where)
+    if not isinstance(value, int | float) or isinstance(value, bool):
+        raise TrackRecordUnusable(f"{where}: {field} must be a number, got {value!r}")
+    if not 0.0 <= value <= 1.0:
+        raise TrackRecordUnusable(
+            f"{where}: {field} is a share of outcomes and must fall between 0 and 1, got "
+            f"{value!r}. A share above one renders as a percentage over 100, which reads as a "
+            "rendering fault rather than as the corrupt figure it is"
+        )
+    return float(value)
+
+
+def _sentence(body: dict[str, Any], field: str, where: str) -> str:
+    """A qualification that must actually say something.
+
+    An empty string passes every type check and renders as a bullet with nothing in it, which
+    a reader skips — so the page keeps its shape and loses the sentence that was the point of
+    publishing the section at all.
+    """
+    value = _require(body, field, where)
+    if not isinstance(value, str) or not value.strip():
+        raise TrackRecordUnusable(
+            f"{where}: {field} must carry the qualification it names, got {value!r}"
+        )
+    return value
+
+
+def _range_coverage(raw: Any, where: str) -> RangeCoverage:
+    if not isinstance(raw, dict):
+        raise TrackRecordUnusable(f"{where} must hold an object, got {type(raw).__name__}")
+
+    hours = _count(raw, "hours", where)
+    if hours == 0:
+        raise TrackRecordUnusable(
+            f"{where} was scored over no hours, so the shares beside it are divisions by zero "
+            "dressed as measurements"
+        )
+
+    width = _metres(raw, "median_width_m", where)
+    if width <= 0:
+        raise TrackRecordUnusable(
+            f"{where}: median_width_m is {width}, so the range has no width and cannot have "
+            "held anything"
+        )
+
+    factor = _require(raw, "widening_factor", where)
+    if not isinstance(factor, int | float) or isinstance(factor, bool) or factor <= 0:
+        raise TrackRecordUnusable(
+            f"{where}: widening_factor must be greater than zero, got {factor!r}. It multiplies "
+            f"a half-width, so zero or less describes a range that cannot be drawn"
+        )
+
+    return RangeCoverage(
+        hours=hours,
+        covered=_share(raw, "covered", where),
+        median_width_m=width,
+        widening_factor=float(factor),
+    )
+
+
+def _range_calibration(raw: Any) -> RangeCalibration:
+    """Parse the measured calibration of the printed range, refusing an incoherent one.
+
+    **Nothing here refuses a direction.** A record where the range holds the outcome *less*
+    often than it claims is not a corrupt file — it is what #82 is trying to produce, and a
+    parser that rejected it would make the repair unshippable while looking like a safety
+    check. What is refused is a file that cannot describe any distribution at all: a subset
+    that is larger than the set containing it, a Lead Time appearing twice, a share above one.
+    """
+    where = "height_record.range_calibration"
+    if not isinstance(raw, dict):
+        raise TrackRecordUnusable(f"{where} must hold an object, got {type(raw).__name__}")
+
+    claimed = _share(raw, "claimed", where)
+    if not 0.0 < claimed < 1.0:
+        raise TrackRecordUnusable(
+            f"{where}: claimed is {claimed}, but a range holding all outcomes or none of them "
+            "is not a claim any measurement below can be compared against"
+        )
+
+    raw_leads = _require(raw, "leads", where)
+    if not isinstance(raw_leads, list) or not raw_leads:
+        raise TrackRecordUnusable(
+            f"{where} carries no Lead Times, so the page would print a claim about the range "
+            "with no measurement under it"
+        )
+
+    leads = []
+    for index, entry in enumerate(raw_leads):
+        at = f"{where}.leads[{index}]"
+        if not isinstance(entry, dict):
+            raise TrackRecordUnusable(f"{at} is not an object")
+        lead_days = _count(entry, "lead_days", at)
+        if lead_days == 0:
+            raise TrackRecordUnusable(f"{at}: lead_days must be at least one day of notice")
+
+        all_hours = _range_coverage(_require(entry, "all_hours", at), f"{at}.all_hours")
+        big_swell = _range_coverage(_require(entry, "big_swell", at), f"{at}.big_swell")
+        if big_swell.hours > all_hours.hours:
+            raise TrackRecordUnusable(
+                f"{at}: the big-swell rows hold {big_swell.hours} hours against "
+                f"{all_hours.hours} for all hours, so they are not a subset of them and the "
+                "page would present two unrelated measurements as one comparison"
+            )
+        leads.append(RangeLead(lead_days=lead_days, all_hours=all_hours, big_swell=big_swell))
+
+    ordered = [lead.lead_days for lead in leads]
+    if ordered != sorted(set(ordered)):
+        raise TrackRecordUnusable(
+            f"{where}: Lead Times {ordered} are repeated or out of order. The page reads down "
+            "them as a forecast reaching further, and a repeat renders one Lead Time's figures "
+            "under another's heading"
+        )
+
+    return RangeCalibration(
+        claimed=claimed,
+        understates_because=_sentence(raw, "understates_because", where),
+        rests_on=_sentence(raw, "rests_on", where),
+        leads=tuple(leads),
+    )
 
 
 def _tier(raw: Any, name: str, panel: str, gold_days: int, seasons: float) -> Tier:
@@ -526,6 +733,13 @@ def parse(body: dict[str, Any]) -> TrackRecord:
     height = body["height_record"]
     scored = _bands(_require(height, "scored", "height_record"), "scored")
     served = _bands(_require(height, "served", "height_record"), "served")
+    if "range_calibration" not in height:
+        raise TrackRecordUnusable(
+            "height_record carries no range_calibration; the interface prints a range in "
+            "metres and this is the measurement of whether it means what it claims, so a "
+            "record without it serves a page that states the claim and omits the check"
+        )
+    calibration = _range_calibration(height["range_calibration"])
 
     gold_days = body["gold_days"]
     fitted = _count(gold_days, "fitted", "gold_days")
@@ -564,6 +778,7 @@ def parse(body: dict[str, Any]) -> TrackRecord:
         held_out=held_out,
         full_record=full_record,
         scored=scored,
+        range_calibration=calibration,
         served=served,
         gold_days_fitted=fitted,
         gold_days_validated=validated,

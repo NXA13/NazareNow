@@ -24,7 +24,15 @@ from nazarenow.days import group_by_date
 from nazarenow.decision import Agreement, Status
 from nazarenow.spread import BEARINGS, ORGANISATIONS, is_degraded
 from nazarenow.store import Store, StoreUnavailable
-from nazarenow.track_record import Band, Panel, Tier, TrackRecord, TrackRecordUnusable
+from nazarenow.track_record import (
+    Band,
+    Panel,
+    RangeCalibration,
+    RangeCoverage,
+    Tier,
+    TrackRecord,
+    TrackRecordUnusable,
+)
 from nazarenow.track_record import load as load_track_record
 
 app = FastAPI(
@@ -758,6 +766,56 @@ class AccuracyBand(BaseModel):
     so the qualification travels into whatever renders the table."""
 
 
+class RangeCoverageRecord(BaseModel):
+    """How often the printed range held the outcome, over one subset at one Lead Time."""
+
+    hours: int
+    covered: float
+    median_width_m: float
+    justified_width_m: float
+    """The width these outcomes actually asked for — the median width scaled by the widening
+    factor. Derived here rather than left to the interface, following `recall` and
+    `wasted_upper_bound`: the arithmetic lives on this side of the seam so a page cannot
+    disagree with the figures beside it."""
+
+    widening_factor: float
+    """Above one the range is narrower than the outcomes justify; below one it is wider. Sent
+    as measured, without a verdict attached — see `RangeCalibrationRecord`."""
+
+
+class RangeLeadRecord(BaseModel):
+    """One Lead Time, both subsets. Named fields, so a response cannot carry only the kinder
+    of the two — the big-swell rows are the sea a Go Call is issued on."""
+
+    lead_days: int
+    all_hours: RangeCoverageRecord
+    big_swell: RangeCoverageRecord
+
+
+class RangeCalibrationRecord(BaseModel):
+    """What the range the interface prints claims to hold, against what it held (#80, #94).
+
+    The interface states an uncertainty range in metres, and this is the only measurement of
+    whether that statement is true. It is scored against the sea hour by hour rather than
+    against the Gold Days, which makes it the one figure on this page resting on more than
+    thirteen days — and the two caveats travelling with it are why that is not the licence it
+    sounds like.
+
+    **No verdict is sent, only the claim and the measurement.** Which way the range misses is
+    derived by whatever renders it. #82 exists to narrow this distribution, and a direction
+    asserted in the schema would survive the refit that makes it false.
+    """
+
+    claimed: float
+    understates_because: str
+    rests_on: str
+    """Both required. The first says the shipped range is wider than the one measured here;
+    the second says the whole table rests on one partial Big-Wave Season. A reader given the
+    figures without them has been handed a calibration certificate, which this is not."""
+
+    leads: list[RangeLeadRecord]
+
+
 class RecordedDayResponse(BaseModel):
     date: str
     season: str
@@ -809,6 +867,13 @@ class PublishedTrackRecord(BaseModel):
     """Two panels, never averaged. The held-out one is measured on Big-Wave Seasons the
     thresholds never saw; the whole-record one is larger and partly covers the seasons they
     were fitted on. A reader given only their mean would be given neither."""
+
+    range_calibration: RangeCalibrationRecord
+    """How often the range the interface prints held the outcome (#94).
+
+    Required, unlike `issued`. A response without it renders a page that prints a range in
+    metres and says nothing about whether it holds what it claims — and the range is the one
+    published claim with a measurement behind it, so the omission is the flattering one."""
 
     scored: list[AccuracyBand]
     served: list[AccuracyBand]
@@ -888,6 +953,32 @@ def as_bands(bands: list[Band]) -> list[AccuracyBand]:
     ]
 
 
+def as_range_calibration(calibration: RangeCalibration) -> RangeCalibrationRecord:
+    return RangeCalibrationRecord(
+        claimed=calibration.claimed,
+        understates_because=calibration.understates_because,
+        rests_on=calibration.rests_on,
+        leads=[
+            RangeLeadRecord(
+                lead_days=lead.lead_days,
+                all_hours=as_range_coverage(lead.all_hours),
+                big_swell=as_range_coverage(lead.big_swell),
+            )
+            for lead in calibration.leads
+        ],
+    )
+
+
+def as_range_coverage(coverage: RangeCoverage) -> RangeCoverageRecord:
+    return RangeCoverageRecord(
+        hours=coverage.hours,
+        covered=coverage.covered,
+        median_width_m=coverage.median_width_m,
+        justified_width_m=coverage.justified_width_m,
+        widening_factor=coverage.widening_factor,
+    )
+
+
 @lru_cache
 def default_track_record() -> TrackRecord:
     """The published record this process serves.
@@ -946,6 +1037,7 @@ def track_record(
         full_record=as_panel(published.full_record),
         scored=as_bands(published.scored),
         served=as_bands(published.served),
+        range_calibration=as_range_calibration(published.range_calibration),
         gold_days_fitted=published.gold_days_fitted,
         gold_days_validated=published.gold_days_validated,
         gold_days_total=published.gold_days_total,

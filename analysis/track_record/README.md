@@ -25,6 +25,7 @@ anything it does not recognise.
 | day-by-day record | `analysis/backtest/output/daily_calls.csv` | #11 |
 | scored height accuracy | `analysis/amplification_model/output/held_out_scores.csv` | #13 |
 | served height accuracy | `analysis/amplification_model/output/translation_shapes.csv` | #52 |
+| range calibration | `analysis/distribution_coverage/output/interval_coverage.csv` | #80, #94 |
 | Gold Day split | `backend/src/nazarenow/thresholds.json` | #12 |
 
 ## The served figures are #52's, not `served_path.py`'s
@@ -79,6 +80,37 @@ the amplification README's prose — `held_out_scores.csv` carries hours, not di
 `--check` cannot verify it, and `GOLD_DAY_CAVEAT` cites its source instead. The alternative was
 dropping the row, and it is the row #16 asks for most directly.
 
+## The range calibration carries no verdict
+
+#94. The site states an uncertainty range in metres and #80 measured whether it means what it
+says. It does not: the range claims 90% and held the outcome 94.0% of the time one day ahead
+and 99.4% seven days ahead, growing wider relative to the outcomes the further ahead it looks.
+
+Every other figure this script publishes is scored against the **Gold Days**. This one is
+scored against the sea, hour by hour, which makes it the broadest evidence on the page — and
+the two caveats travelling with it are why that is not the licence it sounds like.
+
+**What is published is the claim and the measurement. Never a direction.** Which way the range
+misses is derived where it is rendered, in one comparison, and the reason is
+[#82](https://github.com/NXA13/NazareNow/issues/82): that ticket exists to narrow this
+distribution, and a "too wide" verdict written into the record or into the page's copy would
+survive the refit that made it false. The backend's parser is deliberately silent on direction
+too — it refuses a subset larger than its superset and a share above one, and accepts coverage
+*below* the claim, because that is #82 landing rather than a corrupt file.
+
+**Both subsets travel on every Lead Time, as named fields.** The `big swell` rows are the sea a
+Go Call is actually issued on and read kinder than the whole (0.94 of the required half-width at
+one day, against 0.82). A shape able to carry one alone is a shape able to publish the kinder
+number under a heading a reader takes for the whole finding — the rule `TIERS` already keeps.
+
+**Two caveats are typed here rather than joined**, following `GOLD_DAY_CAVEAT`. Both live only
+in `analysis/distribution_coverage/README.md`'s prose, so `--check` cannot verify them:
+
+| Caveat | Why it must travel |
+|---|---|
+| `RANGE_UNDERSTATES_BECAUSE` | Every distribution scored was built with `model_spread=None`, and `_drift_floor` only ever raises the drift. So the range the running system prints is **wider** than the one measured, and the table understates its own finding. |
+| `RANGE_RESTS_ON` | 1,593 hours from 2025-11-26 to 2026-02-20, clustering into a few dozen swells, with a single confirmed giant day inside the window. A reader who takes "1,593 hours" as the sample size has the flattering half of a two-part fact. |
+
 ## Rates are not written
 
 The file carries counts. `backend/src/nazarenow/track_record.py` divides.
@@ -114,7 +146,14 @@ Offline, against the committed reports:
 7. **#52's warning is attached to the row it is about**, and to no other row. Spreading it
    would warn about figures that hold their sign under every assumption; dropping it would
    publish the one that does not as though it did.
-8. **The committed `track_record.json` is what this script would write now.** Everything else
+8. **The range calibration**, in two kinds. The joins: both subsets present at every Lead Time,
+   the big-swell hours no larger than the hours they are drawn from, no Lead Time skipped, and
+   the width rising as the forecast reaches further. And the direction: coverage at or above
+   the claim, a widening factor under one, and that factor falling with Lead Time. The
+   directional pins **will fail if #82 lands**, on purpose — the two caveats published beside
+   the table are written for a range that runs wide, and a refit reversing the finding must not
+   slip past with the old prose still attached. The failure message says so.
+9. **The committed `track_record.json` is what this script would write now.** Everything else
    checks the joins and none of it looks at the output, so a report regenerated after the last
    publish leaves a stale record that every other check passes — and the stale record is what
    the backend serves. `published_at` is excluded from the comparison because it moves by

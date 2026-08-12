@@ -88,6 +88,43 @@ VALID: dict[str, Any] = {
                 },
             ]
         },
+        "range_calibration": {
+            "claimed": 0.9,
+            "understates_because": "the ensemble term is absent and can only widen",
+            "rests_on": "one partial Big-Wave Season",
+            "leads": [
+                {
+                    "lead_days": 1,
+                    "all_hours": {
+                        "hours": 1593,
+                        "covered": 0.9397,
+                        "median_width_m": 1.0459,
+                        "widening_factor": 0.822,
+                    },
+                    "big_swell": {
+                        "hours": 807,
+                        "covered": 0.9257,
+                        "median_width_m": 1.6144,
+                        "widening_factor": 0.9368,
+                    },
+                },
+                {
+                    "lead_days": 7,
+                    "all_hours": {
+                        "hours": 1593,
+                        "covered": 0.9937,
+                        "median_width_m": 2.1919,
+                        "widening_factor": 0.5264,
+                    },
+                    "big_swell": {
+                        "hours": 807,
+                        "covered": 0.9888,
+                        "median_width_m": 3.0812,
+                        "widening_factor": 0.5767,
+                    },
+                },
+            ],
+        },
     },
     "gold_days": {"fitted": 25, "validated": 13},
     "days": [
@@ -467,6 +504,116 @@ class TestDeliveredSea:
 
         with pytest.raises(TrackRecordUnusable, match="no thresholds"):
             parse(self.with_delivery(delivered))
+
+
+class TestRangeCalibration:
+    """The measured calibration of the range the interface prints (#94).
+
+    The refusals here are narrower than elsewhere in this file, and that is the point. Every
+    other section is guarded against a file that *flatters* — more Gold Days caught than exist,
+    a ladder claiming more days than were flagged. This one cannot be, because the flattering
+    direction is not a fixed direction: #82 exists to narrow the distribution, and a record
+    where the range holds the outcome *less* often than it claims is that repair landing, not
+    a corrupt file. So what is refused is incoherence — a subset larger than its superset, a
+    Lead Time appearing twice, a share above one — and never a verdict.
+    """
+
+    @staticmethod
+    def calibration(body: dict[str, Any]) -> dict[str, Any]:
+        return body["height_record"]["range_calibration"]
+
+    def test_the_claim_and_the_measurement_both_survive(self) -> None:
+        record = parse(deepcopy(VALID)).range_calibration
+
+        assert record.claimed == 0.9
+        assert [lead.lead_days for lead in record.leads] == [1, 7]
+        assert record.leads[0].all_hours.covered == 0.9397
+        assert record.leads[0].big_swell.hours == 807
+
+    def test_the_width_the_outcomes_asked_for_is_derived_rather_than_stored(self) -> None:
+        """#80's own sentence, as a number: a seven-day range spanning 2.19 m would have held
+        the same share of outcomes at 1.15 m. Derived here so a file cannot carry a width and
+        a factor that disagree with the product of the two."""
+        seven = parse(deepcopy(VALID)).range_calibration.leads[1]
+
+        assert seven.all_hours.justified_width_m == pytest.approx(2.1919 * 0.5264)
+        assert seven.all_hours.justified_width_m < seven.all_hours.median_width_m
+
+    def test_a_record_without_the_section_is_refused(self) -> None:
+        """The page prints a range in metres. A record that cannot say whether it holds what
+        it claims serves a page that states the claim and omits the check, which is the
+        flattering half of the pair."""
+        with pytest.raises(TrackRecordUnusable, match="range_calibration"):
+            parse(without("height_record", "range_calibration"))
+
+    def test_a_lead_time_carrying_only_one_subset_is_refused(self) -> None:
+        """The big-swell rows are the sea a Go Call is issued on and read kinder than the
+        whole. A record able to carry them alone can publish the kinder number under a
+        heading a reader takes for the whole finding."""
+        for subset in ("all_hours", "big_swell"):
+            body = deepcopy(VALID)
+            del self.calibration(body)["leads"][0][subset]
+
+            with pytest.raises(TrackRecordUnusable, match=subset):
+                parse(body)
+
+    def test_a_big_swell_subset_larger_than_the_hours_it_comes_from_is_refused(self) -> None:
+        body = deepcopy(VALID)
+        self.calibration(body)["leads"][0]["big_swell"]["hours"] = 9999
+
+        with pytest.raises(TrackRecordUnusable, match="not a subset"):
+            parse(body)
+
+    def test_a_repeated_lead_time_is_refused(self) -> None:
+        body = deepcopy(VALID)
+        self.calibration(body)["leads"][1]["lead_days"] = 1
+
+        with pytest.raises(TrackRecordUnusable, match="repeated or out of order"):
+            parse(body)
+
+    def test_a_coverage_share_above_one_is_refused(self) -> None:
+        body = deepcopy(VALID)
+        self.calibration(body)["leads"][0]["all_hours"]["covered"] = 1.4
+
+        with pytest.raises(TrackRecordUnusable, match="between 0 and 1"):
+            parse(body)
+
+    def test_a_range_with_no_width_is_refused(self) -> None:
+        body = deepcopy(VALID)
+        self.calibration(body)["leads"][0]["all_hours"]["median_width_m"] = 0
+
+        with pytest.raises(TrackRecordUnusable, match="no width"):
+            parse(body)
+
+    def test_an_empty_qualification_is_refused_rather_than_rendered_as_a_blank_bullet(
+        self,
+    ) -> None:
+        """Both caveats are the reason this table is not a calibration certificate. An empty
+        string passes every type check and renders as a bullet a reader skips, so the page
+        keeps its shape and loses the sentence."""
+        for field in ("understates_because", "rests_on"):
+            body = deepcopy(VALID)
+            self.calibration(body)[field] = "  "
+
+            with pytest.raises(TrackRecordUnusable, match=field):
+                parse(body)
+
+    def test_a_range_that_holds_less_than_it_claims_is_not_refused(self) -> None:
+        """The check this section deliberately does not make.
+
+        #82 exists to narrow this distribution. If it lands, coverage falls toward the claim
+        and may cross it, and a parser treating that as corruption would make the repair
+        unshippable while looking like a safety check. The direction belongs to whatever
+        renders the numbers, not to the schema.
+        """
+        body = deepcopy(VALID)
+        self.calibration(body)["leads"][0]["all_hours"]["covered"] = 0.86
+        self.calibration(body)["leads"][0]["all_hours"]["widening_factor"] = 1.14
+
+        parsed = parse(body).range_calibration
+
+        assert parsed.leads[0].all_hours.covered == 0.86
+        assert parsed.leads[0].all_hours.widening_factor == 1.14
 
 
 class TestDays:
