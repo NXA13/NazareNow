@@ -23,6 +23,11 @@ import { compassPoint } from './format';
 import { calibration, dayFrom, forecast, unmeasurableSpread } from './test/handlers';
 import { server } from './test/server';
 
+/** The date a `time` element means, read off the attribute rather than its rendered text:
+ * the suite pins the zone and not the locale, so "13 Feb" and "Feb 13" are both correct. */
+const dateOf = (scope: HTMLElement, testId: string) =>
+  within(scope).getByTestId(testId).getAttribute('datetime');
+
 const QUIET = forecast.days[0]!;
 const BIG = forecast.days[1]!;
 const BIG_CALL = BIG.call!;
@@ -1185,9 +1190,6 @@ describe('swells spanning more than a day', () => {
     return screen.findByTestId('swell-windows');
   }
 
-  const dateOf = (scope: HTMLElement, testId: string) =>
-    within(scope).getByTestId(testId).getAttribute('datetime');
-
   it('gathers a run of called days into one window and names its span', async () => {
     const days = [
       dayFrom('2026-02-12', 4.0, 14, 300, 'watch', 3),
@@ -1356,6 +1358,168 @@ describe('swells spanning more than a day', () => {
 
     expect(windows).toHaveLength(1);
     expect(dateOf(windows[0]!, 'window-end')).toBe('2026-03-01');
+  });
+});
+
+describe('the earliest date worth acting on', () => {
+  /**
+   * Story 23 of #1, finished. Every date already renders with its status, so the answer a
+   * Traveller actually wants — *is there anything worth booking, and when* — was reachable
+   * only by scanning a fourteen-day list and assembling it. Nothing stated it.
+   *
+   * Dates are asserted through `dateTime` rather than rendered text, for the reason the
+   * windows suite above gives: the suite pins the zone and not the locale.
+   */
+  async function statementFor(days: unknown[]) {
+    server.use(
+      http.get('*/api/conditions/forecast', () => HttpResponse.json({ ...forecast, days })),
+    );
+    render(<ForecastRange />);
+    return screen.findByTestId('earliest-call');
+  }
+
+  it('names the earliest Go Call and says to book it', async () => {
+    const statement = await statementFor([
+      dayFrom('2026-02-12', 1.2, 7, 300, 'none', 3),
+      dayFrom('2026-02-13', 7.2, 17, 300, 'go', 2),
+    ]);
+
+    expect(statement).toBeVisible();
+    expect(dateOf(statement, 'earliest-date')).toBe('2026-02-13');
+    expect(statement).toHaveTextContent(/book for/i);
+  });
+
+  it('picks the earliest Go Call rather than the largest', async () => {
+    // The largest day is the one a reader's eye lands on in the range below, and it is not
+    // the one this sentence is about: story 23 asks for the *earliest* date, because that is
+    // the one whose flights are still bookable. Picking by size reads perfectly and answers
+    // a different question.
+    const statement = await statementFor([
+      dayFrom('2026-02-12', 5.0, 15, 300, 'go', 4),
+      dayFrom('2026-02-13', 9.4, 18, 300, 'go', 3),
+    ]);
+
+    expect(dateOf(statement, 'earliest-date')).toBe('2026-02-12');
+  });
+
+  it('prefers a Go Call to a Watch that falls earlier', async () => {
+    // The fallback is a fallback. A Watch tells a reader to start paying attention and a Go
+    // Call tells them to spend money, so a sentence that led with an earlier Watch while a
+    // Go Call sat behind it in the range would bury the only thing worth acting on.
+    const statement = await statementFor([
+      dayFrom('2026-02-12', 4.0, 14, 300, 'watch', 4),
+      dayFrom('2026-02-13', 7.2, 17, 300, 'go', 3),
+    ]);
+
+    expect(dateOf(statement, 'earliest-date')).toBe('2026-02-13');
+    expect(statement).toHaveTextContent(/book for/i);
+    expect(statement.textContent).not.toMatch(/nothing to book/i);
+  });
+
+  it('falls back to the earliest Watch, and does not call it bookable', async () => {
+    const statement = await statementFor([
+      dayFrom('2026-02-12', 1.2, 7, 300, 'none', 4),
+      dayFrom('2026-02-13', 4.0, 14, 300, 'watch', 3),
+      dayFrom('2026-02-14', 4.4, 14, 300, 'watch', 2),
+    ]);
+
+    expect(dateOf(statement, 'earliest-date')).toBe('2026-02-13');
+    expect(statement).toHaveTextContent(/nothing to book/i);
+    expect(statement).toHaveTextContent(/do not book on it/i);
+  });
+
+  it('states the Lead Time the call was issued at, not the date alone', async () => {
+    // Story 20. "On the 13th" and "three days ahead" answer different questions and the
+    // booking one needs both — a date with no notice attached says nothing about whether
+    // there is still time to act on it.
+    const days = [
+      dayFrom('2026-02-12', 1.2, 7, 300, 'none', 4),
+      dayFrom('2026-02-13', 7.2, 17, 300, 'go', 3),
+    ];
+
+    const statement = await statementFor(days);
+
+    expect(statement.textContent).toContain(`issued ${days[1]!.call!.lead_time_days} days ahead`);
+  });
+
+  it('states the Lead Time on the Watch fallback too', async () => {
+    // Same obligation, the other branch. A reader deciding whether to keep watching needs to
+    // know how far out the Watch was raised as much as a reader deciding whether to book.
+    const days = [dayFrom('2026-02-14', 4.0, 14, 300, 'watch', 9)];
+
+    const statement = await statementFor(days);
+
+    expect(statement.textContent).toContain(`issued ${days[0]!.call!.lead_time_days} days ahead`);
+  });
+
+  it('says plainly when nothing in range carries either, as an answer and not a fault', async () => {
+    // The quiet case is the common case. Story 12's reason, one level up again: a statement
+    // that renders nothing is indistinguishable from a page that failed to load, and most of
+    // the year this sentence is the truthful answer to "is there a trip here".
+    const statement = await statementFor([
+      dayFrom('2026-02-12', 1.2, 7, 300, 'none', 2),
+      dayFrom('2026-02-13', 1.1, 7, 300, 'none', 1),
+    ]);
+
+    // Visible, not merely present: `getByTestId` finds a hidden element and
+    // `toHaveTextContent` reads it happily.
+    expect(statement).toBeVisible();
+    expect(statement).toHaveTextContent(/no day .* carries a Go Call or a Watch/i);
+    // An answer, not a warning. Rendered as an alert it would read as the system failing to
+    // forecast rather than the ocean being ordinary.
+    expect(statement).not.toHaveAttribute('role', 'alert');
+  });
+
+  it('does not offer a Confirmed day as something to book', async () => {
+    // A deliberate departure from the ladder a reader might expect. CONTEXT.md makes Confirmed
+    // a short-range statement to somebody already travelling, carrying no booking
+    // recommendation — so it is not a thing to act on, and #84 settled that the four statuses
+    // have no ordering to promote it through. The quiet sentence must stay true beside one:
+    // it says no Go Call and no Watch, which a Confirmed day does not contradict.
+    const statement = await statementFor([dayFrom('2026-02-12', 7.2, 17, 300, 'confirmed', 0)]);
+
+    expect(statement).toHaveTextContent(/no day .* carries a Go Call or a Watch/i);
+    expect(statement.textContent).not.toMatch(/book for/i);
+  });
+
+  it('names the window a Go Call falls inside rather than the date alone', async () => {
+    // #85 shipped the unit a person actually books. The earliest thing worth acting on is
+    // that window and not a bare date, so the two compose: the Go Call is the commitment and
+    // the window is the shape of the trip around it.
+    const statement = await statementFor([
+      dayFrom('2026-02-12', 4.0, 14, 300, 'watch', 4),
+      dayFrom('2026-02-13', 7.2, 17, 300, 'go', 3),
+      dayFrom('2026-02-14', 5.1, 15, 300, 'watch', 2),
+    ]);
+
+    expect(dateOf(statement, 'earliest-window-start')).toBe('2026-02-12');
+    expect(dateOf(statement, 'earliest-window-end')).toBe('2026-02-14');
+    expect(statement.textContent).toContain('3-day swell');
+  });
+
+  it('says nothing about a window when the day stands alone', async () => {
+    // A single called day is not a window — #85's rule, and inventing a one-day one here
+    // would put a trip-shaped sentence around an afternoon.
+    const statement = await statementFor([
+      dayFrom('2026-02-12', 1.2, 7, 300, 'none', 3),
+      dayFrom('2026-02-13', 7.2, 17, 300, 'go', 2),
+      dayFrom('2026-02-14', 1.1, 7, 300, 'none', 1),
+    ]);
+
+    expect(within(statement).queryByTestId('earliest-window-start')).not.toBeInTheDocument();
+    expect(statement.textContent).not.toMatch(/swell running|-day swell/i);
+  });
+
+  it('sits above the range it summarises', async () => {
+    // Story 28: the answer should not need navigating to. Below fourteen day cards it is not
+    // an answer, it is a footnote to the scan it exists to replace.
+    const statement = await statementFor([
+      dayFrom('2026-02-12', 1.2, 7, 300, 'none', 3),
+      dayFrom('2026-02-13', 7.2, 17, 300, 'go', 2),
+    ]);
+
+    const card = await screen.findByRole('button', { name: /2026-02-13/ });
+    expect(statement.compareDocumentPosition(card)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 });
 
