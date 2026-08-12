@@ -259,20 +259,57 @@ function AccuracyTable({
   );
 }
 
-/** Which way the range misses, worked out here rather than read off a field.
+/** Which side of its own claim one measurement falls on.
  *
- * The backend sends the claim and the measurement and no verdict, because the verdict is the
- * thing most likely to stop being true: narrowing the distribution is open work, and a "too
- * wide" flag baked into the record would survive the change that falsified it. Deriving it
- * costs one comparison and cannot go stale.
- *
- * The threshold is a whole percentage point, because the figures are rendered as whole
+ * The tolerance is a whole percentage point, because the figures are rendered as whole
  * percentages. A range measured at 90.4% against a claim of 90% is not a finding, and calling
  * it one would put a verdict on the page that the numbers under it do not visibly support.
  */
-function missesWide(claimed: number, covered: number): boolean | null {
-  if (Math.abs(covered - claimed) < 0.01) return null;
-  return covered > claimed;
+function side(claimed: number, covered: number): 'wide' | 'narrow' | 'calibrated' {
+  if (Math.abs(covered - claimed) < 0.01) return 'calibrated';
+  return covered > claimed ? 'wide' : 'narrow';
+}
+
+/**
+ * Which way the range misses across the whole table, worked out here rather than read off a
+ * field.
+ *
+ * The backend sends the claim and the measurement and no verdict, because the verdict is the
+ * thing most likely to stop being true: narrowing the distribution is open work, and a "too
+ * wide" flag baked into the record would survive the change that falsified it.
+ *
+ * **Every lead time is read, not the first one.** A sentence above a seven-row table speaks
+ * for all seven, and the repair this measurement invites is expected to be uneven — the
+ * excess is 0.82 of the required half-width at one day and 0.53 at seven, so a refit that
+ * corrects the far rows and leaves the near ones would produce exactly the table where one
+ * row's verdict is a lie about the others. `mixed` is that case, said plainly.
+ */
+function verdictAcross(
+  claimed: number,
+  leads: RangeCalibration['leads'],
+): ReturnType<typeof side> | 'mixed' {
+  const sides = new Set(leads.map((lead) => side(claimed, lead.all_hours.covered)));
+  if (sides.size > 1) return 'mixed';
+  return sides.values().next().value ?? 'calibrated';
+}
+
+/**
+ * Whether the gap between the range and the outcomes grows as the forecast reaches further.
+ *
+ * The second directional claim on this page, and it needs deriving for a sharper reason than
+ * the first: the growth *rate* is what the open repair is aimed at. A page asserting "and
+ * increasingly so the further ahead it looks" in its own copy would be asserting precisely
+ * the clause a refit is most likely to falsify, above a table that had stopped supporting it.
+ *
+ * Read off the widening factor rather than the widths, because the widths grow with lead time
+ * whether or not the *excess* does. A tenth of the half-width is the smallest gap worth a
+ * sentence.
+ */
+function excessGrowsWithLeadTime(leads: RangeCalibration['leads']): boolean {
+  const first = leads[0];
+  const last = leads[leads.length - 1];
+  if (!first || !last || leads.length < 2) return false;
+  return first.all_hours.widening_factor - last.all_hours.widening_factor > 0.1;
 }
 
 /** One subset's rows: how often the range held, and the width that would have sufficed. */
@@ -329,13 +366,15 @@ function RangeTable({
  * not the licence it sounds like.
  *
  * **Both subsets are rendered from one component, and there is no arrangement of props that
- * shows one without the other.** The big-swell rows are the sea a Go Call is issued on and
- * they read kinder than the whole, so a page able to show them alone is a page able to show
- * the flattering half of a two-part fact — the rule `TierRow` and `Delivered` already keep.
+ * shows one without the other.** The big-swell rows cover the bigger seas and read kinder than
+ * the whole, so a page able to show them alone is a page able to show the flattering half of a
+ * two-part fact — the rule `TierRow` and `Delivered` already keep.
  *
- * **The verdict sentence is derived from the numbers it sits above.** Narrowing the
- * distribution is open work; a sentence typed here saying the range runs wide would survive
- * the refit that made it false, and be wrong in the direction of confidence.
+ * **Both directional sentences are derived from the numbers they sit above** — which way the
+ * range misses, and whether the miss grows with lead time. Narrowing the distribution is open
+ * work, and the growth rate is the part of it most likely to move, so a page asserting either
+ * in its own copy would survive the refit that made it false and be wrong in the direction of
+ * confidence.
  */
 function RangeCalibrationSection({ calibration }: { calibration: RangeCalibration }) {
   const shortest = calibration.leads[0];
@@ -359,34 +398,44 @@ function RangeCalibrationSection({ calibration }: { calibration: RangeCalibratio
     );
   }
 
-  const wide = missesWide(calibration.claimed, shortest.all_hours.covered);
+  const verdict = verdictAcross(calibration.claimed, calibration.leads);
+  const grows = excessGrowsWithLeadTime(calibration.leads);
 
   return (
     <section data-testid="range-calibration">
       <h3>Does the range it prints mean what it says?</h3>
       <p data-testid="range-statement">
-        Every forecast on this site states a range in metres, and that range claims to contain the
-        real sea <strong>{percent(calibration.claimed)}</strong> of the time. Measured against{' '}
-        <strong>{shortest.all_hours.hours.toLocaleString('en-GB')}</strong> hours of what the ocean
-        then did, it held the outcome <strong>{percent(shortest.all_hours.covered)}</strong> of the
-        time {shortest.lead_days} day ahead and{' '}
-        <strong>{percent(longest.all_hours.covered)}</strong> of the time {longest.lead_days} days
-        ahead.
+        Every forecast on this site states a range in metres of Significant Wave Height, and that
+        range claims to contain the real sea <strong>{percent(calibration.claimed)}</strong> of the
+        time. Measured against <strong>{shortest.all_hours.hours.toLocaleString('en-GB')}</strong>{' '}
+        hours of what the ocean then did, it held the outcome{' '}
+        <strong>{percent(shortest.all_hours.covered)}</strong> of the time {shortest.lead_days} day
+        ahead and <strong>{percent(longest.all_hours.covered)}</strong> of the time{' '}
+        {longest.lead_days} days ahead.
       </p>
-      {wide === null ? (
+      {verdict === 'calibrated' ? (
         <p data-testid="range-verdict">
-          That is the share it claims, so the range means what it says — on this evidence, and
-          subject to the two limits below.
+          That is the share it claims, at every lead time, so the range means what it says — on this
+          evidence, and subject to the two limits below.
         </p>
-      ) : wide ? (
+      ) : verdict === 'mixed' ? (
+        // The table disagrees with itself, so no single sentence is true of it. Said rather
+        // than resolved: picking the worst row would overstate and picking the best would
+        // flatter, and a reader owed one number is better owed the table.
         <p data-testid="range-verdict">
-          <strong>So the range is wider than the outcomes justify</strong>, and increasingly so the
-          further ahead it looks: a {longest.lead_days}-day range spanning{' '}
-          {metres(longest.all_hours.median_width_m)} would have held the same share of outcomes at{' '}
-          {metres(longest.all_hours.justified_width_m)}. That is the error running in the forgiving
-          direction — the system claims less certainty than it turns out to have, so it stays quiet
-          on days it could have called rather than calling days it should not. It is still a
-          statement that is not true, which is why it is on this page.
+          <strong>The answer differs by how far ahead the forecast looks</strong>, so there is no
+          single figure for it — the range holds more often than it claims at some lead times and
+          less often at others. The tables below are the answer, row by row.
+        </p>
+      ) : verdict === 'wide' ? (
+        <p data-testid="range-verdict">
+          <strong>So the range is wider than the outcomes justify</strong>
+          {grows ? ', and increasingly so the further ahead it looks' : ''}: a {longest.lead_days}
+          -day range spanning {metres(longest.all_hours.median_width_m)} would have held the same
+          share of outcomes at {metres(longest.all_hours.justified_width_m)}. That is the error
+          running in the forgiving direction — the system claims less certainty than it turns out to
+          have, so it stays quiet on days it could have called rather than calling days it should
+          not. It is still a statement that is not true, which is why it is on this page.
         </p>
       ) : (
         <p data-testid="range-verdict">
@@ -403,11 +452,17 @@ function RangeCalibrationSection({ calibration }: { calibration: RangeCalibratio
         testId="range-all-hours"
         caption="Every hour measured"
       />
+      {/* The bar is read off the record, never typed. It is the sea the report drew this
+          subset at — deliberately not described as the bar a Go Call rests on, which is
+          2.75m and a different number. Calling it that would put a false statement about
+          the Go Call on the page this section exists to make honest. */}
       <RangeTable
         leads={calibration.leads}
         subset="big_swell"
         testId="range-big-swell"
-        caption="Only the hours the sea passed 3m — the size a Go Call is issued on"
+        caption={`Only the hours the buoy measured at ${metres(
+          calibration.big_swell_from_m,
+        )} or more — the bigger seas, and the kinder of the two`}
       />
 
       {/* Rendered under the tables, in full. Both say the figures above are narrower evidence
@@ -417,6 +472,13 @@ function RangeCalibrationSection({ calibration }: { calibration: RangeCalibratio
         <li>{calibration.understates_because}</li>
         <li>{calibration.rests_on}</li>
       </ul>
+      {/* Named in this section rather than inherited from the one above it, exactly as
+          `Delivered` does. A reader who takes these metres for a wave face reads a 2m range
+          as trivial; one who takes it the other way reads it as enormous. */}
+      <p className="aside" data-testid="range-quantity">
+        Every metre in this section is Significant Wave Height at the buoy — the whole sea, 15km
+        offshore — not the height of a wave face, and not convertible to one by any fixed ratio.
+      </p>
     </section>
   );
 }

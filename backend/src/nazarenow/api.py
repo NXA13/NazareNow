@@ -780,12 +780,17 @@ class RangeCoverageRecord(BaseModel):
 
     widening_factor: float
     """Above one the range is narrower than the outcomes justify; below one it is wider. Sent
-    as measured, without a verdict attached — see `RangeCalibrationRecord`."""
+    as measured, without a verdict attached — see `RangeCalibrationRecord`.
+
+    Rendered by nothing directly, and travelling anyway: comparing it across Lead Times is how
+    the interface derives whether the miss *grows*, which is the second directional sentence on
+    the page and the one an open refit is most likely to falsify. The widths cannot answer that
+    — they grow with Lead Time whether or not the excess does."""
 
 
 class RangeLeadRecord(BaseModel):
     """One Lead Time, both subsets. Named fields, so a response cannot carry only the kinder
-    of the two — the big-swell rows are the sea a Go Call is issued on."""
+    of the two — the big-swell rows cover the bigger seas."""
 
     lead_days: int
     all_hours: RangeCoverageRecord
@@ -807,6 +812,12 @@ class RangeCalibrationRecord(BaseModel):
     """
 
     claimed: float
+    big_swell_from_m: float
+    """The Significant Wave Height the `big_swell` subset was drawn at, so the interface states
+    it from the record rather than typing a literal. **Not the Go Call's height bar**, which is
+    lower — a renderer calling it that would state something false about the number a reader is
+    being asked to spend money on."""
+
     understates_because: str
     rests_on: str
     """Both required. The first says the shipped range is wider than the one measured here;
@@ -956,6 +967,7 @@ def as_bands(bands: list[Band]) -> list[AccuracyBand]:
 def as_range_calibration(calibration: RangeCalibration) -> RangeCalibrationRecord:
     return RangeCalibrationRecord(
         claimed=calibration.claimed,
+        big_swell_from_m=calibration.big_swell_from_m,
         understates_because=calibration.understates_because,
         rests_on=calibration.rests_on,
         leads=[

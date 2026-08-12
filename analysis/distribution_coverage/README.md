@@ -193,11 +193,18 @@ distribution with the old floor is a different Decision Model, not a better-cali
 **Said on the page, though, since #94.** The repair is one ticket; stating the finding was
 another, and it needed no refit. `analysis/track_record/publish.py` now reads
 `output/interval_coverage.csv` and the track record page carries the table under "Does the range
-it prints mean what it says?" — with both subsets, both caveats from "What this cannot settle",
-and a verdict derived from the numbers rather than written into the copy, so the page stays true
-if the distribution is ever narrowed. Until then the site stated a range in metres and said
-nothing about having measured it, which made this the one published claim with evidence against
-it and no mention of it.
+it prints mean what it says?" — with both subsets, and with "What this cannot settle" above
+carried into two published caveats: the absent ensemble term as one, and the correlated hours and
+single Gold Day merged into the other. Both directional sentences on the page — which way the
+range misses, and whether the miss grows with Lead Time — are derived from the figures rather
+than written into the copy, so the page stays true if the distribution is ever narrowed. Until
+then the site stated a range in metres and said nothing about having measured it, which made this
+the one published claim with evidence against it and no mention of it.
+
+The page states the `big swell` bar from the record, and does **not** describe it as the sea a Go
+Call is issued on: that bar is 2.75 m <!--now:minimum_significant_wave_height_m--> in
+`thresholds.json`, and this subset is drawn at 3 m as an analysis choice, as the paragraph above
+says.
 
 The interesting part is that the repair is not obviously in the user's favour. A range that is
 too wide is a system claiming less than it knows — honest in one direction, and the direction

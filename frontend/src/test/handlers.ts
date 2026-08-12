@@ -413,6 +413,9 @@ export const trackRecord: TrackRecord = {
   // renders a value that appears nowhere it should.
   range_calibration: {
     claimed: 0.9,
+    // Distinct from every threshold elsewhere in this fixture, and deliberately not the Go
+    // Call's height bar — a page describing it as that states something false.
+    big_swell_from_m: 3.0,
     understates_because: 'The range this system prints is wider still.',
     rests_on: 'It rests on one partial Big-Wave Season.',
     leads: [

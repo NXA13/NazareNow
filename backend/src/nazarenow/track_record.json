@@ -257,6 +257,7 @@
     },
     "range_calibration": {
       "claimed": 0.9,
+      "big_swell_from_m": 3.0,
       "understates_because": "The range this system actually prints is wider still. Every distribution measured here was built without the wave models' disagreement term, which only ever widens a range, so the real coverage at short notice is higher than the figures above and the gap is larger than they show.",
       "rests_on": "It rests on one partial Big-Wave Season. The 1,593 hours run from 2025-11-26 to 2026-02-20 and cluster into a few dozen swells rather than standing as independent chances to be wrong, and the window holds a single confirmed giant day. Nothing here says how the range behaves on the days this system exists for.",
       "leads": [

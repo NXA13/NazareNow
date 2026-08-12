@@ -90,18 +90,29 @@ Every other figure this script publishes is scored against the **Gold Days**. Th
 scored against the sea, hour by hour, which makes it the broadest evidence on the page — and
 the two caveats travelling with it are why that is not the licence it sounds like.
 
-**What is published is the claim and the measurement. Never a direction.** Which way the range
-misses is derived where it is rendered, in one comparison, and the reason is
+**What is published is the claim and the measurement. Never a direction.** Both directional
+sentences on the page — which way the range misses, and whether the miss grows with Lead Time —
+are derived where they are rendered, and the reason is
 [#82](https://github.com/NXA13/NazareNow/issues/82): that ticket exists to narrow this
 distribution, and a "too wide" verdict written into the record or into the page's copy would
-survive the refit that made it false. The backend's parser is deliberately silent on direction
-too — it refuses a subset larger than its superset and a share above one, and accepts coverage
-*below* the claim, because that is #82 landing rather than a corrupt file.
+survive the refit that made it false. The growth clause needs it most, since the growth *rate* is
+what the repair is aimed at. The backend's parser is deliberately silent on direction too — it
+refuses a subset larger than its superset and a share above one, and accepts coverage *below* the
+claim, because that is #82 landing rather than a corrupt file.
 
-**Both subsets travel on every Lead Time, as named fields.** The `big swell` rows are the sea a
-Go Call is actually issued on and read kinder than the whole (0.94 of the required half-width at
-one day, against 0.82). A shape able to carry one alone is a shape able to publish the kinder
-number under a heading a reader takes for the whole finding — the rule `TIERS` already keeps.
+**Both subsets travel on every Lead Time, as named fields.** The `big swell` rows cover the
+bigger seas and read kinder than the whole (0.94 of the required half-width at one day, against
+0.82). A shape able to carry one alone is a shape able to publish the kinder number under a
+heading a reader takes for the whole finding — the rule `TIERS` already keeps.
+
+**`big_swell_from_m` is published so the page need not type it**, and `--check` pins it against
+`analysis/forecast_error/profile.py`'s `BIG_SWELL_M`, the constant `coverage.py` scores the
+subset with. It is **not** the Go Call's height bar:
+`thresholds.json` sets that at **2.75 m** <!--now:minimum_significant_wave_height_m-->,
+and `analysis/distribution_coverage/README.md` is explicit that 3 m is an analysis choice drawn
+"rather than at a Gold Day". A page describing this subset as the sea a Go Call is issued on
+would state something false about the one number a reader is asked to spend money on — which is
+the defect this section exists to end, not to commit again.
 
 **Two caveats are typed here rather than joined**, following `GOLD_DAY_CAVEAT`. Both live only
 in `analysis/distribution_coverage/README.md`'s prose, so `--check` cannot verify them:
@@ -147,8 +158,9 @@ Offline, against the committed reports:
    would warn about figures that hold their sign under every assumption; dropping it would
    publish the one that does not as though it did.
 8. **The range calibration**, in two kinds. The joins: both subsets present at every Lead Time,
-   the big-swell hours no larger than the hours they are drawn from, no Lead Time skipped, and
-   the width rising as the forecast reaches further. And the direction: coverage at or above
+   the big-swell hours no larger than the hours they are drawn from, no Lead Time skipped, the
+   width rising as the forecast reaches further, and the published big-swell bar matching the
+   constant the subset was scored at. And the direction: coverage at or above
    the claim, a widening factor under one, and that factor falling with Lead Time. The
    directional pins **will fail if #82 lands**, on purpose — the two caveats published beside
    the table are written for a range that runs wide, and a refit reversing the finding must not

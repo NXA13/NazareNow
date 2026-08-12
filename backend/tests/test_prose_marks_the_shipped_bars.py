@@ -81,6 +81,8 @@ COVERED = (
     "analysis/model_spread/README.md",
     "analysis/overlap/README.md",
     "analysis/overlap/measure.py",
+    "analysis/track_record/README.md",
+    "analysis/track_record/publish.py",
     "analysis/wind_products/README.md",
     "backend/tests/test_calls.py",
     "docs/adr/0002-proxy-target-with-gold-calibration.md",

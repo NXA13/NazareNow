@@ -70,6 +70,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -146,10 +147,30 @@ RANGE_SUBSETS = {"all hours": "all_hours", "big swell": "big_swell"}
 """`interval_coverage.csv`'s two subsets, mapped to the names the record publishes them under.
 
 Both travel on every Lead Time, as named fields rather than a list, for the reason `TIERS`
-gives: the `big swell` rows are the sea a Go Call is actually issued on and are the more
-flattering of the two, so a record that could carry one subset alone would render the kinder
-number under a heading that reads as the whole finding.
+gives: the `big swell` rows cover the bigger seas and are the more flattering of the two, so a
+record that could carry one subset alone would render the kinder number under a heading that
+reads as the whole finding.
 """
+
+BIG_SWELL_M = 3.0
+"""The Significant Wave Height the `big swell` subset is drawn at, published rather than typed.
+
+A copy of `analysis/forecast_error/profile.py`'s constant of the same name, which
+`coverage.py` imports and scores the subset with, and `--check` pins the two together.
+Published so the page states the bar from the record instead of carrying a literal that
+survives the report changing underneath it.
+
+**It is not the height bar a Go Call rests on.**
+`thresholds.json` sets that at 2.75 m [now:minimum_significant_wave_height_m], and
+`analysis/distribution_coverage/README.md` is explicit that 3 m is an analysis choice, drawn
+there "rather than at a Gold Day". Calling this subset the sea a Go Call is issued on would
+state something false about the one number a reader is being asked to spend money on — which
+is the failure this whole section was added to end rather than to commit again.
+"""
+
+BIG_SWELL_SOURCE = ROOT / "analysis" / "forecast_error" / "profile.py"
+"""Where `BIG_SWELL_M` is defined. Read as text by `--check`: importing it would drag in the
+profile module's dependencies for one float, and the pin only needs the literal."""
 
 RANGE_UNDERSTATES_BECAUSE = (
     "The range this system actually prints is wider still. Every distribution measured here "
@@ -538,13 +559,14 @@ def range_calibration(coverage: list[dict[str, str]]) -> dict[str, Any]:
         if missing:
             raise SystemExit(
                 f"{COVERAGE} has no {missing} row at {lead} days. Both subsets are published "
-                "together or neither is: the big-swell rows are the kinder of the two and are "
-                "the sea a Go Call is issued on"
+                "together or neither is: the big-swell rows cover the bigger seas and are the "
+                "kinder of the two"
             )
         leads.append({"lead_days": lead, **by_lead[lead]})
 
     return {
         "claimed": float(next(iter(claimed))),
+        "big_swell_from_m": BIG_SWELL_M,
         "understates_because": RANGE_UNDERSTATES_BECAUSE,
         "rests_on": RANGE_RESTS_ON,
         "leads": leads,
@@ -881,7 +903,21 @@ def check() -> int:
     expect(
         [lead["lead_days"] for lead in leads] == list(range(1, len(leads) + 1)),
         f"the range table skips a Lead Time: {[lead['lead_days'] for lead in leads]}. The page "
-        "reads down it as a progression, and a gap reads as a shorter forecast horizon",
+        "reads down it as a progression, and a gap reads as a forecast that reaches less far",
+    )
+
+    #     The subset's bar is copied from the module that scores it, so the two must agree. A
+    #     page stating a threshold the report did not use describes a subset that was never
+    #     measured — and this one is the bar a reader will take for the Go Call's, which it is
+    #     not (`thresholds.json` sets that at 2.75 m [now:minimum_significant_wave_height_m]).
+    defined = re.search(
+        r"^BIG_SWELL_M\s*=\s*([0-9.]+)", BIG_SWELL_SOURCE.read_text(encoding="utf-8"), re.MULTILINE
+    )
+    expect(
+        defined is not None and float(defined.group(1)) == BIG_SWELL_M,
+        f"{BIG_SWELL_SOURCE.relative_to(ROOT)} defines BIG_SWELL_M as "
+        f"{defined.group(1) if defined else 'nothing this can read'} where this script "
+        f"publishes {BIG_SWELL_M}; the page would state a bar the subset was not scored at",
     )
     for lead in leads:
         expect(

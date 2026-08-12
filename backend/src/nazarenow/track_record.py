@@ -260,9 +260,9 @@ class RangeLead:
     """One Lead Time, with both subsets as fields.
 
     The pair is structural for the same reason `Panel`'s two tiers are. The `big_swell` rows
-    describe the sea a Go Call is actually issued on and are the more flattering of the two,
-    so a shape that could carry one alone is a shape that could publish the kinder number
-    under a heading a reader takes for the whole finding.
+    cover the bigger seas and are the more flattering of the two, so a shape that could carry
+    one alone is a shape that could publish the kinder number under a heading a reader takes
+    for the whole finding.
     """
 
     lead_days: int
@@ -286,6 +286,16 @@ class RangeCalibration:
 
     claimed: float
     """The share the range says it holds — the 5th to 95th percentile of the draws, so 0.9."""
+
+    big_swell_from_m: float
+    """The Significant Wave Height the `big_swell` subset was drawn at.
+
+    Published so the page states it from the record rather than carrying a literal that
+    survives the report moving. **Not the height bar a Go Call rests on** — `thresholds.json`
+    sets that lower, and the report is explicit that this one is an analysis choice. A renderer
+    describing it as the Go Call's bar would state something false about the number a reader is
+    being asked to spend money on.
+    """
 
     understates_because: str
     rests_on: str
@@ -468,6 +478,13 @@ def _range_calibration(raw: Any) -> RangeCalibration:
             "is not a claim any measurement below can be compared against"
         )
 
+    big_swell_from = _metres(raw, "big_swell_from_m", where)
+    if big_swell_from <= 0:
+        raise TrackRecordUnusable(
+            f"{where}: big_swell_from_m is {big_swell_from}, so the subset it names admits "
+            "every hour and is not a subset of anything"
+        )
+
     raw_leads = _require(raw, "leads", where)
     if not isinstance(raw_leads, list) or not raw_leads:
         raise TrackRecordUnusable(
@@ -504,6 +521,7 @@ def _range_calibration(raw: Any) -> RangeCalibration:
 
     return RangeCalibration(
         claimed=claimed,
+        big_swell_from_m=big_swell_from,
         understates_because=_sentence(raw, "understates_because", where),
         rests_on=_sentence(raw, "rests_on", where),
         leads=tuple(leads),

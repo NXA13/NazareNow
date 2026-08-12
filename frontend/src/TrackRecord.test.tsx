@@ -504,8 +504,8 @@ describe('the range it prints, measured', () => {
   });
 
   it('shows every lead time for both subsets, never one alone', async () => {
-    // The big-swell rows are the sea a Go Call is issued on and read kinder than the whole.
-    // A page able to show them alone is a page able to show the flattering half.
+    // The big-swell rows cover the bigger seas and read kinder than the whole. A page able to
+    // show them alone is a page able to show the flattering half.
     render(<TrackRecordPage />);
 
     for (const [testId, subset] of [
@@ -561,6 +561,80 @@ describe('the range it prints, measured', () => {
 
     expect(verdict).toHaveTextContent(/wider than the outcomes justify/);
     expect(verdict).toHaveTextContent(/still a statement that is not true/);
+  });
+
+  it('names the quantity in its own section rather than inheriting it', async () => {
+    // Every metre here is significant wave height. A reader who takes them for a wave face
+    // reads a 2m range as trivial; one who takes it the other way reads it as enormous. The
+    // rule `Delivered` already keeps by naming it in its own heading.
+    render(<TrackRecordPage />);
+
+    const quantity = await screen.findByTestId('range-quantity');
+
+    expect(quantity).toHaveTextContent(/Significant Wave Height/i);
+    expect(quantity).toHaveTextContent(/not the height of a wave face/);
+  });
+
+  it('reads the big-swell bar off the record and does not call it the Go Call bar', async () => {
+    // The bar this subset was drawn at is 3m; the Go Call's height bar is 2.75m. They are
+    // different numbers, and the page saying otherwise would be a false statement about the
+    // one figure a reader is asked to spend money on — in the section added to end that.
+    serve({
+      range_calibration: { ...trackRecord.range_calibration, big_swell_from_m: 4.25 },
+    });
+    render(<TrackRecordPage />);
+
+    const table = await screen.findByTestId('range-big-swell');
+
+    expect(within(table).getByText(/4\.25m or more/)).toBeInTheDocument();
+    expect(table).not.toHaveTextContent(/Go Call/);
+  });
+
+  it('drops the growth clause when the excess stops growing', async () => {
+    // The second directional sentence, and the one #82 is most likely to falsify: the growth
+    // *rate* is what a refit targets. Hardcoding it would leave the page asserting a clause
+    // the table beneath it had stopped supporting.
+    const calibration = trackRecord.range_calibration;
+    const flat = calibration.leads[0]!.all_hours.widening_factor;
+    serve({
+      range_calibration: {
+        ...calibration,
+        leads: calibration.leads.map((lead) => ({
+          ...lead,
+          all_hours: { ...lead.all_hours, widening_factor: flat },
+        })),
+      },
+    });
+    render(<TrackRecordPage />);
+
+    const verdict = await screen.findByTestId('range-verdict');
+
+    expect(verdict).toHaveTextContent(/wider than the outcomes justify/);
+    expect(verdict).not.toHaveTextContent(/increasingly so/);
+  });
+
+  it('refuses a single verdict when the lead times disagree', async () => {
+    // A sentence above a seven-row table speaks for all seven. The repair #82 invites is
+    // expected to be uneven — 0.82 of the required half-width at one day against 0.53 at
+    // seven — so a refit correcting the far rows and leaving the near ones produces exactly
+    // the table where one row's verdict is a lie about the others.
+    const calibration = trackRecord.range_calibration;
+    serve({
+      range_calibration: {
+        ...calibration,
+        leads: calibration.leads.map((lead, index) => ({
+          ...lead,
+          all_hours: { ...lead.all_hours, covered: index === 0 ? 0.81 : 0.99 },
+        })),
+      },
+    });
+    render(<TrackRecordPage />);
+
+    const verdict = await screen.findByTestId('range-verdict');
+
+    expect(verdict).toHaveTextContent(/differs by how far ahead/);
+    expect(verdict).not.toHaveTextContent(/wider than the outcomes justify/);
+    expect(verdict).not.toHaveTextContent(/narrower than the outcomes justify/);
   });
 
   it('reverses the verdict when the measurement reverses', async () => {

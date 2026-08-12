@@ -90,6 +90,7 @@ VALID: dict[str, Any] = {
         },
         "range_calibration": {
             "claimed": 0.9,
+            "big_swell_from_m": 3.0,
             "understates_because": "the ensemble term is absent and can only widen",
             "rests_on": "one partial Big-Wave Season",
             "leads": [
@@ -546,10 +547,26 @@ class TestRangeCalibration:
         with pytest.raises(TrackRecordUnusable, match="range_calibration"):
             parse(without("height_record", "range_calibration"))
 
+    def test_the_bar_the_big_swell_subset_was_drawn_at_survives(self) -> None:
+        """Published so the page states it from the record instead of typing a literal.
+
+        It is deliberately **not** the Go Call's height bar, which `thresholds.json` sets
+        lower. The page describing it as that would be a false statement about the one number
+        a reader is asked to spend money on — in a section added to end exactly that.
+        """
+        assert parse(deepcopy(VALID)).range_calibration.big_swell_from_m == 3.0
+
+    def test_a_big_swell_bar_of_zero_is_refused(self) -> None:
+        body = deepcopy(VALID)
+        self.calibration(body)["big_swell_from_m"] = 0
+
+        with pytest.raises(TrackRecordUnusable, match="not a subset of anything"):
+            parse(body)
+
     def test_a_lead_time_carrying_only_one_subset_is_refused(self) -> None:
-        """The big-swell rows are the sea a Go Call is issued on and read kinder than the
-        whole. A record able to carry them alone can publish the kinder number under a
-        heading a reader takes for the whole finding."""
+        """The big-swell rows cover the bigger seas and read kinder than the whole. A record
+        able to carry them alone can publish the kinder number under a heading a reader takes
+        for the whole finding."""
         for subset in ("all_hours", "big_swell"):
             body = deepcopy(VALID)
             del self.calibration(body)["leads"][0][subset]

@@ -363,15 +363,19 @@ export interface RangeCoverage {
    * derived figure in this response — the page never holds two numbers and multiplies. */
   justified_width_m: number;
   /** Above one the range is narrower than the outcomes justify; below one it is wider.
-   * Arrives without a verdict attached: see `RangeCalibration`. */
+   * Arrives without a verdict attached: see `RangeCalibration`.
+   *
+   * Not rendered directly. Comparing it across lead times is how the page derives whether the
+   * miss *grows*, which the widths cannot answer — they grow with lead time whether or not the
+   * excess does. */
   widening_factor: number;
 }
 
 /** One lead time, with both subsets as required fields.
  *
  * The pair is structural for the same reason `PanelRecord`'s two tiers are. The big-swell
- * rows describe the sea a Go Call is actually issued on and read kinder than the whole, so a
- * shape that could carry one alone could render the kinder number as the finding. */
+ * rows cover the bigger seas and read kinder than the whole, so a shape that could carry one
+ * alone could render the kinder number as the finding. */
 export interface RangeLead {
   lead_days: number;
   all_hours: RangeCoverage;
@@ -392,6 +396,10 @@ export interface RangeLead {
 export interface RangeCalibration {
   /** The share the range says it holds — the 5th to 95th percentile of the draws, so 0.9. */
   claimed: number;
+  /** The significant wave height the big-swell subset was drawn at, so the page states it from
+   * the record rather than typing a literal. **Not the Go Call's height bar**, which is lower:
+   * describing it as that would put a false statement about the Go Call on the page. */
+  big_swell_from_m: number;
   /** Why the figures are a floor: the running system's range is wider than the one measured,
    * because the wave models' disagreement term was absent from every distribution scored and
    * can only widen one. */

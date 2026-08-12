@@ -116,13 +116,14 @@ class TestWhatItPublishes:
     ) -> None:
         """#94. The interface prints a range in metres and this is the measurement of it.
 
-        Both subsets are asserted at every Lead Time because the big-swell rows are the sea a
-        Go Call is issued on and read kinder than the whole; a response able to carry one of
-        them alone is a page able to publish the kinder number as the finding.
+        Both subsets are asserted at every Lead Time because the big-swell rows cover the
+        bigger seas and read kinder than the whole; a response able to carry one of them alone
+        is a page able to publish the kinder number as the finding.
         """
         calibration = published_client.get("/api/track-record").json()["range_calibration"]
 
         assert 0 < calibration["claimed"] < 1
+        assert calibration["big_swell_from_m"] > 0
         assert calibration["leads"]
         for lead in calibration["leads"]:
             for subset in ("all_hours", "big_swell"):
@@ -171,7 +172,13 @@ class TestWhatItPublishes:
         """
         calibration = published_client.get("/api/track-record").json()["range_calibration"]
 
-        assert set(calibration) == {"claimed", "understates_because", "rests_on", "leads"}
+        assert set(calibration) == {
+            "claimed",
+            "big_swell_from_m",
+            "understates_because",
+            "rests_on",
+            "leads",
+        }
         assert set(calibration["leads"][0]["all_hours"]) == {
             "hours",
             "covered",
