@@ -90,10 +90,11 @@ had a constant, a docstring and a block quote in the README. A gate skipped by d
 one form of this a reader cannot discover.
 
 So the Go Call figures here are a ceiling in this respect too.
-`analysis/distribution_coverage/gate_cost.py` measures what it costs: over the archived forecast
-runs, the gate withholds **1 of 15 Go Call days** and does not take the single Gold Day in that
-span. Smaller than the agreement gate's 4 of 23, and measured on one partial Big-Wave Season
-rather than two.
+`analysis/distribution_coverage/gate_cost.py` measures what it costs: over the run archive —
+2025-11-16 to 2026-07-31, a partial Big-Wave Season plus four months of summer — the gate
+withholds **1 of 15 Go Call days** and does not take the single Gold Day in that span. Smaller
+than the agreement gate's 4 of 23, over a different and shorter record, and measured with
+agreement held open, so it is this gate's cost given the models agree rather than a marginal one.
 """
 
 MODELS_ASSUMED_TO_AGREE = Agreement.AGREED

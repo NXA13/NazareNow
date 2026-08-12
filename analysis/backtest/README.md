@@ -35,9 +35,16 @@ Ticket #11. The benchmark every later Amplification Model must beat, per ADR 000
 > Confirmed statement, which it cannot reach. So both gates are now measured, and both are small:
 > 4 of 23 days for agreement, 1 of 15 for this one. Read the 16 of 38 below with both beside it.
 >
-> The two figures come from **different spans** and must not be added. Agreement is measured over
-> two Big-Wave Seasons of archived per-model Swell; this one over one partial season of archived
-> forecast runs, holding one Gold Day.
+> The two figures come from **different spans and must not be added**. Agreement is measured over
+> two Big-Wave Seasons of archived per-model Swell. This one spans the whole run archive,
+> 2025-11-16 to 2026-07-31 — a partial Big-Wave Season plus four months of summer — and is
+> reported over both denominators, 257 days and 135 in season; the Go Call counts are the same
+> under either.
+>
+> **And 1 of 15 is not a marginal cost.** Both of `gate_cost.py`'s arms hold agreement at
+> `AGREED`, so its ungated 15 is itself agreement-free. Live, the agreement gate runs too, and a
+> day this one reports as withheld may already have gone to the forecasters disagreeing. What is
+> measured is the height gate's cost *given the models agree*.
 >
 > **Re-run after #12.** This report scores whatever thresholds the system currently ships, and
 > #12 replaced them with values fitted to the Gold Days. The numbers below are therefore the

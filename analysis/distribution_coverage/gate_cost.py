@@ -2,10 +2,9 @@
 
 Ticket #96. `decide` withholds a Go Call when `height_bar_probability` falls under
 `GO_CALL_MINIMUM_HEIGHT_PROBABILITY`. `coverage.py` scored that gate by the hour and found the
-0.6–0.7 bin — withheld, since the floor is 0.70 — is a band in which **every hour cleared the
-height bar**, at every Lead Time. It then said, in as many words, that this is not a count of
-lost Go Calls and must not be read as one: the height condition is one of several, and hours are
-not days.
+bin immediately below the floor is a band in which **every hour cleared the height bar**, at
+every Lead Time. It then said, in as many words, that this is not a count of lost Go Calls and
+must not be read as one: the height condition is one of several, and hours are not days.
 
 This is the count. Same archive, same shipped budget, same model, grouped into the unit a
 Traveller acts on.
@@ -13,8 +12,8 @@ Traveller acts on.
 **Why the number was missing rather than merely unpublished.** `analysis/backtest/` scores the
 rule against a Hindcast and passes `decide` no distribution at all, so the gate never fires there
 — correctly, because what the ocean did carries no forecast error, and scoring it must not
-silently become stricter than the rule it is scoring. But that leaves the published Go Call
-figures a ceiling in a respect the sister gate states plainly and this one did not:
+silently become stricter than the rule it is scoring. But that left the published Go Call figures
+a ceiling in a respect the sister gate states plainly and this one did not:
 `MODELS_ASSUMED_TO_AGREE` is a named constant with a docstring, and `analysis/model_spread/`
 measures what the agreement gate costs in days. This file is that measurement for the other gate.
 
@@ -30,12 +29,26 @@ gate's.
 clearing every other Go Call condition, which is the only branch `_height_probable_enough`
 gates. Doing it everywhere would be correct and slow, and would still change no call.
 
+## Two scopes, because the archive is not all winter
+
+The archive runs **2025-11-16 to 2026-07-31**. That is a partial Big-Wave Season followed by four
+months of summer, and CONTEXT.md is clear that an XXL Day is a winter event — so a rate over all
+258 days would divide a winter numerator by a denominator that cannot contribute to it. Every row
+is therefore reported twice, `all` and `Oct-Mar only`, exactly as `agreement.py`'s
+`cost_per_season` does and for the reason it gives: an overcounted denominator stated as a fact
+is worse than no rate at all.
+
 ## What the number is not
 
-**Not a recall, and not a precision.** The archive runs 2025-11-26 to 2026-02-20: one partial
-Big-Wave Season holding a single confirmed giant day, 2025-12-13. A day count is what this can
-honestly report. Whether the gate is *right* to withhold is a different question and belongs to
-#82, which is parked; nothing here moves the floor.
+**Not a recall, and not a precision.** The in-season window holds a single confirmed giant day,
+2025-12-13. A day count is what this can honestly report. Whether the gate is *right* to withhold
+is a different question and belongs to #82, which is parked; nothing here moves the floor.
+
+**Not a marginal cost either.** The ungated count is itself agreement-free, because both arms
+hold agreement at `AGREED`. Under the live system the agreement gate runs first, so a day this
+one reports as withheld may already have been withheld by the forecasters disagreeing — in which
+case the height gate costs nothing further on it. What is measured is this gate's cost *given
+the models agree*, which is the only form of it the archive can answer.
 
 **A lower bound on the live cost, for the same reason `coverage.py` gives.** Every distribution
 here is built with `model_spread=None`, because no per-Lead-Time ensemble archive exists, and the
@@ -47,6 +60,7 @@ Run, from the repository root:
 
     .venv/Scripts/python.exe analysis/distribution_coverage/gate_cost.py
     .venv/Scripts/python.exe analysis/distribution_coverage/gate_cost.py --check   # offline
+
 """
 
 from __future__ import annotations
@@ -62,9 +76,11 @@ ROOT = HERE.parents[1]
 OUTPUT = HERE / "output"
 
 sys.path.insert(0, str(HERE))
+sys.path.insert(0, str(ROOT / "analysis" / "backtest"))
 sys.path.insert(0, str(ROOT / "analysis" / "forecast_error"))
 sys.path.insert(0, str(ROOT / "backend" / "src"))
 
+from backtest import in_big_wave_season  # noqa: E402
 from coverage import readings_at  # noqa: E402
 from download_runs import LEAD_TIMES, Runs, waves, wind  # noqa: E402
 from nazarenow.days import group_by_date  # noqa: E402
@@ -84,9 +100,7 @@ from settled import settled  # noqa: E402
 GOLD = ROOT / "analysis" / "gold_days" / "gold_days.jsonl"
 """The confirmed giant days, read straight from the curated file.
 
-Read here rather than imported from `analysis/backtest/backtest.py`, whose module-level imports
-pull in the Hindcast and reanalysis loaders this measurement has no use for. The file is one
-JSON object per line and the only field needed is the date.
+One JSON object per line, and the only field needed is the date.
 """
 
 MODELS_ASSUMED_TO_AGREE = Agreement.AGREED
@@ -97,46 +111,112 @@ carry `best_match` alone, so there is no roster here to disagree. Letting agreem
 the two arms would report the sum of two gates as the cost of one.
 """
 
+ALL_DAYS = "all"
+IN_SEASON = "Oct-Mar only"
+"""The two denominators, under `agreement.py`'s own names so the two reports read alike."""
+
 OUTPUT_NAME = "gate_day_cost.csv"
 
 
 @dataclass(frozen=True)
+class Archive:
+    """The three archived series one decision reads, kept together because they are one thing.
+
+    They are always loaded together, always passed together, and an hour missing from any of
+    them cannot be decided at all — which is a type wanting to exist rather than three
+    parameters that happen to travel.
+    """
+
+    sea: Runs
+    winds: Runs
+    swell: dict[str, dict[str, float]]
+
+
+@dataclass(frozen=True)
+class Pricing:
+    """What turns an hour into a call: the shipped budget, the shipped model, the shipped bar.
+
+    All three are read from the running system rather than rebuilt, for the reason
+    `analysis/backtest/` gives about the rule itself — a reimplementation drifts from the thing
+    it claims to measure, and the drift is reported as a finding.
+    """
+
+    budget: ErrorBudget
+    model: AmplificationModel
+    height_bar_m: float
+
+    def call(self, features: dict[str, float], lead: int, *, gated: bool) -> Status:
+        """The status this hour earns, with the height gate applied or bypassed.
+
+        The two arms differ in this argument and in nothing else. `gated=False` passes no
+        distribution, which is exactly what `analysis/backtest/` does and what
+        `_height_probable_enough` reads as "nothing to be uncertain about".
+        """
+        prediction = self.model.predict(features)
+        distribution = (
+            self.budget.distribution(self.model, features, lead, height_bar_m=self.height_bar_m)
+            # Priced exactly where a Pipeline Run prices one: the hours already clearing every
+            # other Go Call condition, which is the only branch this gate can change.
+            if gated and go_call_is_available(prediction, lead)
+            else None
+        )
+        return decide(prediction, lead, MODELS_ASSUMED_TO_AGREE, distribution).status
+
+
+@dataclass(frozen=True)
+class DayVerdict:
+    """One day at one Lead Time, under both arms.
+
+    Pairing the arms per **day** rather than per Lead Time is what lets `withheld` be a property
+    rather than a subtraction of two counts computed apart — and a subtraction cannot name the
+    date it lost, which is the figure worth reading.
+    """
+
+    date: str
+    ungated: Status
+    gated: Status
+
+    @property
+    def withheld(self) -> bool:
+        return self.ungated is Status.GO and self.gated is not Status.GO
+
+
+@dataclass(frozen=True)
 class DayCost:
-    """One Lead Time: the Go Call days each arm admits, and the Gold Days among them."""
+    """One Lead Time over one denominator: the Go Call days each arm admits."""
 
     lead: int
+    scope: str
     days_scored: int
     go_days_ungated: int
     go_days_gated: int
     confirmed_days_ungated: int
     confirmed_days_gated: int
-    """Days whose best call was Confirmed, which the gate cannot touch — and the reason the
-    shortest Lead Time shows no Go Calls at all rather than showing a gap.
+    """Days whose best call was Confirmed. Recorded for both arms, and the reason the shortest
+    Lead Time shows no Go Calls at all rather than showing a gap.
 
-    `decide` assigns `Status.CONFIRMED` in the branch above the one that consults `probable`,
-    so a day inside `CONFIRMED_THROUGH` that holds every Go condition is Confirmed whatever the
-    distribution says. Both arms are recorded anyway, and `--check` pins them equal: if the
-    probability check ever moves above that branch, this gate would start withholding a
-    statement made to someone already travelling, and the pin is what would say so.
+    **Two separate mechanisms, and they are easy to conflate.** The shortest Lead Time has no Go
+    Calls because the tier does not exist there: `go_call_is_available` requires
+    `CONFIRMED_THROUGH < lead_time_days`, and `CONFIRMED_THROUGH` is 1, so at one day out no
+    hour is a Go Call candidate at all and the gate has nothing to act on. Separately, the gate
+    can never *reduce* a Confirmed at any Lead Time, because `decide` assigns that status in a
+    branch that does not consult `probable`.
+
+    `--check` pins the two counts equal, which is the second mechanism. If the probability check
+    ever reaches the Confirmed branch, this gate would start withholding a statement made to
+    someone already travelling, and the pin is what would say so.
     """
 
     gold_days_scored: int
     gold_days_ungated: int
     gold_days_gated: int
     withheld_dates: tuple[str, ...]
-    """Every date the gate took, listed rather than counted.
-
-    A count answers "how much" and a list answers "which", and only the second can be held up
-    against the Gold Day list or read for a pattern. There are few enough to name.
-    """
+    """Every date the gate took, listed rather than counted. A count answers "how much" and a
+    list answers "which", and only the second can be held against the Gold Day list."""
 
     @property
     def days_withheld(self) -> int:
-        return self.go_days_ungated - self.go_days_gated
-
-    @property
-    def gold_days_withheld(self) -> int:
-        return self.gold_days_ungated - self.gold_days_gated
+        return len(self.withheld_dates)
 
 
 def gold_days() -> set[str]:
@@ -148,7 +228,7 @@ def strongest(statuses: list[Status]) -> Status:
     """The day's call: the best any of its hours earned.
 
     `analysis/backtest/` ranks a day the same way. The tie-breaks the Pipeline Run applies
-    within a status do not matter here — this asks only whether the day reached a Go Call, and
+    within a status do not matter here — this asks only which tier the day reached, and
     `strength` is the ordering that answers it.
     """
     best = Status.NONE
@@ -158,71 +238,79 @@ def strongest(statuses: list[Status]) -> Status:
     return best
 
 
-def cost_at(
-    lead: int,
-    budget: ErrorBudget,
-    model: AmplificationModel,
-    sea: Runs,
-    winds: Runs,
-    swell: dict[str, dict[str, float]],
-    height_bar_m: float,
-    gold: set[str],
-) -> DayCost:
+def verdicts_at(lead: int, archive: Archive, pricing: Pricing) -> list[DayVerdict]:
     """Both arms over every archived day, at one Lead Time."""
-    gated: dict[str, list[Status]] = {}
-    ungated: dict[str, list[Status]] = {}
-
-    by_date = group_by_date([{"at": hour} for hour in sorted(swell)])
-    for day, stamps in by_date.items():
+    verdicts = []
+    for day, stamps in group_by_date([{"at": hour} for hour in sorted(archive.swell)]).items():
+        gated: list[Status] = []
+        ungated: list[Status] = []
         for stamp in stamps:
-            hour = stamp["at"]
-            features = readings_at(hour, lead, sea, winds, swell)
+            features = readings_at(stamp["at"], lead, archive.sea, archive.winds, archive.swell)
             if features is None:
                 continue
-            prediction = model.predict(features)
+            gated.append(pricing.call(features, lead, gated=True))
+            ungated.append(pricing.call(features, lead, gated=False))
+        if not gated:
+            continue
+        verdicts.append(DayVerdict(date=day, ungated=strongest(ungated), gated=strongest(gated)))
 
-            # Priced exactly where a Pipeline Run prices one: the hours already clearing every
-            # other Go Call condition, which is the only branch this gate can change.
-            distribution = (
-                budget.distribution(model, features, lead, height_bar_m=height_bar_m)
-                if go_call_is_available(prediction, lead)
-                else None
-            )
-            gated.setdefault(day, []).append(
-                decide(prediction, lead, MODELS_ASSUMED_TO_AGREE, distribution).status
-            )
-            ungated.setdefault(day, []).append(
-                decide(prediction, lead, MODELS_ASSUMED_TO_AGREE, None).status
-            )
-
-    days = sorted(gated)
-    with_gate = {day for day in days if strongest(gated[day]) is Status.GO}
-    without_gate = {day for day in days if strongest(ungated[day]) is Status.GO}
-    confirmed_gated = {day for day in days if strongest(gated[day]) is Status.CONFIRMED}
-    confirmed_ungated = {day for day in days if strongest(ungated[day]) is Status.CONFIRMED}
-
-    # The gate can only ever take a Go Call away. One appearing under the gate that the
-    # ungated arm did not reach is a wiring fault, not a finding, and must stop the run.
-    gained = with_gate - without_gate
+    # The gate withholds; it cannot grant. A day reaching a Go Call under the gate that the
+    # ungated arm did not reach means the two arms are not the same rule, which is a wiring
+    # fault rather than a finding, and it must stop the run.
+    gained = [
+        verdict.date
+        for verdict in verdicts
+        if verdict.gated is Status.GO and verdict.ungated is not Status.GO
+    ]
     if gained:
         raise RuntimeError(
             f"lead {lead}: the height gate produced Go Calls the ungated rule did not reach "
-            f"({sorted(gained)}). It can only withhold, so the two arms are not the same rule"
+            f"({gained}). It can only withhold, so the two arms are not the same rule"
         )
+    return verdicts
 
-    scored = set(days)
+
+def cost(lead: int, scope: str, verdicts: list[DayVerdict], gold: set[str]) -> DayCost:
+    def days(status: Status, *, gated: bool) -> set[str]:
+        return {
+            verdict.date
+            for verdict in verdicts
+            if (verdict.gated if gated else verdict.ungated) is status
+        }
+
+    go_gated = days(Status.GO, gated=True)
+    go_ungated = days(Status.GO, gated=False)
+    scored = {verdict.date for verdict in verdicts}
+
     return DayCost(
         lead=lead,
+        scope=scope,
         days_scored=len(scored),
-        go_days_ungated=len(without_gate),
-        go_days_gated=len(with_gate),
-        confirmed_days_ungated=len(confirmed_ungated),
-        confirmed_days_gated=len(confirmed_gated),
+        go_days_ungated=len(go_ungated),
+        go_days_gated=len(go_gated),
+        confirmed_days_ungated=len(days(Status.CONFIRMED, gated=False)),
+        confirmed_days_gated=len(days(Status.CONFIRMED, gated=True)),
         gold_days_scored=len(scored & gold),
-        gold_days_ungated=len(without_gate & gold),
-        gold_days_gated=len(with_gate & gold),
-        withheld_dates=tuple(sorted(without_gate - with_gate)),
+        gold_days_ungated=len(go_ungated & gold),
+        gold_days_gated=len(go_gated & gold),
+        withheld_dates=tuple(sorted(verdict.date for verdict in verdicts if verdict.withheld)),
     )
+
+
+COLUMNS = (
+    "lead_days",
+    "scope",
+    "days_scored",
+    "go_days_ungated",
+    "go_days_gated",
+    "days_withheld",
+    "confirmed_days_ungated",
+    "confirmed_days_gated",
+    "gold_days_scored",
+    "gold_days_ungated",
+    "gold_days_gated",
+    "withheld_dates",
+)
 
 
 def write(rows: list[DayCost]) -> Path:
@@ -230,25 +318,12 @@ def write(rows: list[DayCost]) -> Path:
     path = OUTPUT / OUTPUT_NAME
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
-        writer.writerow(
-            [
-                "lead_days",
-                "days_scored",
-                "go_days_ungated",
-                "go_days_gated",
-                "days_withheld",
-                "confirmed_days_ungated",
-                "confirmed_days_gated",
-                "gold_days_scored",
-                "gold_days_ungated",
-                "gold_days_gated",
-                "withheld_dates",
-            ]
-        )
+        writer.writerow(COLUMNS)
         for row in rows:
             writer.writerow(
                 [
                     row.lead,
+                    row.scope,
                     row.days_scored,
                     row.go_days_ungated,
                     row.go_days_gated,
@@ -264,37 +339,46 @@ def write(rows: list[DayCost]) -> Path:
     return path
 
 
-def report(rows: list[DayCost]) -> None:
-    print(
-        f"\n{'lead':>5}  {'days':>5}  {'Go ungated':>11}  {'Go gated':>9}  "
-        f"{'withheld':>8}  {'confirmed':>9}  gold"
-    )
-    for row in rows:
+def report(rows: list[DayCost], scope: str) -> None:
+    print(f"\n{scope}")
+    print(f"{'lead':>5}  {'days':>5}  {'Go ungated':>11}  {'Go gated':>9}  {'withheld':>8}  gold")
+    for row in (row for row in rows if row.scope == scope):
         print(
             f"{row.lead:>4}d  {row.days_scored:>5}  {row.go_days_ungated:>11}  "
             f"{row.go_days_gated:>9}  {row.days_withheld:>8}  "
-            f"{row.confirmed_days_gated:>9}  "
             f"{row.gold_days_gated}/{row.gold_days_ungated} of {row.gold_days_scored}"
+            + (f"   confirmed {row.confirmed_days_gated}" if row.confirmed_days_gated else "")
         )
-    taken = sorted({date for row in rows for date in row.withheld_dates})
-    print(f"\nDates the gate took at any Lead Time: {', '.join(taken) if taken else 'none'}")
 
 
 def main() -> int:
     thresholds = load_thresholds()
-    height_bar_m = thresholds.minimum_significant_wave_height_m
-    budget = ErrorBudget.shipped()
-    model = amplification_model()
+    pricing = Pricing(
+        budget=ErrorBudget.shipped(),
+        model=amplification_model(),
+        height_bar_m=thresholds.minimum_significant_wave_height_m,
+    )
     gold = gold_days()
 
-    print(f"Pricing the height gate: model {model.name}, height bar {height_bar_m} m")
-    sea, winds, swell = waves(), wind(), settled()
+    print(f"Pricing the height gate: model {pricing.model.name}, bar {pricing.height_bar_m} m")
+    archive = Archive(sea=waves(), winds=wind(), swell=settled())
+    dates = sorted({hour[:10] for hour in archive.swell})
+    print(f"Archive spans {dates[0]} to {dates[-1]} ({len(dates)} days)")
 
-    rows = [
-        cost_at(lead, budget, model, sea, winds, swell, height_bar_m, gold) for lead in LEAD_TIMES
-    ]
-    report(rows)
-    print(f"\nWrote {write(rows).relative_to(ROOT)}")
+    rows = []
+    for lead in LEAD_TIMES:
+        verdicts = verdicts_at(lead, archive, pricing)
+        rows.append(cost(lead, ALL_DAYS, verdicts, gold))
+        rows.append(
+            cost(lead, IN_SEASON, [v for v in verdicts if in_big_wave_season(v.date)], gold)
+        )
+
+    for scope in (ALL_DAYS, IN_SEASON):
+        report(rows, scope)
+
+    taken = sorted({date for row in rows for date in row.withheld_dates})
+    print(f"\nDates the gate took at any Lead Time: {', '.join(taken) if taken else 'none'}")
+    print(f"Wrote {write(rows).relative_to(ROOT)}")
     return 0
 
 
@@ -318,14 +402,17 @@ def check() -> int:
     with path.open(newline="", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
 
-    expect(
-        "leads",
-        {int(row["lead_days"]) for row in rows} == set(LEAD_TIMES),
-        "the table does not cover exactly the archive's Lead Times",
-    )
+    for scope in (ALL_DAYS, IN_SEASON):
+        expect(
+            f"{scope} leads",
+            {int(row["lead_days"]) for row in rows if row["scope"] == scope} == set(LEAD_TIMES),
+            "the table does not cover exactly the archive's Lead Times",
+        )
+
+    by_key = {(int(row["lead_days"]), row["scope"]): row for row in rows}
 
     for row in rows:
-        where = f"lead {row['lead_days']}"
+        where = f"lead {row['lead_days']} ({row['scope']})"
         ungated, gated = int(row["go_days_ungated"]), int(row["go_days_gated"])
         withheld = int(row["days_withheld"])
         named = [date for date in row["withheld_dates"].split(" ") if date]
@@ -358,16 +445,29 @@ def check() -> int:
             f"{ungated} Go Call days out of {row['days_scored']} scored",
         )
 
-        # The gate cannot reach a Confirmed statement: `decide` assigns that status in the
-        # branch above the one consulting `probable`. If this ever stops holding, the gate has
-        # begun withholding advice given to someone already travelling — a different decision
-        # from the one this file measures, and one nobody made.
+        # The gate cannot reach a Confirmed statement: `decide` assigns that status in a branch
+        # that never consults `probable`. If this stops holding, the gate has begun withholding
+        # advice given to someone already travelling — a different decision from the one this
+        # file measures, and one nobody made.
         expect(
             f"{where} confirmed untouched",
             row["confirmed_days_gated"] == row["confirmed_days_ungated"],
             f"the gate moved the Confirmed count from {row['confirmed_days_ungated']} to "
             f"{row['confirmed_days_gated']}; it is assigned before the probability is read",
         )
+
+        # Every in-season figure is drawn from the same days as its `all` row, so none of them
+        # can exceed it. A larger in-season count is a scope filter applied to the wrong set.
+        if row["scope"] == IN_SEASON:
+            everything = by_key[(int(row["lead_days"]), ALL_DAYS)]
+            for column in COLUMNS:
+                if column in ("lead_days", "scope", "withheld_dates"):
+                    continue
+                expect(
+                    f"{where} {column}",
+                    int(row[column]) <= int(everything[column]),
+                    f"in-season {column} is {row[column]} against {everything[column]} overall",
+                )
 
     for failure in failures:
         print(f"  FAIL {failure}")
