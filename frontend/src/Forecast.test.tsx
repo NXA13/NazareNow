@@ -1165,6 +1165,200 @@ describe('how sure the forecast is', () => {
   });
 });
 
+describe('swells spanning more than a day', () => {
+  /**
+   * Story 25 of #1, and the one closest to what the product is for: nobody flies to Portugal
+   * for an afternoon, so the unit a person books is a trip and the range rendered a three-day
+   * swell as three verdicts that happened to sit next to each other.
+   *
+   * Dates are asserted through the `dateTime` attribute of each `time` element rather than
+   * through its rendered text. The suite pins the zone and not the locale, so "13 Feb" and
+   * "Feb 13" are both correct renderings — and asserting the text would either be
+   * locale-fragile or would compare `dayLabel` against its own output, which is how the
+   * compass rose passed for any ordering of the sixteen points (#78).
+   */
+  async function windowsFor(days: unknown[]) {
+    server.use(
+      http.get('*/api/conditions/forecast', () => HttpResponse.json({ ...forecast, days })),
+    );
+    render(<ForecastRange />);
+    return screen.findByTestId('swell-windows');
+  }
+
+  const dateOf = (scope: HTMLElement, testId: string) =>
+    within(scope).getByTestId(testId).getAttribute('datetime');
+
+  it('gathers a run of called days into one window and names its span', async () => {
+    const days = [
+      dayFrom('2026-02-12', 4.0, 14, 300, 'watch', 3),
+      dayFrom('2026-02-13', 7.2, 17, 300, 'go', 2),
+      dayFrom('2026-02-14', 5.1, 15, 300, 'watch', 1),
+    ];
+
+    const section = await windowsFor(days);
+    const windows = within(section).getAllByRole('listitem');
+
+    expect(windows).toHaveLength(1);
+    expect(dateOf(windows[0]!, 'window-start')).toBe('2026-02-12');
+    expect(dateOf(windows[0]!, 'window-end')).toBe('2026-02-14');
+    expect(windows[0]!.textContent).toContain('3 days');
+  });
+
+  it('names the largest day of a window, not its first', async () => {
+    // The peak is what a trip is planned around. Picked by order rather than by size, this
+    // sentence still reads perfectly and points at the wrong day — and on a building swell,
+    // which is the common shape, it would always point at the smallest.
+    const days = [
+      dayFrom('2026-02-12', 4.0, 14, 300, 'watch', 3),
+      dayFrom('2026-02-13', 7.2, 17, 300, 'go', 2),
+      dayFrom('2026-02-14', 5.1, 15, 300, 'watch', 1),
+    ];
+
+    const section = await windowsFor(days);
+
+    expect(dateOf(within(section).getAllByRole('listitem')[0]!, 'window-peak')).toBe('2026-02-13');
+  });
+
+  it('ends a window at a quiet day rather than reaching across it', async () => {
+    // The judgement call this ticket names. Two swells either side of a lull may be one event
+    // or two, and nothing here can tell them apart — so the rule takes the shorter reading,
+    // because the failure worth avoiding is somebody booking five nights against a
+    // three-night event.
+    const days = [
+      dayFrom('2026-02-12', 5.0, 15, 300, 'go', 3),
+      dayFrom('2026-02-13', 6.1, 16, 300, 'go', 2),
+      dayFrom('2026-02-14', 1.1, 7, 300, 'none', 1),
+      dayFrom('2026-02-15', 5.4, 15, 300, 'go', 0),
+      dayFrom('2026-02-16', 5.6, 15, 300, 'watch', 0),
+    ];
+
+    const section = await windowsFor(days);
+    const windows = within(section).getAllByRole('listitem');
+
+    expect(windows).toHaveLength(2);
+    expect(dateOf(windows[0]!, 'window-end')).toBe('2026-02-13');
+    expect(dateOf(windows[1]!, 'window-start')).toBe('2026-02-15');
+  });
+
+  it('states the rule that a quiet day ends a window', async () => {
+    // A reader cannot judge a window without knowing what it excludes, and this rule is a
+    // choice rather than a fact about the ocean.
+    const section = await windowsFor([
+      dayFrom('2026-02-12', 5.0, 15, 300, 'go', 1),
+      dayFrom('2026-02-13', 6.1, 16, 300, 'go', 0),
+    ]);
+
+    expect(section).toHaveTextContent(/quiet day ends one/i);
+    expect(section).toHaveTextContent(/counted as two windows and not one/i);
+  });
+
+  it('does not announce a single called day as a window', async () => {
+    // It is already a card in the range. "A swell spanning 1 day" is a sentence about nothing.
+    const days = [
+      dayFrom('2026-02-12', 1.2, 7, 300, 'none', 3),
+      dayFrom('2026-02-13', 6.1, 16, 300, 'go', 2),
+      dayFrom('2026-02-14', 1.1, 7, 300, 'none', 1),
+    ];
+
+    const section = await windowsFor(days);
+
+    expect(within(section).queryAllByRole('listitem')).toHaveLength(0);
+    // Visible, not merely present. `getByTestId` finds a `hidden` element and
+    // `toHaveTextContent` reads it, so the assertion written to prove a reader is told
+    // something passes on markup no reader can see.
+    expect(within(section).getByTestId('no-windows')).toBeVisible();
+  });
+
+  it('says plainly when nothing spans more than a day', async () => {
+    // Story 12 one level up: an absent section reads as a page that failed, and most of the
+    // year this is the honest answer rather than an omission.
+    const section = await windowsFor([
+      dayFrom('2026-02-12', 1.2, 7, 300, 'none', 2),
+      dayFrom('2026-02-13', 1.1, 7, 300, 'none', 1),
+    ]);
+
+    const statement = within(section).getByTestId('no-windows');
+
+    expect(statement).toBeVisible();
+    expect(statement).toHaveTextContent(/no multi-day window to plan a trip around/i);
+  });
+
+  it('leaves every day inside a window with the verdict it was given', async () => {
+    // A window must invent no status. Story 12 requires a quiet day shown as quiet, and a
+    // window that promoted its members would break it exactly where a reader is about to act.
+    const days = [
+      dayFrom('2026-02-12', 4.0, 14, 300, 'watch', 3),
+      dayFrom('2026-02-13', 7.2, 17, 300, 'go', 2),
+      dayFrom('2026-02-14', 5.1, 15, 300, 'watch', 1),
+    ];
+
+    await windowsFor(days);
+
+    for (const [date, label] of [
+      ['2026-02-12', 'Watch'],
+      ['2026-02-13', 'Go'],
+      ['2026-02-14', 'Watch'],
+    ] as const) {
+      const card = await screen.findByRole('button', { name: new RegExp(date) });
+      expect(within(card).getByText(label)).toBeInTheDocument();
+    }
+  });
+
+  it('counts the Go Call days inside a window, not the days in it', async () => {
+    // Two counts of days in one sentence, out of the same window. Rendering the length where
+    // the Go Call count belongs claims every day of the window is bookable, which is the
+    // flattering direction and the one that costs a flight.
+    const days = [
+      dayFrom('2026-02-12', 4.0, 14, 300, 'watch', 3),
+      dayFrom('2026-02-13', 7.2, 17, 300, 'go', 2),
+      dayFrom('2026-02-14', 5.1, 15, 300, 'watch', 1),
+    ];
+
+    const section = await windowsFor(days);
+
+    expect(section.textContent).toContain('1 of those days carries a Go Call');
+  });
+
+  it('says so when a window carries no Go Call at all', async () => {
+    const days = [
+      dayFrom('2026-02-12', 4.0, 14, 300, 'watch', 3),
+      dayFrom('2026-02-13', 4.4, 14, 300, 'watch', 2),
+    ];
+
+    const section = await windowsFor(days);
+
+    expect(section.textContent).toContain('None of those days carries a Go Call');
+  });
+
+  it('does not join two called days that are not consecutive dates', async () => {
+    // Adjacency is a calendar question, not a position-in-the-array one. A range with a day
+    // missing would otherwise render two dates a week apart as one continuous swell.
+    const days = [
+      dayFrom('2026-02-12', 5.0, 15, 300, 'go', 3),
+      dayFrom('2026-02-19', 6.1, 16, 300, 'go', 2),
+    ];
+
+    const section = await windowsFor(days);
+
+    expect(within(section).queryAllByRole('listitem')).toHaveLength(0);
+  });
+
+  it('joins days across a month boundary', async () => {
+    // The arithmetic that string comparison gets wrong. 28 February and 1 March are adjacent
+    // and read as six months apart to anything comparing the day number alone.
+    const days = [
+      dayFrom('2026-02-28', 5.0, 15, 300, 'go', 1),
+      dayFrom('2026-03-01', 6.1, 16, 300, 'go', 0),
+    ];
+
+    const section = await windowsFor(days);
+    const windows = within(section).getAllByRole('listitem');
+
+    expect(windows).toHaveLength(1);
+    expect(dateOf(windows[0]!, 'window-end')).toBe('2026-03-01');
+  });
+});
+
 describe('how the prediction has moved', () => {
   async function detailFor(date: string, days: unknown[]) {
     server.use(
