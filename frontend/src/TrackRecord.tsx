@@ -549,6 +549,21 @@ export function TrackRecordPage() {
         A real forecast is less certain than that, so treat every figure here as the system at its
         best rather than as what it will do next winter.
       </p>
+      {/* The specific form that "at its best" takes, rather than leaving it as a feeling.
+          A live Go Call must clear two conditions beyond the rule — the forecasters agreeing,
+          and the range being confident enough about the height bar — and neither can exist in
+          a reconstruction of a day that has already happened. So every Go Call counted below
+          skipped both. Stated qualitatively and without figures on purpose: both costs are
+          measured, but over different and shorter spans than these panels cover, and printing
+          them here would invite a reader to subtract one from the other. */}
+      <p className="caveat" data-testid="gates-caveat">
+        <strong>Two conditions a real Go Call must clear are missing from these.</strong> The
+        running system also asks the independent forecasters to agree about the day, and asks its
+        own range to be confident enough that the sea clears the height bar. Neither question exists
+        for a day that has already happened, so no call below was ever asked them. Both have been
+        measured separately, and both withhold a small number of days — but on shorter spans than
+        this page covers, which is why no figure for them appears beside these.
+      </p>
 
       <h3>Did it see the days that mattered?</h3>
       <p>

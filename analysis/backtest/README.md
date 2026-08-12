@@ -16,6 +16,29 @@ Ticket #11. The benchmark every later Amplification Model must beat, per ADR 000
 > the gate withholds **4 of 23 Go Call days**, and takes neither of the two Gold Days in that
 > span. Read the 16 of 38 below with that beside it.
 >
+> ## The other gate, stated at last (#96)
+>
+> A Go Call must also clear `GO_CALL_MINIMUM_HEIGHT_PROBABILITY` — the distribution's probability
+> that the sea clears the height bar. This report scores with that gate off too, for the same
+> reason and with the same entitlement: a Hindcast carries no forecast error, so there is no
+> distribution to price.
+>
+> **What was wrong was not the skip but the silence.** Until #96 it happened through a parameter
+> default — `decide`'s fourth argument defaults to `None` — so a shipped Go Call condition was
+> absent from these tables with nothing in the source or this file to say so, while the agreement
+> gate one line above had a named constant, a docstring and the block quote you just read. It is
+> now `NOTHING_TO_BE_UNCERTAIN_ABOUT` and passed explicitly.
+>
+> **What it costs:** `analysis/distribution_coverage/gate_cost.py` runs the full Go Call rule over
+> the archived forecast runs at every Lead Time, with the gate and without, and the gate withholds
+> **1 of 15 Go Call days** — 2026-02-21 — taking neither the single Gold Day in that span nor any
+> Confirmed statement, which it cannot reach. So both gates are now measured, and both are small:
+> 4 of 23 days for agreement, 1 of 15 for this one. Read the 16 of 38 below with both beside it.
+>
+> The two figures come from **different spans** and must not be added. Agreement is measured over
+> two Big-Wave Seasons of archived per-model Swell; this one over one partial season of archived
+> forecast runs, holding one Gold Day.
+>
 > **Re-run after #12.** This report scores whatever thresholds the system currently ships, and
 > #12 replaced them with values fitted to the Gold Days. The numbers below are therefore the
 > *calibrated* rule's, not the rule of thumb's. Where the pre-#12 figure is worth keeping — the

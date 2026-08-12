@@ -18,7 +18,9 @@ It does not. **It holds it more often**, and the excess grows with Lead Time.
 .venv/Scripts/python.exe analysis/distribution_coverage/settled.py     # caches the settled Swell
 .venv/Scripts/python.exe analysis/distribution_coverage/coverage.py    # findings 1 and 2
 .venv/Scripts/python.exe analysis/distribution_coverage/sensitivity.py # what the one caveat costs
+.venv/Scripts/python.exe analysis/distribution_coverage/gate_cost.py   # finding 2, in days (#96)
 .venv/Scripts/python.exe analysis/distribution_coverage/coverage.py --check   # offline
+.venv/Scripts/python.exe analysis/distribution_coverage/gate_cost.py --check  # offline
 ```
 
 Same honest qualification as `analysis/forecast_error/README.md`: only `--check` runs from a
@@ -131,8 +133,18 @@ height condition refused a Go Call and the sea did what the bar asks.
 
 **This is not a count of lost Go Calls and must not be read as one.** The height condition is
 one of several a Go Call rests on — swell period is the one the calibration found actually binds
-— and hours are not days. Converting this into calls means re-running `analysis/backtest/`, which
-is the follow-up, not this ticket.
+— and hours are not days.
+
+**#96 did the conversion, and it is much smaller than the hours suggest.** `gate_cost.py` runs
+the full Go Call rule over the same archived runs at every Lead Time, once with the gate and once
+without, and the gate withholds **1 of 15 Go Call days**: 2026-02-21, at every Lead Time from two
+days out to seven. It does not take 2025-12-13, the only Gold Day in the span, and it cannot
+reach a Confirmed statement at all — `decide` assigns that status in the branch above the one
+that reads the probability, which is why the shortest Lead Time shows fifteen Confirmed days and
+no Go Calls to withhold.
+
+So the alarming shape of the bin table — a whole band in which every hour cleared the bar — costs
+one day in one partial season. That is worth knowing before spending #82's repair on it.
 
 ## Finding 3 — what the one flattering approximation actually costs
 
