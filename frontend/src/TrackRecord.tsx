@@ -5,6 +5,8 @@ import {
   type AccuracyBand,
   type CallStatus,
   type PanelRecord,
+  type RangeCalibration,
+  type RangeCoverage,
   type TierRecord,
   type TrackRecord,
 } from './api';
@@ -257,6 +259,168 @@ function AccuracyTable({
   );
 }
 
+/** Which way the range misses, worked out here rather than read off a field.
+ *
+ * The backend sends the claim and the measurement and no verdict, because the verdict is the
+ * thing most likely to stop being true: narrowing the distribution is open work, and a "too
+ * wide" flag baked into the record would survive the change that falsified it. Deriving it
+ * costs one comparison and cannot go stale.
+ *
+ * The threshold is a whole percentage point, because the figures are rendered as whole
+ * percentages. A range measured at 90.4% against a claim of 90% is not a finding, and calling
+ * it one would put a verdict on the page that the numbers under it do not visibly support.
+ */
+function missesWide(claimed: number, covered: number): boolean | null {
+  if (Math.abs(covered - claimed) < 0.01) return null;
+  return covered > claimed;
+}
+
+/** One subset's rows: how often the range held, and the width that would have sufficed. */
+function RangeTable({
+  leads,
+  caption,
+  subset,
+  testId,
+}: {
+  leads: RangeCalibration['leads'];
+  caption: string;
+  subset: 'all_hours' | 'big_swell';
+  testId: string;
+}) {
+  return (
+    <div className="record-table" data-testid={testId}>
+      <table>
+        <caption>{caption}</caption>
+        <thead>
+          <tr>
+            <th scope="col">Days ahead</th>
+            <th scope="col">Hours</th>
+            <th scope="col">How often it held</th>
+            <th scope="col">Range it prints</th>
+            <th scope="col">Range that would have sufficed</th>
+          </tr>
+        </thead>
+        <tbody>
+          {leads.map((lead) => {
+            const measured: RangeCoverage = lead[subset];
+            return (
+              <tr key={lead.lead_days}>
+                <th scope="row">{lead.lead_days}</th>
+                <td>{measured.hours.toLocaleString('en-GB')}</td>
+                <td>{percent(measured.covered)}</td>
+                <td>{metres(measured.median_width_m)}</td>
+                <td>{metres(measured.justified_width_m)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/**
+ * Whether the range this site prints means what it says.
+ *
+ * **The one figure on this page scored against the sea rather than against the confirmed
+ * giant days.** Everything else here is measured against a hand-assembled list of thirteen
+ * days. This is measured against 1,593 hours of what the ocean actually did, which makes it
+ * the broadest evidence on the page — and the two qualifications underneath are why that is
+ * not the licence it sounds like.
+ *
+ * **Both subsets are rendered from one component, and there is no arrangement of props that
+ * shows one without the other.** The big-swell rows are the sea a Go Call is issued on and
+ * they read kinder than the whole, so a page able to show them alone is a page able to show
+ * the flattering half of a two-part fact — the rule `TierRow` and `Delivered` already keep.
+ *
+ * **The verdict sentence is derived from the numbers it sits above.** Narrowing the
+ * distribution is open work; a sentence typed here saying the range runs wide would survive
+ * the refit that made it false, and be wrong in the direction of confidence.
+ */
+function RangeCalibrationSection({ calibration }: { calibration: RangeCalibration }) {
+  const shortest = calibration.leads[0];
+  const longest = calibration.leads[calibration.leads.length - 1];
+
+  // The backend refuses a record with no lead times, so this is unreachable through the
+  // running system — but it is reachable through the type, and the honest answer to "we have
+  // no measurement" is not to drop the heading. A section that quietly disappears leaves a
+  // page printing a range with nothing said about it, which is the state this whole section
+  // exists to end.
+  if (!shortest || !longest) {
+    return (
+      <section data-testid="range-calibration">
+        <h3>Does the range it prints mean what it says?</h3>
+        <p role="alert" className="alert">
+          The measurement of the range could not be read. Do not take this as the range being
+          calibrated — it has been measured against outcomes, and this page failed to load the
+          result.
+        </p>
+      </section>
+    );
+  }
+
+  const wide = missesWide(calibration.claimed, shortest.all_hours.covered);
+
+  return (
+    <section data-testid="range-calibration">
+      <h3>Does the range it prints mean what it says?</h3>
+      <p data-testid="range-statement">
+        Every forecast on this site states a range in metres, and that range claims to contain the
+        real sea <strong>{percent(calibration.claimed)}</strong> of the time. Measured against{' '}
+        <strong>{shortest.all_hours.hours.toLocaleString('en-GB')}</strong> hours of what the ocean
+        then did, it held the outcome <strong>{percent(shortest.all_hours.covered)}</strong> of the
+        time {shortest.lead_days} day ahead and{' '}
+        <strong>{percent(longest.all_hours.covered)}</strong> of the time {longest.lead_days} days
+        ahead.
+      </p>
+      {wide === null ? (
+        <p data-testid="range-verdict">
+          That is the share it claims, so the range means what it says — on this evidence, and
+          subject to the two limits below.
+        </p>
+      ) : wide ? (
+        <p data-testid="range-verdict">
+          <strong>So the range is wider than the outcomes justify</strong>, and increasingly so the
+          further ahead it looks: a {longest.lead_days}-day range spanning{' '}
+          {metres(longest.all_hours.median_width_m)} would have held the same share of outcomes at{' '}
+          {metres(longest.all_hours.justified_width_m)}. That is the error running in the forgiving
+          direction — the system claims less certainty than it turns out to have, so it stays quiet
+          on days it could have called rather than calling days it should not. It is still a
+          statement that is not true, which is why it is on this page.
+        </p>
+      ) : (
+        <p data-testid="range-verdict">
+          <strong>So the range is narrower than the outcomes justify.</strong> The sea fell outside
+          it more often than the {percent(calibration.claimed)} it claims, which means the range
+          states more certainty than the record supports — the expensive direction for a page that
+          is asking you to book a flight on it.
+        </p>
+      )}
+
+      <RangeTable
+        leads={calibration.leads}
+        subset="all_hours"
+        testId="range-all-hours"
+        caption="Every hour measured"
+      />
+      <RangeTable
+        leads={calibration.leads}
+        subset="big_swell"
+        testId="range-big-swell"
+        caption="Only the hours the sea passed 3m — the size a Go Call is issued on"
+      />
+
+      {/* Rendered under the tables, in full. Both say the figures above are narrower evidence
+          than "1,593 hours" sounds, and a reader who meets that after forming an impression
+          has met it too late. Same reason the basis caveat sits above the panels. */}
+      <ul className="band-caveats" data-testid="range-caveats">
+        <li>{calibration.understates_because}</li>
+        <li>{calibration.rests_on}</li>
+      </ul>
+    </section>
+  );
+}
+
 export function TrackRecordPage() {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
 
@@ -392,6 +556,8 @@ export function TrackRecordPage() {
         days. It keeps almost all of its margin on the big ones — which is the only place this
         system ever makes a call.
       </p>
+
+      <RangeCalibrationSection calibration={record.range_calibration} />
 
       <h3>Day by day</h3>
       <p>

@@ -352,6 +352,57 @@ export interface AccuracyBand {
   caveat: string | null;
 }
 
+/** How often the printed range held the outcome, over one subset of hours at one lead time. */
+export interface RangeCoverage {
+  hours: number;
+  /** The share of outcomes that fell inside the range. Compared against `claimed`, which is
+   * one number for the whole table rather than a copy on every row. */
+  covered: number;
+  median_width_m: number;
+  /** The width these outcomes actually asked for. Divided by the backend, like every other
+   * derived figure in this response — the page never holds two numbers and multiplies. */
+  justified_width_m: number;
+  /** Above one the range is narrower than the outcomes justify; below one it is wider.
+   * Arrives without a verdict attached: see `RangeCalibration`. */
+  widening_factor: number;
+}
+
+/** One lead time, with both subsets as required fields.
+ *
+ * The pair is structural for the same reason `PanelRecord`'s two tiers are. The big-swell
+ * rows describe the sea a Go Call is actually issued on and read kinder than the whole, so a
+ * shape that could carry one alone could render the kinder number as the finding. */
+export interface RangeLead {
+  lead_days: number;
+  all_hours: RangeCoverage;
+  big_swell: RangeCoverage;
+}
+
+/**
+ * What the range this site prints claims to hold, against what it held.
+ *
+ * The only figure on the track record measured against the sea itself rather than against the
+ * confirmed giant days — and, until it was published, the only claim the site makes that had a
+ * measurement behind it and no mention of it.
+ *
+ * **No verdict arrives over the wire, only the claim and the measurement.** Which way the
+ * range misses is worked out where it is rendered, so the page stays true if the distribution
+ * is ever narrowed. A "too wide" flag in this type would outlive the change that falsified it.
+ */
+export interface RangeCalibration {
+  /** The share the range says it holds — the 5th to 95th percentile of the draws, so 0.9. */
+  claimed: number;
+  /** Why the figures are a floor: the running system's range is wider than the one measured,
+   * because the wave models' disagreement term was absent from every distribution scored and
+   * can only widen one. */
+  understates_because: string;
+  /** What the whole table rests on — one partial Big-Wave Season, hours that cluster into a
+   * few dozen swells, a single confirmed giant day. Not derivable from the numbers, and the
+   * reason this is not a calibration certificate. */
+  rests_on: string;
+  leads: RangeLead[];
+}
+
 export interface RecordedDay {
   date: string;
   season: string;
@@ -396,6 +447,10 @@ export interface TrackRecord {
   /** The same comparison along the path the running system actually takes. They disagree,
    * and the disagreement is the finding rather than a discrepancy to tidy away. */
   served: AccuracyBand[];
+  /** How often the range this site prints held the outcome, against how often it claims to.
+   * Required rather than optional: a page that prints a range and omits the measurement of it
+   * is the flattering half of a pair. */
+  range_calibration: RangeCalibration;
   gold_days_fitted: number;
   gold_days_validated: number;
   gold_days_total: number;
