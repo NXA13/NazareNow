@@ -25,10 +25,21 @@ rule about the word rather than about naming, which is precisely what ADR 0014 d
 the same file as one. ADR 0014 leaves it, so policing that tree would flag a use the same decision
 sanctions.
 
-**Test trees are not scanned, and that is the known hole.** A test helper could reintroduce the
-word without failing anything. It is the smaller hole: the collision that matters is between a
-shipped gate and the shipped gate beside it, and a boundary a reader can state in one sentence
-survives, where one that flags a test name gets relaxed.
+**`backend/tests` is not scanned; the frontend's co-located tests are.** That asymmetry is in the
+trees, not in the rule: this file is *itself* named for confidence, as it has to be, so a Python
+scan that reached `backend/tests` would flag its own module and its own test function. The
+frontend keeps its tests beside the source under `frontend/src`, so they are swept with it — and
+that is worth having rather than worth excluding, because `Forecast.test.tsx` held the old
+`confidence-${date}` test id, and a guard blind to it would let the DOM contract drift away from
+the component asserting it.
+
+The hole this leaves is a Python test helper reintroducing the word. It is the smaller one: the
+collision that matters is between a shipped gate and the shipped gate beside it.
+
+**Only names are read, so a name hidden in a string is invisible.** `store.py` declares its
+columns inside SQL text, which reaches the tree as one `ast.Constant` this never looks into. A
+banned name could live there unpoliced. Reading string contents would mean reading prose, which
+is the one thing ADR 0014 rules out.
 """
 
 from __future__ import annotations
@@ -82,60 +93,93 @@ def python_identifiers(tree: ast.AST) -> list[tuple[str, int]]:
                 names = [node.arg]
             case ast.alias():
                 names = [part for part in (node.name, node.asname) if part]
+            case ast.ExceptHandler() if node.name is not None:
+                names = [node.name]
+            case ast.Global() | ast.Nonlocal():
+                names = list(node.names)
+            case ast.MatchAs() | ast.MatchStar() if node.name is not None:
+                names = [node.name]
+            case ast.MatchMapping() if node.rest is not None:
+                names = [node.rest]
             case _:
                 continue
         found += [(name, getattr(node, "lineno", 0)) for name in names]
     return found
 
 
-FRONTEND_NAMES = (
+TYPESCRIPT_NAMES = (
     re.compile(r"\bfunction\s+([A-Za-z_$][\w$]*)"),
     re.compile(r"\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)"),
+    re.compile(r"\b(?:interface|type|class|enum)\s+([A-Za-z_$][\w$]*)"),
+    re.compile(r"^\s*(?:readonly\s+)?([A-Za-z_$][\w$]*)\??:", re.MULTILINE),
     re.compile(r"\bclassName=\"([^\"]*)\""),
     re.compile(r"\bclassName=\{`([^`]*)`\}"),
     re.compile(r"\bdata-testid=\"([^\"]*)\""),
     re.compile(r"\bdata-testid=\{`([^`]*)`\}"),
-    re.compile(r"^\s*\.([\w-]+)", re.MULTILINE),
 )
-"""What counts as a name on the frontend: declarations, and the two things that reach the DOM.
+"""What counts as a name in TypeScript: declarations, object and interface fields, and the two
+things that reach the DOM.
 
 TypeScript has no `ast` in the standard library and this rule does not justify a parser
-dependency, so it reads the four shapes the defect actually took — a component declaration, a
-`className`, a `data-testid`, and the CSS selector the class is styled by. The last pattern is
-why `App.css` is scanned: `.confidence-scope` is as much an identifier as the component was.
+dependency, so it reads the shapes a name can take here. The type and field patterns are not
+decoration: `api.ts` is where the wire contract is declared, so a `confidence` field on `DayCall`
+is exactly the collision this rule exists to stop, and a pattern set that only knew about
+`function` would have watched the component while the contract drifted.
 
 A comment mentioning confidence matches none of these, which is the same exemption the Python
 side gets for free.
 """
 
+CSS_NAMES = (re.compile(r"^\s*\.([\w-]+)", re.MULTILINE),)
+"""The class selector, which is why `App.css` is scanned at all.
 
-def frontend_identifiers(source: str) -> list[tuple[str, int]]:
-    """Every declared name, DOM class and test id, with the line it sits on."""
+`.confidence-scope` is as much an identifier as the component was, and a rename that moved the
+component but not its styling would leave the block unstyled with every test still passing.
+
+**Kept away from `.ts` and `.tsx` deliberately.** Applied there it would match every
+Prettier-wrapped method chain — a line beginning `.map(` reads as a selector — and, worse, it
+would match a line inside a block comment, contradicting the exemption above. Restricting it by
+extension is what keeps that promise true rather than nearly true.
+"""
+
+
+def matched_identifiers(
+    source: str, patterns: tuple[re.Pattern[str], ...]
+) -> list[tuple[str, int]]:
+    """Every name the given patterns capture, with the line it sits on."""
     found: list[tuple[str, int]] = []
-    for pattern in FRONTEND_NAMES:
+    for pattern in patterns:
         for match in pattern.finditer(source):
             line = source.count("\n", 0, match.start()) + 1
             found += [(match.group(1), line)]
     return found
 
 
+def named_in(path: Path) -> list[tuple[str, int]]:
+    """Every identifier in one file, read the way that file's language allows."""
+    source = path.read_text(encoding="utf-8")
+    if path.suffix == ".py":
+        return python_identifiers(ast.parse(source, filename=str(path)))
+    if path.suffix == ".css":
+        return matched_identifiers(source, CSS_NAMES)
+    return matched_identifiers(source, TYPESCRIPT_NAMES)
+
+
+def scanned() -> list[Path]:
+    """The two shipped trees, each read for the file kinds it holds."""
+    files = list(SHIPPED_PYTHON.rglob("*.py"))
+    for extension in ("*.ts", "*.tsx", "*.css"):
+        files += SHIPPED_FRONTEND.rglob(extension)
+    return sorted(files)
+
+
 def offenders() -> list[str]:
-    failures: list[str] = []
-    for path in sorted(SHIPPED_PYTHON.rglob("*.py")):
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for name, line in python_identifiers(tree):
-            if BANNED in name.lower():
-                failures.append(f"{path.relative_to(ROOT).as_posix()}:{line}: {name}")
-    frontend = [
-        path
-        for extension in ("*.ts", "*.tsx", "*.css")
-        for path in SHIPPED_FRONTEND.rglob(extension)
+    return [
+        f"{path.relative_to(ROOT).as_posix()}:{line}: {name}"
+        for path in scanned()
+        for name, line in named_in(path)
+        if BANNED in name.lower()
     ]
-    for path in sorted(frontend):
-        for name, line in frontend_identifiers(path.read_text(encoding="utf-8")):
-            if BANNED in name.lower():
-                failures.append(f"{path.relative_to(ROOT).as_posix()}:{line}: {name}")
-    return failures
 
 
 def test_no_shipped_identifier_is_named_for_confidence() -> None:
@@ -160,5 +204,41 @@ def test_the_rule_reads_names_and_not_prose() -> None:
     prose = '# Narrow spread means confidence.\n"""Confidence, in a docstring."""\nx = 1\n'
     assert not [name for name, _ in python_identifiers(ast.parse(prose)) if BANNED in name.lower()]
 
-    tsx = "// the confidence block\n/* confidence */\nconst plausible = 1;\n"
-    assert not [name for name, _ in frontend_identifiers(tsx) if BANNED in name.lower()]
+    # The last line is the one that matters: a block comment whose continuation begins with a
+    # dot is a selector to the CSS pattern and prose to a reader. Restricting that pattern by
+    # extension is what makes the exemption true here rather than nearly true.
+    tsx = (
+        "// the confidence block\n"
+        "/* confidence */\n"
+        "const plausible = [1].map(x => x)\n"
+        "  .filter(Boolean);\n"
+        "/* a note about\n"
+        " .confidence and what it wrapped */\n"
+    )
+    assert not [name for name, _ in matched_identifiers(tsx, TYPESCRIPT_NAMES) if BANNED in name]
+
+
+def test_the_rule_reads_the_shapes_a_name_can_take() -> None:
+    """The other half: every declaration form this scanner claims to cover, asserted.
+
+    A pattern set is only as honest as the shapes it was tried against. `interface` is here
+    because `api.ts` declares the wire contract, and a field on it is the collision this rule
+    exists to stop — the case the first version of this scanner could not see.
+    """
+    declarations = (
+        "interface Confidence { x: number }",
+        "type Confidence = string",
+        "class Confidence {}",
+        "enum Confidence { A }",
+        "function Confidence() {}",
+        "const confidence = 1",
+        "  confidence: number;",
+        "  readonly confidence?: number;",
+        'className="confidence"',
+        "data-testid={`confidence-${day.date}`}",
+    )
+    for source in declarations:
+        found = [name for name, _ in matched_identifiers(source, TYPESCRIPT_NAMES)]
+        assert [name for name in found if BANNED in name.lower()], f"missed: {source}"
+
+    assert [name for name, _ in matched_identifiers(".confidence-scope {", CSS_NAMES)]
