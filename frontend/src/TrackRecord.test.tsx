@@ -479,6 +479,200 @@ describe('the live record', () => {
   });
 });
 
+describe('the range it prints, measured', () => {
+  /**
+   * The one claim on this site that had a measurement behind it and no mention of it.
+   *
+   * Every assertion here reads fixture values rather than copy, for the reason the module
+   * docstring gives — and one of them asserts the *absence* of a verdict under a fixture
+   * where the finding reverses, which is the test that keeps this section honest if the
+   * distribution is ever narrowed.
+   */
+  it('states the claim and the measurement against it', async () => {
+    render(<TrackRecordPage />);
+
+    const statement = await screen.findByTestId('range-statement');
+    const [shortest] = trackRecord.range_calibration.leads;
+    const longest = trackRecord.range_calibration.leads.at(-1)!;
+
+    expect(statement).toHaveTextContent('90%');
+    expect(statement).toHaveTextContent(`${Math.round(shortest!.all_hours.covered * 100)}%`);
+    expect(statement).toHaveTextContent(`${Math.round(longest.all_hours.covered * 100)}%`);
+    expect(statement).toHaveTextContent(
+      `${shortest!.all_hours.hours.toLocaleString('en-GB')} hours`,
+    );
+  });
+
+  it('shows every lead time for both subsets, never one alone', async () => {
+    // The big-swell rows cover the bigger seas and read kinder than the whole. A page able to
+    // show them alone is a page able to show the flattering half.
+    render(<TrackRecordPage />);
+
+    for (const [testId, subset] of [
+      ['range-all-hours', 'all_hours'],
+      ['range-big-swell', 'big_swell'],
+    ] as const) {
+      const table = await screen.findByTestId(testId);
+
+      for (const lead of trackRecord.range_calibration.leads) {
+        const row = within(table).getByRole('row', { name: new RegExp(`^${lead.lead_days} `) });
+        expect(within(row).getByText(`${Math.round(lead[subset].covered * 100)}%`)).toBeVisible();
+        expect(
+          within(row).getByText(`${lead[subset].median_width_m.toFixed(2)}m`),
+        ).toBeInTheDocument();
+      }
+    }
+  });
+
+  it('puts the width the outcomes asked for beside the width it prints', async () => {
+    // The finding a reader can actually picture: what the range spans, against what it
+    // needed to span. Divided by the backend, so this asserts the number arrived and landed
+    // in the right column rather than that the page can multiply.
+    render(<TrackRecordPage />);
+
+    const table = await screen.findByTestId('range-all-hours');
+    const longest = trackRecord.range_calibration.leads.at(-1)!;
+    const row = within(table).getByRole('row', { name: new RegExp(`^${longest.lead_days} `) });
+
+    expect(
+      within(row).getByText(`${longest.all_hours.justified_width_m.toFixed(2)}m`),
+    ).toBeInTheDocument();
+    expect(longest.all_hours.justified_width_m).toBeLessThan(longest.all_hours.median_width_m);
+  });
+
+  it('carries both qualifications, not one', async () => {
+    // Without them the table reads as a calibration certificate: one says the shipped range
+    // is wider than the measured one, the other says the whole thing rests on one partial
+    // Big-Wave Season. Neither is derivable from the numbers beside them.
+    render(<TrackRecordPage />);
+
+    const caveats = await screen.findByTestId('range-caveats');
+
+    expect(caveats).toHaveTextContent(
+      trackRecord.range_calibration.understates_because.slice(0, 30),
+    );
+    expect(caveats).toHaveTextContent(trackRecord.range_calibration.rests_on.slice(0, 30));
+  });
+
+  it('says which way the error runs, and that it is still an error', async () => {
+    render(<TrackRecordPage />);
+
+    const verdict = await screen.findByTestId('range-verdict');
+
+    expect(verdict).toHaveTextContent(/wider than the outcomes justify/);
+    expect(verdict).toHaveTextContent(/still a statement that is not true/);
+  });
+
+  it('names the quantity in its own section rather than inheriting it', async () => {
+    // Every metre here is significant wave height. A reader who takes them for a wave face
+    // reads a 2m range as trivial; one who takes it the other way reads it as enormous. The
+    // rule `Delivered` already keeps by naming it in its own heading.
+    render(<TrackRecordPage />);
+
+    const quantity = await screen.findByTestId('range-quantity');
+
+    expect(quantity).toHaveTextContent(/Significant Wave Height/i);
+    expect(quantity).toHaveTextContent(/not the height of a wave face/);
+  });
+
+  it('reads the big-swell bar off the record and does not call it the Go Call bar', async () => {
+    // The bar this subset was drawn at is 3m; the Go Call's height bar is 2.75m. They are
+    // different numbers, and the page saying otherwise would be a false statement about the
+    // one figure a reader is asked to spend money on — in the section added to end that.
+    serve({
+      range_calibration: { ...trackRecord.range_calibration, big_swell_from_m: 4.25 },
+    });
+    render(<TrackRecordPage />);
+
+    const table = await screen.findByTestId('range-big-swell');
+
+    expect(within(table).getByText(/4\.25m or more/)).toBeInTheDocument();
+    expect(table).not.toHaveTextContent(/Go Call/);
+  });
+
+  it('drops the growth clause when the excess stops growing', async () => {
+    // The second directional sentence, and the one #82 is most likely to falsify: the growth
+    // *rate* is what a refit targets. Hardcoding it would leave the page asserting a clause
+    // the table beneath it had stopped supporting.
+    const calibration = trackRecord.range_calibration;
+    const flat = calibration.leads[0]!.all_hours.widening_factor;
+    serve({
+      range_calibration: {
+        ...calibration,
+        leads: calibration.leads.map((lead) => ({
+          ...lead,
+          all_hours: { ...lead.all_hours, widening_factor: flat },
+        })),
+      },
+    });
+    render(<TrackRecordPage />);
+
+    const verdict = await screen.findByTestId('range-verdict');
+
+    expect(verdict).toHaveTextContent(/wider than the outcomes justify/);
+    expect(verdict).not.toHaveTextContent(/increasingly so/);
+  });
+
+  it('refuses a single verdict when the lead times disagree', async () => {
+    // A sentence above a seven-row table speaks for all seven. The repair #82 invites is
+    // expected to be uneven — 0.82 of the required half-width at one day against 0.53 at
+    // seven — so a refit correcting the far rows and leaving the near ones produces exactly
+    // the table where one row's verdict is a lie about the others.
+    const calibration = trackRecord.range_calibration;
+    serve({
+      range_calibration: {
+        ...calibration,
+        leads: calibration.leads.map((lead, index) => ({
+          ...lead,
+          all_hours: { ...lead.all_hours, covered: index === 0 ? 0.81 : 0.99 },
+        })),
+      },
+    });
+    render(<TrackRecordPage />);
+
+    const verdict = await screen.findByTestId('range-verdict');
+
+    expect(verdict).toHaveTextContent(/differs by how far ahead/);
+    expect(verdict).not.toHaveTextContent(/wider than the outcomes justify/);
+    expect(verdict).not.toHaveTextContent(/narrower than the outcomes justify/);
+  });
+
+  it('reverses the verdict when the measurement reverses', async () => {
+    // The reason no verdict travels over the wire. Narrowing the distribution is open work
+    // (#82), and a page asserting "wider than the outcomes justify" in its own copy would
+    // survive the refit that made it false — wrong in the direction of confidence, on the
+    // page whose whole job is not to be.
+    const calibration = trackRecord.range_calibration;
+    serve({
+      range_calibration: {
+        ...calibration,
+        leads: calibration.leads.map((lead) => ({
+          ...lead,
+          all_hours: { ...lead.all_hours, covered: 0.81 },
+        })),
+      },
+    });
+    render(<TrackRecordPage />);
+
+    const verdict = await screen.findByTestId('range-verdict');
+
+    expect(verdict).toHaveTextContent(/narrower than the outcomes justify/);
+    expect(verdict).not.toHaveTextContent(/wider than the outcomes justify/);
+  });
+
+  it('says the measurement is missing rather than dropping the section', async () => {
+    // A section that quietly disappears leaves the page printing a range with nothing said
+    // about it — the exact state this section exists to end.
+    serve({ range_calibration: { ...trackRecord.range_calibration, leads: [] } });
+    render(<TrackRecordPage />);
+
+    const section = await screen.findByTestId('range-calibration');
+
+    expect(within(section).getByRole('alert')).toHaveTextContent(/could not be read/);
+    expect(section).toHaveTextContent(/Do not take this as the range being calibrated/);
+  });
+});
+
 describe('failure', () => {
   it('says the record could not be loaded rather than rendering an empty section', async () => {
     // A blank track record is indistinguishable from a system with nothing to show for

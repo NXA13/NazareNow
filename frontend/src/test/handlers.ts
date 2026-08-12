@@ -408,6 +408,70 @@ export const trackRecord: TrackRecord = {
       caveat: null,
     },
   ],
+  // Three lead times rather than the record's seven, and every figure distinct from every
+  // other number in this fixture, so a component reading the wrong subset or the wrong row
+  // renders a value that appears nowhere it should.
+  range_calibration: {
+    claimed: 0.9,
+    // Distinct from every threshold elsewhere in this fixture, and deliberately not the Go
+    // Call's height bar — a page describing it as that states something false.
+    big_swell_from_m: 3.0,
+    understates_because: 'The range this system prints is wider still.',
+    rests_on: 'It rests on one partial Big-Wave Season.',
+    leads: [
+      {
+        lead_days: 1,
+        all_hours: {
+          hours: 1593,
+          covered: 0.9397,
+          median_width_m: 1.0459,
+          justified_width_m: 1.0459 * 0.822,
+          widening_factor: 0.822,
+        },
+        big_swell: {
+          hours: 807,
+          covered: 0.9257,
+          median_width_m: 1.6144,
+          justified_width_m: 1.6144 * 0.9368,
+          widening_factor: 0.9368,
+        },
+      },
+      {
+        lead_days: 4,
+        all_hours: {
+          hours: 1593,
+          covered: 0.9849,
+          median_width_m: 1.4717,
+          justified_width_m: 1.4717 * 0.6028,
+          widening_factor: 0.6028,
+        },
+        big_swell: {
+          hours: 807,
+          covered: 0.9777,
+          median_width_m: 2.2867,
+          justified_width_m: 2.2867 * 0.6563,
+          widening_factor: 0.6563,
+        },
+      },
+      {
+        lead_days: 7,
+        all_hours: {
+          hours: 1593,
+          covered: 0.9937,
+          median_width_m: 2.1919,
+          justified_width_m: 2.1919 * 0.5264,
+          widening_factor: 0.5264,
+        },
+        big_swell: {
+          hours: 807,
+          covered: 0.9888,
+          median_width_m: 3.0812,
+          justified_width_m: 3.0812 * 0.5767,
+          widening_factor: 0.5767,
+        },
+      },
+    ],
+  },
   gold_days_fitted: 25,
   gold_days_validated: 13,
   gold_days_total: 38,

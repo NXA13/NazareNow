@@ -15,6 +15,7 @@ re-derives. So the inputs are the committed reports, each cited on the field it 
 | delivered sea per tier | `analysis/backtest/output/delivery.csv` | #83 |
 | scored height accuracy | `analysis/amplification_model/output/held_out_scores.csv` | #13 |
 | served height accuracy | `analysis/amplification_model/output/translation_shapes.csv` | #52 |
+| range calibration | `analysis/distribution_coverage/output/interval_coverage.csv` | #80, #94 |
 | Gold Day split | `backend/src/nazarenow/thresholds.json` | #12 |
 
 **Both panels come from one scoring run, since #87.** They used not to: the held-out block came
@@ -69,6 +70,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -82,6 +84,7 @@ DAILY = ROOT / "analysis" / "backtest" / "output" / "daily_calls.csv"
 SCORED = ROOT / "analysis" / "amplification_model" / "output" / "held_out_scores.csv"
 SHAPES = ROOT / "analysis" / "amplification_model" / "output" / "translation_shapes.csv"
 DELIVERY = ROOT / "analysis" / "backtest" / "output" / "delivery.csv"
+COVERAGE = ROOT / "analysis" / "distribution_coverage" / "output" / "interval_coverage.csv"
 THRESHOLDS = ROOT / "backend" / "src" / "nazarenow" / "thresholds.json"
 
 DESTINATION = ROOT / "backend" / "src" / "nazarenow" / "track_record.json"
@@ -138,6 +141,63 @@ DELIVERY_LADDER = (3.0, 4.0, 5.0, 6.0)
 The same rule `BAND_LABELS` follows: a column this script has no name for is a report that
 changed shape, and passing it through would put a threshold nobody chose on the page. Stated as
 a tuple so the order on the page is this file's decision and not the CSV writer's.
+"""
+
+RANGE_SUBSETS = {"all hours": "all_hours", "big swell": "big_swell"}
+"""`interval_coverage.csv`'s two subsets, mapped to the names the record publishes them under.
+
+Both travel on every Lead Time, as named fields rather than a list, for the reason `TIERS`
+gives: the `big swell` rows cover the bigger seas and are the more flattering of the two, so a
+record that could carry one subset alone would render the kinder number under a heading that
+reads as the whole finding.
+"""
+
+BIG_SWELL_M = 3.0
+"""The Significant Wave Height the `big swell` subset is drawn at, published rather than typed.
+
+A copy of `analysis/forecast_error/profile.py`'s constant of the same name, which
+`coverage.py` imports and scores the subset with, and `--check` pins the two together.
+Published so the page states the bar from the record instead of carrying a literal that
+survives the report changing underneath it.
+
+**It is not the height bar a Go Call rests on.**
+`thresholds.json` sets that at 2.75 m [now:minimum_significant_wave_height_m], and
+`analysis/distribution_coverage/README.md` is explicit that 3 m is an analysis choice, drawn
+there "rather than at a Gold Day". Calling this subset the sea a Go Call is issued on would
+state something false about the one number a reader is being asked to spend money on — which
+is the failure this whole section was added to end rather than to commit again.
+"""
+
+BIG_SWELL_SOURCE = ROOT / "analysis" / "forecast_error" / "profile.py"
+"""Where `BIG_SWELL_M` is defined. Read as text by `--check`: importing it would drag in the
+profile module's dependencies for one float, and the pin only needs the literal."""
+
+RANGE_UNDERSTATES_BECAUSE = (
+    "The range this system actually prints is wider still. Every distribution measured here "
+    "was built without the wave models' disagreement term, which only ever widens a range, so "
+    "the real coverage at short notice is higher than the figures above and the gap is larger "
+    "than they show."
+)
+"""Why the measurement is a floor rather than an estimate.
+
+`analysis/distribution_coverage/README.md`, "What this cannot settle": every distribution in
+that run was built with `model_spread=None`, because no per-Lead-Time ensemble archive exists,
+and `_drift_floor` can only raise the drift. So this moves finding 1 in the direction it
+already points. It lives in that README's prose and `--check` cannot verify it, which is the
+same position `GOLD_DAY_CAVEAT` is in.
+"""
+
+RANGE_RESTS_ON = (
+    "It rests on one partial Big-Wave Season. The 1,593 hours run from 2025-11-26 to "
+    "2026-02-20 and cluster into a few dozen swells rather than standing as independent "
+    "chances to be wrong, and the window holds a single confirmed giant day. Nothing here "
+    "says how the range behaves on the days this system exists for."
+)
+"""The evidence behind the table, stated where the table is rather than at the foot of a page.
+
+Same README, same section. The hours are correlated, the span is one winter, and the only Gold
+Day inside it is 2025-12-13. A reader who takes "1,593 hours" as the sample size has been told
+the flattering half of a two-part fact — the same failure `TierRow` exists to prevent.
 """
 
 GOLD_DAY_CAVEAT = (
@@ -453,6 +513,66 @@ def served_bands(shapes: list[dict[str, str]]) -> list[dict[str, Any]]:
     return sorted(published, key=lambda band: order.index(band["name"]))
 
 
+def range_calibration(coverage: list[dict[str, str]]) -> dict[str, Any]:
+    """What the printed range claims to hold, and what it actually held (#80, #94).
+
+    The one figure on this page measured against outcomes rather than against Gold Days. The
+    interface states a range in metres, `interval_coverage.csv` scored it, and until #94 the
+    page said nothing about the result — which left the single published claim with a
+    measurement behind it as the only one carrying no qualification.
+
+    **Nothing here says which way the miss runs.** The columns are the claim and the
+    measurement, side by side; whatever renders them derives the direction. That is not
+    fastidiousness: #82 exists to narrow this distribution, and a sentence typed here saying
+    "wider than the outcomes justify" would survive the refit that makes it false. The two
+    caveats are directional and typed, because they are prose about *this* run and are
+    rewritten with it.
+    """
+    claimed = {row["nominal"] for row in coverage}
+    if len(claimed) != 1:
+        raise SystemExit(
+            f"{COVERAGE} scores against more than one nominal share ({sorted(claimed)}); the "
+            "page states one claim the whole table is measured against"
+        )
+
+    by_lead: dict[int, dict[str, Any]] = {}
+    for row in coverage:
+        if row["subset"] not in RANGE_SUBSETS:
+            raise SystemExit(
+                f"{COVERAGE} carries subset {row['subset']!r}, which this script has no name "
+                "for; a subset nobody chose must not reach the page under its report spelling"
+            )
+        lead = int(row["lead_days"])
+        subset = RANGE_SUBSETS[row["subset"]]
+        if subset in by_lead.setdefault(lead, {}):
+            raise SystemExit(f"{COVERAGE} carries {row['subset']!r} twice at {lead} days")
+        by_lead[lead][subset] = {
+            "hours": int(row["hours"]),
+            "covered": round(float(row["covered"]), 4),
+            "median_width_m": round(float(row["median_width_m"]), 4),
+            "widening_factor": round(float(row["widening_factor"]), 4),
+        }
+
+    leads = []
+    for lead in sorted(by_lead):
+        missing = [name for name in RANGE_SUBSETS.values() if name not in by_lead[lead]]
+        if missing:
+            raise SystemExit(
+                f"{COVERAGE} has no {missing} row at {lead} days. Both subsets are published "
+                "together or neither is: the big-swell rows cover the bigger seas and are the "
+                "kinder of the two"
+            )
+        leads.append({"lead_days": lead, **by_lead[lead]})
+
+    return {
+        "claimed": float(next(iter(claimed))),
+        "big_swell_from_m": BIG_SWELL_M,
+        "understates_because": RANGE_UNDERSTATES_BECAUSE,
+        "rests_on": RANGE_RESTS_ON,
+        "leads": leads,
+    }
+
+
 def recorded_days(daily: list[dict[str, str]]) -> list[dict[str, Any]]:
     """Every Gold Day, and every day the system issued a Go Call for.
 
@@ -535,6 +655,7 @@ def assemble() -> dict[str, Any]:
         "height_record": {
             "scored": {"bands": scored_bands(rows(SCORED))},
             "served": {"bands": served_bands(rows(SHAPES))},
+            "range_calibration": range_calibration(rows(COVERAGE)),
         },
         "gold_days": {
             "fitted": int(calibration["gold_days_fitted"]),
@@ -769,6 +890,80 @@ def check() -> int:
         "a served row other than the fragile aggregate carries a caveat, which would spread a "
         "warning onto rows that hold their sign under every assumption",
     )
+
+    # 7a. The range calibration (#94). Two kinds of check, and the difference matters.
+    #
+    #     The first are joins: a subset dropped, a Lead Time missing, a width that shrinks as
+    #     the forecast reaches further. Each would publish an ordinary-looking table describing
+    #     a distribution that does not exist.
+    calibration_rows = range_calibration(rows(COVERAGE))
+    leads = calibration_rows["leads"]
+    claim = calibration_rows["claimed"]
+
+    expect(
+        [lead["lead_days"] for lead in leads] == list(range(1, len(leads) + 1)),
+        f"the range table skips a Lead Time: {[lead['lead_days'] for lead in leads]}. The page "
+        "reads down it as a progression, and a gap reads as a forecast that reaches less far",
+    )
+
+    #     The subset's bar is copied from the module that scores it, so the two must agree. A
+    #     page stating a threshold the report did not use describes a subset that was never
+    #     measured — and this one is the bar a reader will take for the Go Call's, which it is
+    #     not (`thresholds.json` sets that at 2.75 m [now:minimum_significant_wave_height_m]).
+    defined = re.search(
+        r"^BIG_SWELL_M\s*=\s*([0-9.]+)", BIG_SWELL_SOURCE.read_text(encoding="utf-8"), re.MULTILINE
+    )
+    expect(
+        defined is not None and float(defined.group(1)) == BIG_SWELL_M,
+        f"{BIG_SWELL_SOURCE.relative_to(ROOT)} defines BIG_SWELL_M as "
+        f"{defined.group(1) if defined else 'nothing this can read'} where this script "
+        f"publishes {BIG_SWELL_M}; the page would state a bar the subset was not scored at",
+    )
+    for lead in leads:
+        expect(
+            lead["big_swell"]["hours"] <= lead["all_hours"]["hours"],
+            f"{lead['lead_days']} d: the big-swell subset holds {lead['big_swell']['hours']} "
+            f"hours against {lead['all_hours']['hours']} for all hours, so it is not a subset",
+        )
+    for subset in RANGE_SUBSETS.values():
+        widths = [lead[subset]["median_width_m"] for lead in leads]
+        expect(
+            all(later > earlier for earlier, later in zip(widths, widths[1:], strict=False)),
+            f"{subset}: the range does not widen with Lead Time ({widths}). Uncertainty that "
+            "falls as the forecast reaches further is a column read in the wrong order",
+        )
+
+    #     The second are directional, and they are pinned on purpose even though #82 exists to
+    #     change them. Today every row says the same thing: the range holds the outcome more
+    #     often than it claims to, at every Lead Time, and increasingly so. The page derives
+    #     that direction from the numbers rather than asserting it — but the two caveats
+    #     published beside them are written for a range that runs wide, and a refit that
+    #     reverses the finding must not slip past with the old prose still attached.
+    for lead in leads:
+        for subset in RANGE_SUBSETS.values():
+            measured = lead[subset]
+            expect(
+                measured["covered"] >= claim,
+                f"{lead['lead_days']} d {subset}: the range held {measured['covered']:.1%} of "
+                f"outcomes against the {claim:.0%} it claims. If this is a genuine refit "
+                "(#82), RANGE_UNDERSTATES_BECAUSE and RANGE_RESTS_ON are written for a range "
+                "that runs wide and no longer describe it",
+            )
+            expect(
+                measured["widening_factor"] < 1.0,
+                f"{lead['lead_days']} d {subset}: widening factor "
+                f"{measured['widening_factor']}, so the range is at or under the width the "
+                "outcomes justify — see the note above",
+            )
+    for subset in RANGE_SUBSETS.values():
+        expect(
+            leads[-1][subset]["widening_factor"] < leads[0][subset]["widening_factor"],
+            f"{subset}: the excess width no longer grows with Lead Time "
+            f"({leads[0][subset]['widening_factor']} at 1 d against "
+            f"{leads[-1][subset]['widening_factor']} at {leads[-1]['lead_days']} d). That "
+            "growth is #80's sharper finding and the reason a single scale factor is not the "
+            "repair",
+        )
 
     # 8. The committed file is the one this script would write now. Everything above checks
     #    the joins; none of it looks at DESTINATION, so a report regenerated after the last
