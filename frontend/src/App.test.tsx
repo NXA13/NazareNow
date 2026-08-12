@@ -117,6 +117,24 @@ describe('current conditions', () => {
     expect(warning.compareDocumentPosition(swell)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
+  it('keeps the staleness warning above the earliest date worth acting on', async () => {
+    // #86's third caution, and the shape of the defect #25 was filed about. The forecast
+    // section now opens with a confident sentence telling a reader what to book; rendered
+    // above the banner it would be advice given before the disclosure that it is history.
+    // Nothing but document order enforces this, and nothing but this test reads it.
+    server.use(
+      http.get('*/api/conditions/current', () =>
+        HttpResponse.json({ ...currentConditions, stale: true }),
+      ),
+    );
+
+    render(<App />);
+
+    const warning = await screen.findByRole('alert');
+    const earliest = await screen.findByTestId('earliest-call');
+    expect(warning.compareDocumentPosition(earliest)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
   it('shows no staleness warning when the data is current', async () => {
     // The warning must be driven by the flag, not always rendered. A permanently visible
     // "out of date" banner is worse than none: it trains the reader to ignore it.

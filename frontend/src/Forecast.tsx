@@ -794,6 +794,108 @@ function SwellWindows({ days }: { days: ForecastDay[] }) {
   );
 }
 
+/** The span of a window, as the two `time` elements a sentence can be built around.
+ *
+ * Shared by the statement above and nothing else yet. It exists so the window a Go Call falls
+ * inside is rendered from `swellWindows` rather than re-derived — two answers to "which days
+ * is this swell" is exactly the drift #85 was written to prevent. */
+function WindowSpan({ window }: { window: SwellWindow }) {
+  const first = window.days[0]!;
+  const last = window.days[window.days.length - 1]!;
+
+  return (
+    <>
+      {' '}
+      It falls inside a <strong>{window.days.length}-day swell</strong>,{' '}
+      <time dateTime={first.date} data-testid="earliest-window-start">
+        {dayLabel(first.date)}
+      </time>{' '}
+      to{' '}
+      <time dateTime={last.date} data-testid="earliest-window-end">
+        {dayLabel(last.date)}
+      </time>
+      .
+    </>
+  );
+}
+
+/**
+ * The one sentence a Traveller came for: is there anything worth booking, and when.
+ *
+ * Story 23 of #1, which the range delivered only in the sense that a reader could assemble
+ * the answer themselves by scanning fourteen dated cards. Story 28 asks for the current
+ * status without navigating, and a scan is navigation.
+ *
+ * **The earliest, not the largest.** The largest day is where the eye lands in the range
+ * below and it answers a different question. What makes a date actionable is that its flights
+ * are still bookable, which is a fact about how soon it is.
+ *
+ * **A Watch is a fallback, never a substitute.** CONTEXT.md is explicit that a Watch tells a
+ * reader to pay attention and a Go Call tells them to spend money, so an earlier Watch must
+ * not outrank a Go Call behind it. Both branches say which they are.
+ *
+ * **Confirmed is not on this ladder.** It is a short-range statement to somebody already
+ * travelling and carries no booking recommendation, so it is not something to act on — and
+ * #84 settled that the four statuses have no ordering that could promote it. That is why the
+ * quiet sentence says *no Go Call and no Watch* rather than "the range is quiet": a Confirmed
+ * day in range would make the second one false, and this sentence sits above the range that
+ * would contradict it.
+ *
+ * **The Lead Time is `lead_time_days` and is not a countdown.** `DayCall` fixes it when the
+ * call is issued rather than recomputing it against the clock, so it is stated as *issued
+ * three days ahead* and never as "in three days" — which would be a claim about today that
+ * this number does not make.
+ *
+ * **It does not restate staleness.** If the store is old the top of the page already says so
+ * (story 10), and this renders below that banner. Nothing but document order holds that; the
+ * App suite is what reads it.
+ *
+ * **Earliest means first in the range**, which arrives in date order from
+ * `/api/conditions/forecast` — the same assumption `swellWindows` rests on.
+ */
+function EarliestWorthActingOn({ days }: { days: ForecastDay[] }) {
+  const first = (status: CallStatus) => days.find((day) => day.call?.status === status) ?? null;
+
+  const go = first('go');
+  const watch = go ? null : first('watch');
+  const day = go ?? watch;
+  const window = day ? (swellWindows(days).find((w) => w.days.includes(day)) ?? null) : null;
+
+  return (
+    <p className="earliest" data-testid="earliest-call">
+      {day === null ? (
+        <>
+          <strong>Nothing to book yet.</strong> No day in the next {days.length} days carries a Go
+          Call or a Watch. That is the ordinary state of this coast rather than a gap in the
+          forecast — most weeks of the year say exactly this.
+        </>
+      ) : go ? (
+        <>
+          <strong>
+            Book for{' '}
+            <time dateTime={go.date} data-testid="earliest-date">
+              {dayLabel(go.date)}
+            </time>
+            .
+          </strong>{' '}
+          The earliest Go Call in this range, issued {go.call!.lead_time_days} days ahead.
+          {window && <WindowSpan window={window} />}
+        </>
+      ) : (
+        <>
+          <strong>Nothing to book yet.</strong> The earliest day worth attention is{' '}
+          <time dateTime={day.date} data-testid="earliest-date">
+            {dayLabel(day.date)}
+          </time>
+          , a Watch issued {day.call!.lead_time_days} days ahead. Start watching flights; do not
+          book on it.
+          {window && <WindowSpan window={window} />}
+        </>
+      )}
+    </p>
+  );
+}
+
 export function ForecastRange() {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const [openDate, setOpenDate] = useState<string | null>(null);
@@ -827,6 +929,11 @@ export function ForecastRange() {
   return (
     <section aria-labelledby="forecast-heading">
       <h2 id="forecast-heading">The next {state.forecast.days.length} days</h2>
+
+      {/* First, and above the windows: a reader who takes one sentence from this page should
+          take this one. The windows below give it its shape and the range below that gives
+          every day its own verdict, in that order of how much reading each costs. */}
+      <EarliestWorthActingOn days={state.forecast.days} />
 
       <SwellWindows days={state.forecast.days} />
 
