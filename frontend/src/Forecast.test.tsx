@@ -1048,7 +1048,7 @@ describe('how sure the forecast is', () => {
     }
     render(<ForecastRange />);
     await userEvent.click(await screen.findByRole('button', { name: new RegExp(date) }));
-    return screen.findByTestId(`confidence-${date}`);
+    return screen.findByTestId(`plausible-range-${date}`);
   }
 
   it('states the plausible range in metres rather than a bare percentage', async () => {

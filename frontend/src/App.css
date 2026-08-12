@@ -413,11 +413,11 @@ footer p {
  * to take the point estimate as the answer and the range as a footnote, which is the reading
  * ticket #15 exists to end. The beyond-the-archive notice inside it keeps `.alert`, because
  * that one genuinely is a shortfall in what was measured. */
-.confidence {
+.plausible-range {
   margin: 0 0 0.5rem;
 }
 
-.confidence p {
+.plausible-range p {
   margin: 0 0 0.5rem;
 }
 
@@ -426,7 +426,7 @@ footer p {
  * Muted rather than an `.alert`: it is a scope note on an honest figure, not a warning that
  * something is wrong. Loud styling here would compete with the beyond-the-archive notice,
  * which is a genuine shortfall and has to stay the louder of the two. */
-.confidence-scope {
+.plausible-range-scope {
   color: var(--muted);
   font-size: 0.9rem;
 }

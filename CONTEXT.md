@@ -158,7 +158,7 @@ _Avoid_: prediction, estimate, forecast
 The degree of disagreement between independent third-party wave models forecasting the same
 date. Used as the system's uncertainty estimate, since no ensemble marine forecast is available.
 Narrow spread means confidence; wide spread means doubt.
-_Avoid_: variance, error bars, confidence
+_Avoid_: variance, error bars, confidence (as a name for it)
 
 **Lead Time**:
 The interval between a Go Call being issued and the swell arriving. The quantity the system

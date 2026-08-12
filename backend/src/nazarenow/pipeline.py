@@ -523,7 +523,7 @@ def derive_calls(hours: list[dict[str, Any]], ensemble: Ensemble) -> list[dict[s
         ]
 
         # A distribution is priced before the ranking only where it can change a decision,
-        # which is the hours already clearing every Go Call condition — `_confident_enough`
+        # which is the hours already clearing every Go Call condition — `_height_probable_enough`
         # gates that branch and no other. Doing it for every hour would be correct and
         # wasteful: one costs 22.9 ms, so a real 216-hour forecast would spend 4.9 s to
         # decide the same calls.

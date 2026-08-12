@@ -18,7 +18,7 @@ moment that did not produce the call sitting beside it — while looking entirel
 Measured, one costs 22.9 ms, so all 216 hours of a real forecast would be 4.9 s. That is
 comfortably inside a three-hour cycle and would still be the wrong shape: the only hours
 whose distribution can change a *decision* are the ones already clearing every Go Call
-condition, because that is the sole branch `_confident_enough` gates. So those are built
+condition, because that is the sole branch `_height_probable_enough` gates. So those are built
 before the ranking, the winner gets one afterwards for the range a user reads, and the rest
 are never built at all.
 """

@@ -10,9 +10,10 @@ reports the two numbers a reader of the site actually rests on:
 counts how often it did.
 
 **The probability behind a Go Call** (`gate_reliability.csv`). `decide` withholds a Go Call
-unless `height_bar_probability` reaches `GO_CALL_CONFIDENCE`, which is 0.70. That number is a
-share of `offshore_samples` clearing the calibrated height bar (#66), so it is a forecast of
-an event that either happened or did not, and it can be scored the way any probability is:
+unless `height_bar_probability` reaches `GO_CALL_MINIMUM_HEIGHT_PROBABILITY`, which is 0.70.
+That number is a share of `offshore_samples` clearing the calibrated height bar (#66), so it
+is a forecast of an event that either happened or did not, and it can be scored the way any
+probability is:
 group the hours by what was predicted and count what happened.
 
 **The real builder, not a copy.** `ErrorBudget.shipped()` and
@@ -96,9 +97,9 @@ three places to update if `range_m` ever reported a different pair.
 PROBABILITY_BINS = (0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)
 """Deciles of predicted probability, the standard grouping for a reliability table.
 
-The bin edges matter for one reason beyond convention: 0.70 is `GO_CALL_CONFIDENCE`, so it
-falls on an edge and the three bins above it are exactly the hours a Go Call could have been
-issued on.
+The bin edges matter for one reason beyond convention: 0.70 is
+`GO_CALL_MINIMUM_HEIGHT_PROBABILITY`, so it falls on an edge and the three bins above it are
+exactly the hours a Go Call could have been issued on.
 """
 
 
@@ -605,7 +606,8 @@ def check() -> int:
                     and float(row["bin_low"]) >= 0.7
                     for row in gate
                 ),
-                "no hour at this Lead Time was ever predicted at or above GO_CALL_CONFIDENCE",
+                "no hour at this Lead Time was ever predicted at or above "
+                "GO_CALL_MINIMUM_HEIGHT_PROBABILITY",
             )
 
     for failure in failures:

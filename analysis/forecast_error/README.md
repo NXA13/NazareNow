@@ -326,12 +326,12 @@ they stack: a wind reading a Go Call is issued on carries both.
 | `output/drift_by_lead_time.csv` | Drift within Open-Meteo, per variable, Lead Time and subset. |
 | `output/total_error_by_lead_time.csv` | Total error against the Proxy Target. |
 | `output/reference_stability.csv` | Mean drift per calendar month, the evidence behind finding 4. |
-| `confidence.py` | Prices #15's Go Call confidence floor against Gold Day recall. `--check` self-tests the arithmetic offline. |
-| `output/go_call_confidence.csv` | Every Gold Day's chance of clearing the height bar, per Lead Time. |
+| `height_probability.py` | Prices #15's Go Call height probability floor against Gold Day recall. `--check` self-tests the arithmetic offline. |
+| `output/go_call_height_probability.csv` | Every Gold Day's chance of clearing the height bar, per Lead Time. |
 | `wind_sensitivity.py` | Prices perturbing wind, the one omitted input that is archived. `--check` holds its sampler to the shipped one. |
 | `output/wind_perturbation.csv` | What wind perturbation would add to the plausible range, per fixture and Lead Time. |
 
-## Finding 5 — the Go Call confidence floor is priceable, in the direction that can lose a day
+## Finding 5 — the Go Call height probability floor is priceable, in the direction that can lose a day
 
 Added by #15. The Decision Model withholds a Go Call when too little of the incoming reading's
 Predictive Distribution clears the calibrated height bar, and that floor shipped at 0.9 on the
@@ -342,7 +342,7 @@ been read off the Amplification Model's *output* against a bar that judges the *
 reading*; the model amplifies, so every marginal day looked further clear of the bar than it
 was — a 2.75 m <!--now:minimum_significant_wave_height_m--> sea sitting exactly on the bar read 0.84 rather than 0.52.
 
-Corrected, `confidence.py` prices it against the 38 Gold Days on record, restated into
+Corrected, `height_probability.py` prices it against the 38 Gold Days on record, restated into
 operational units through the same Translation `calibrate.py` ships the bars through:
 
 | Floor | Eligible Gold Days losing a Go Call somewhere in Lead Time 1–7 |

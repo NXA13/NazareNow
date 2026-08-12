@@ -270,7 +270,7 @@ function CallDetail({ day, model }: { day: ForecastDay; model: string | null }) 
               figure, carried through unchanged. Nothing here models what the canyon does to it yet.
             </p>
           )}
-          <Confidence day={day} />
+          <PlausibleRange day={day} />
           <Shift day={day} />
         </>
       )}
@@ -279,6 +279,12 @@ function CallDetail({ day, model }: { day: ForecastDay; model: string | null }) 
 }
 
 /** How sure the forecast is, as a range in metres rather than a percentage on the height.
+ *
+ * **Named for the range it renders, not for how sure the system is (#76, ADR 0014).** It shows
+ * the plausible range, the share of it above the height bar, and the caveats scoping both — and
+ * calling it `Confidence` put that word on a block whose own scope paragraph exists to say the
+ * figure is *not* the chance of a giant day. The identifier contradicted the caveat it wrapped.
+ * "Confidence" also belongs to Model Spread in the glossary, which this block does not render.
  *
  * The point of ticket #15. "6.1 metres, 78% confident" gives a reader nothing to act on: it
  * asks them to convert a confidence into a size themselves, which is the arithmetic the
@@ -307,7 +313,7 @@ function CallDetail({ day, model }: { day: ForecastDay; model: string | null }) 
  * calls issued before the pipeline built them, and drawing a range of zero width for one
  * would read as total certainty about the oldest predictions in the record.
  */
-function Confidence({ day }: { day: ForecastDay }) {
+function PlausibleRange({ day }: { day: ForecastDay }) {
   const call = day.call;
   const range = call?.plausible_range;
   if (!call || !range) return null;
@@ -317,7 +323,7 @@ function Confidence({ day }: { day: ForecastDay }) {
   const probability = call.height_bar_probability;
 
   return (
-    <div className="confidence" data-testid={`confidence-${day.date}`}>
+    <div className="plausible-range" data-testid={`plausible-range-${day.date}`}>
       <p>
         Plausibly{' '}
         <strong>
@@ -337,7 +343,7 @@ function Confidence({ day }: { day: ForecastDay }) {
           a reader would reasonably take the percentage for the chance of a giant day. Rendered
           from the same guard as the figure above, so the caveat cannot outlive what it caveats. */}
       {probability !== null && (
-        <p className="confidence-scope">
+        <p className="plausible-range-scope">
           Height only. The swell period, swell direction and wind a giant day also needs are not
           part of that figure.
         </p>
