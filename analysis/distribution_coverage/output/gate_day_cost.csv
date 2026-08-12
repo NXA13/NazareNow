@@ -1,0 +1,15 @@
+lead_days,scope,days_scored,go_days_ungated,go_days_gated,days_withheld,confirmed_days_ungated,confirmed_days_gated,gold_days_scored,gold_days_ungated,gold_days_gated,withheld_dates
+1,all,257,0,0,0,15,15,1,0,0,
+1,Oct-Mar only,135,0,0,0,15,15,1,0,0,
+2,all,256,15,14,1,0,0,1,1,1,2026-02-21
+2,Oct-Mar only,134,15,14,1,0,0,1,1,1,2026-02-21
+3,all,255,15,14,1,0,0,1,1,1,2026-02-21
+3,Oct-Mar only,133,15,14,1,0,0,1,1,1,2026-02-21
+4,all,254,15,14,1,0,0,1,1,1,2026-02-21
+4,Oct-Mar only,132,15,14,1,0,0,1,1,1,2026-02-21
+5,all,253,15,14,1,0,0,1,1,1,2026-02-21
+5,Oct-Mar only,131,15,14,1,0,0,1,1,1,2026-02-21
+6,all,252,15,14,1,0,0,1,1,1,2026-02-21
+6,Oct-Mar only,130,15,14,1,0,0,1,1,1,2026-02-21
+7,all,251,15,14,1,0,0,1,1,1,2026-02-21
+7,Oct-Mar only,129,15,14,1,0,0,1,1,1,2026-02-21

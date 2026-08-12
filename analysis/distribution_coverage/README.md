@@ -18,7 +18,9 @@ It does not. **It holds it more often**, and the excess grows with Lead Time.
 .venv/Scripts/python.exe analysis/distribution_coverage/settled.py     # caches the settled Swell
 .venv/Scripts/python.exe analysis/distribution_coverage/coverage.py    # findings 1 and 2
 .venv/Scripts/python.exe analysis/distribution_coverage/sensitivity.py # what the one caveat costs
+.venv/Scripts/python.exe analysis/distribution_coverage/gate_cost.py   # finding 2, in days (#96)
 .venv/Scripts/python.exe analysis/distribution_coverage/coverage.py --check   # offline
+.venv/Scripts/python.exe analysis/distribution_coverage/gate_cost.py --check  # offline
 ```
 
 Same honest qualification as `analysis/forecast_error/README.md`: only `--check` runs from a
@@ -131,8 +133,28 @@ height condition refused a Go Call and the sea did what the bar asks.
 
 **This is not a count of lost Go Calls and must not be read as one.** The height condition is
 one of several a Go Call rests on — swell period is the one the calibration found actually binds
-— and hours are not days. Converting this into calls means re-running `analysis/backtest/`, which
-is the follow-up, not this ticket.
+— and hours are not days.
+
+**#96 did the conversion, and it is much smaller than the hours suggest.** `gate_cost.py` runs
+the full Go Call rule at every Lead Time, once with the gate and once without, and the gate
+withholds **1 of 15 Go Call days**: 2026-02-21, at every Lead Time from two days out to seven. It
+does not take 2025-12-13, the only Gold Day in the span.
+
+**It runs over a wider archive than the tables above.** Those are joined to the Proxy Target and
+so stop at 2026-02-20; `gate_cost.py` needs no outcome, only a forecast, so it spans the whole
+run archive — **2025-11-16 to 2026-07-31**. That is a partial Big-Wave Season plus four months of
+summer, which is why every row is reported twice, `all` and `Oct-Mar only`. The Go Call days are
+identical under both (15 and 14); only the denominator moves, 257 days against 135. The withheld
+date, 2026-02-21, falls *outside* the window the tables above cover.
+
+The shortest Lead Time shows no Go Calls to withhold, and the reason is availability rather than
+the gate: `go_call_is_available` requires `CONFIRMED_THROUGH < lead_time_days`, so at one day out
+the tier does not exist and those fifteen days are Confirmed instead. Separately, the gate can
+never reduce a Confirmed at any Lead Time, because `decide` assigns that status in a branch that
+does not read the probability.
+
+So the alarming shape of the bin table — a whole band in which every hour cleared the bar — costs
+one day. That is worth knowing before spending #82's repair on it.
 
 ## Finding 3 — what the one flattering approximation actually costs
 

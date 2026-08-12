@@ -55,6 +55,7 @@ import gap  # noqa: E402
 import measure  # noqa: E402
 from nazarenow.days import group_by_date  # noqa: E402
 from nazarenow.decision import Agreement, Status, decide, strength  # noqa: E402
+from nazarenow.distribution import PredictiveDistribution  # noqa: E402
 from nazarenow.models.heuristic import HeuristicBaseline  # noqa: E402
 from nazarenow.thresholds import Thresholds  # noqa: E402
 from nazarenow.thresholds import load as load_thresholds
@@ -71,6 +72,29 @@ reachable, within `GO_CALL_THROUGH` so a Go Call is too — which lets a single 
 both tiers from the same conditions. Nothing else in the score depends on it: the Hindcast
 carries no Lead Time of its own, and the Heuristic Baseline's conditions do not vary with
 one. Only the tier names do.
+"""
+
+NOTHING_TO_BE_UNCERTAIN_ABOUT: PredictiveDistribution | None = None
+"""The second gate this report scores with off, and the reason it is now written down.
+
+A Go Call in the running system must also clear `GO_CALL_MINIMUM_HEIGHT_PROBABILITY`: the
+distribution's probability that the sea clears the height bar. **A Hindcast carries no forecast
+error**, so there is no distribution to price and `_height_probable_enough` returns `True` —
+which is right, and is the same argument `MODELS_ASSUMED_TO_AGREE` makes below. Scoring what the
+ocean did must not silently become stricter than the rule it is scoring.
+
+**Named and passed explicitly because it used to be a parameter default** (#96). `decide`'s
+fourth argument defaults to `None`, so this report skipped a shipped Go Call condition by
+omission — nothing in this file or its README mentioned it, while the sister gate one line below
+had a constant, a docstring and a block quote in the README. A gate skipped by default is the
+one form of this a reader cannot discover.
+
+So the Go Call figures here are a ceiling in this respect too.
+`analysis/distribution_coverage/gate_cost.py` measures what it costs: over the run archive —
+2025-11-16 to 2026-07-31, a partial Big-Wave Season plus four months of summer — the gate
+withholds **1 of 15 Go Call days** and does not take the single Gold Day in that span. Smaller
+than the agreement gate's 4 of 23, over a different and shorter record, and measured with
+agreement held open, so it is this gate's cost given the models agree rather than a marginal one.
 """
 
 MODELS_ASSUMED_TO_AGREE = Agreement.AGREED
@@ -157,7 +181,12 @@ def call_days(
         for hour in day_hours:
             readings = {k: v for k, v in hour.items() if k != "at"}
             prediction = model.predict(readings)
-            call = decide(prediction, LEAD_TIME_DAYS, MODELS_ASSUMED_TO_AGREE)
+            call = decide(
+                prediction,
+                LEAD_TIME_DAYS,
+                MODELS_ASSUMED_TO_AGREE,
+                NOTHING_TO_BE_UNCERTAIN_ABOUT,
+            )
             if strength(call.status) > strength(best):
                 best = call.status
             peak = max(peak, float(readings["significant_wave_height"]))

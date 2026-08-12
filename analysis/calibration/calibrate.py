@@ -90,6 +90,14 @@ A calibration that fitted the bars under one assumption about the wave models wh
 report scored them under another would produce numbers that disagree for a reason neither
 document names. `backtest.MODELS_ASSUMED_TO_AGREE` carries the argument for the assumption:
 a Hindcast is what the ocean did, and contains no forecast to disagree."""
+NOTHING_TO_BE_UNCERTAIN_ABOUT = backtest.NOTHING_TO_BE_UNCERTAIN_ABOUT
+"""The other gate, taken from the backtest for the same reason and passed explicitly (#96).
+
+A Go Call also has to clear `GO_CALL_MINIMUM_HEIGHT_PROBABILITY`, and a Hindcast carries no
+forecast error for that gate to read. Naming it here rather than letting `decide`'s fourth
+argument default keeps the bars fitted under exactly the conditions the report scores them
+under — and stops a shipped Go Call condition being absent from a calibration with nothing in
+this file to say so."""
 GO_TIERS = backtest.GO_TIERS
 WATCH_OR_BETTER = backtest.WATCH_OR_BETTER
 
@@ -263,7 +271,12 @@ def call_days(hours: list[dict[str, float | str]], model: HeuristicBaseline) -> 
         best = Status.NONE
         for hour in day_hours:
             readings = {k: v for k, v in hour.items() if k != "at"}
-            call = decide(model.predict(readings), LEAD_TIME_DAYS, MODELS_ASSUMED_TO_AGREE)
+            call = decide(
+                model.predict(readings),
+                LEAD_TIME_DAYS,
+                MODELS_ASSUMED_TO_AGREE,
+                NOTHING_TO_BE_UNCERTAIN_ABOUT,
+            )
             if strength(call.status) > strength(best):
                 best = call.status
         calls[day] = best

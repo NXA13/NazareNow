@@ -479,6 +479,43 @@ describe('the live record', () => {
   });
 });
 
+describe('what the reconstruction could not ask', () => {
+  it('says the two live Go Call conditions are missing from these calls', async () => {
+    // A live Go Call must also clear the forecasters agreeing and enough of the predicted
+    // range sitting above the height bar. Neither question exists for a day that has already
+    // happened, so no counted call was ever asked them — and the page said only that a real
+    // forecast is "less certain", which names no condition a reader could go and check.
+    render(<TrackRecordPage />);
+
+    const caveat = await screen.findByTestId('gates-caveat');
+
+    expect(caveat).toHaveTextContent(/forecasters to agree/);
+    expect(caveat).toHaveTextContent(/sits above the height bar/);
+    expect(caveat).toHaveTextContent(/no call below was ever asked them/);
+  });
+
+  it('does not call either gate the system being confident', async () => {
+    // ADR 0014 renamed this gate off that word because the glossary assigns it to the models'
+    // agreement — the other gate in the same sentence. Using it here would collapse the two
+    // the sentence exists to hold apart, and the identifier guard scans names, not prose.
+    render(<TrackRecordPage />);
+
+    const caveat = await screen.findByTestId('gates-caveat');
+
+    expect(caveat.textContent).not.toMatch(/confiden/i);
+  });
+
+  it('quotes no figure for either gate, because the spans do not match', async () => {
+    // Both costs are measured, on shorter and different spans than these panels cover.
+    // Printing them here would invite a reader to subtract one from the other.
+    render(<TrackRecordPage />);
+
+    const caveat = await screen.findByTestId('gates-caveat');
+
+    expect(caveat.textContent).not.toMatch(/\d/);
+  });
+});
+
 describe('the range it prints, measured', () => {
   /**
    * The one claim on this site that had a measurement behind it and no mention of it.
