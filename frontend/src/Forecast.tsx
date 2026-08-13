@@ -3,11 +3,14 @@ import { useEffect, useState } from 'react';
 import {
   fetchForecast,
   type CallStatus,
+  type DayCall,
   type DaySpread,
   type Forecast,
   type ForecastDay,
+  type HeightRange,
+  type Reading,
 } from './api';
-import { compassPoint, formatReading, formatTimestamp, formatValue } from './format';
+import { compassPoint, formatRange, formatReading, formatTimestamp, formatValue } from './format';
 
 type LoadState =
   { status: 'loading' } | { status: 'loaded'; forecast: Forecast } | { status: 'failed' };
@@ -271,7 +274,11 @@ function CallDetail({ day, model }: { day: ForecastDay; model: string | null }) 
             </p>
           )}
           <PlausibleRange day={day} />
+          {/* The last step, then the shape of it. In that order because a reader who takes
+              one line from this panel should take "what changed since I last looked", and
+              the series is what they read when that line is not enough (#99). */}
           <Shift day={day} />
+          <History day={day} />
         </>
       )}
     </div>
@@ -325,12 +332,7 @@ function PlausibleRange({ day }: { day: ForecastDay }) {
   return (
     <div className="plausible-range" data-testid={`plausible-range-${day.date}`}>
       <p>
-        Plausibly{' '}
-        <strong>
-          {formatValue(range.low)}
-          {range.unit} to {formatValue(range.high)}
-          {range.unit}
-        </strong>
+        Plausibly <strong>{formatRange(range)}</strong>
         {probability !== null && (
           <>
             {' '}
@@ -478,6 +480,160 @@ function TierChange({ date, before, now }: { date: string; before: CallStatus; n
         </>
       )}
     </p>
+  );
+}
+
+/** One run's opinion about a date, reduced to what a series of them is read for. */
+interface HistoryPoint {
+  /** When the run that said this spoke, or null for the run being read now.
+   *
+   * One field rather than a flag beside a `'current'` key sentinel. Two fields restating one
+   * fact can disagree, and this one answers both questions the row asks — which point is the
+   * present, and when the superseded ones spoke.
+   *
+   * The current call carries no `issued_at` of its own: `DayCall` does not have one, and the
+   * run that produced it is dated once at the foot of the range. */
+  issuedAt: string | null;
+  leadTimeDays: number;
+  height: Reading;
+  range: HeightRange | null;
+  status: CallStatus;
+}
+
+/** Every run the page was sent about a date, oldest first, ending with the current one.
+ *
+ * The current call is built into the same shape rather than rendered separately, because a
+ * series that stopped one run short of the present would say nothing about where the forecast
+ * has actually arrived — and two shapes for one kind of thing is how the last point ends up
+ * formatted differently from the ones before it.
+ */
+function historyPoints(call: DayCall): HistoryPoint[] {
+  return [
+    ...call.previous_runs.map((run) => ({
+      issuedAt: run.issued_at,
+      leadTimeDays: run.lead_time_days,
+      height: run.predicted_significant_wave_height,
+      range: run.plausible_range,
+      status: run.status,
+    })),
+    {
+      issuedAt: null,
+      leadTimeDays: call.lead_time_days,
+      height: call.predicted_significant_wave_height,
+      range: call.plausible_range,
+      status: call.status,
+    },
+  ];
+}
+
+/**
+ * The shape of a prediction across runs, rather than its last step.
+ *
+ * Story 22 of #1, whose second clause is the whole of it: *"so that I can tell a firming
+ * forecast from a wavering one"*. `Shift` above compares against the run immediately before,
+ * which answers "what changed since I last looked" and cannot answer this one — a single step
+ * has a direction and no shape. A date the runs took 4.1 → 5.2 → 6.1 → 6.4 m and a date they
+ * took 7.9 → 3.4 → 6.1 → 6.4 m drew the identical sentence — both end 0.3 m above the run
+ * before — and the first is a swell to book on while the second is a forecast to wait another
+ * cycle on. (The two series have to share their *last* value for that to be true, which is
+ * what `Shift` compares against and what the fixtures behind this are built to.)
+ *
+ * The data was already here. The store keeps every call ever made (ADR 0005), `recent_calls`
+ * windows the last five per date, and `previous_runs` sends the superseded ones oldest first
+ * — and `Shift` read `at(-1)` and dropped the rest.
+ *
+ * **Every row is dated, and that is not decoration.** Pipeline Runs are three-hourly
+ * (`cycle.py`) while `lead_time_days` is a whole number of days, so consecutive runs about one
+ * date routinely share a Lead Time: a ladder labelled only by Lead Time prints "6 days out"
+ * four times with nothing to order it by. The Lead Time stays because a range narrowing from
+ * ten days out to three is the forecast doing its job and the same narrowing at a fixed Lead
+ * Time is something else entirely — the two answer different questions and both are needed.
+ *
+ * **The bar is the shape, the number is the truth.** The story asks a reader to tell firming
+ * from wavering *at a glance*, and a column of figures makes them do the comparison the page
+ * was supposed to make for them. The bar is scaled against the largest point in this series —
+ * the same relative treatment `prominence` uses above, needing no domain knowledge and no
+ * calibrated threshold — and is `aria-hidden`, because the heights beside it are what a
+ * reader acts on and a screen reader must get those rather than a width.
+ *
+ * **No verdict is derived.** Naming a series "wavering" would be this layer judging a record
+ * it does not own, on a bound nobody has calibrated — how much reversal is wavering? The page
+ * derives directional claims only where the numbers visibly support one, as `TrackRecord`'s
+ * `verdictAcross` does over a table whose every row is on screen.
+ *
+ * **Nothing here explains a superseded call.** `EarlierCall` drops the reasons and both
+ * withholding flags on purpose — a stale explanation beside a current one is worse than no
+ * history — so the series carries heights, ranges and tiers and nothing else.
+ *
+ * **Two points are not a series.** One previous run is a comparison and `Shift` already makes
+ * it in a sentence. The cost is real and worth naming: that one earlier run's plausible range
+ * is then rendered nowhere. It is accepted because two points cannot answer the question this
+ * section exists for — firming and wavering are indistinguishable across a single step.
+ */
+function History({ day }: { day: ForecastDay }) {
+  const call = day.call;
+  if (!call || call.previous_runs.length < 2) return null;
+
+  const points = historyPoints(call);
+  const largest = Math.max(...points.map((point) => point.height.value));
+
+  return (
+    <section className="history" data-testid={`history-${day.date}`}>
+      <h4>How this day has moved across runs</h4>
+      <ol>
+        {points.map((point, index) => (
+          // The index is in the key because `issued_at` is not unique by construction:
+          // `store.py` notes that two runs landing inside one second tie on it, and tied keys
+          // drop a row. The stamp stays in the key so a re-render that reorders nothing keeps
+          // its rows, and the index makes the pair total.
+          <li
+            key={`${point.issuedAt ?? 'current'}-${index}`}
+            className={point.issuedAt === null ? 'current' : undefined}
+          >
+            <span className="run">
+              {point.issuedAt === null ? (
+                'this run'
+              ) : (
+                <time dateTime={point.issuedAt} data-testid="run-issued">
+                  {formatTimestamp(point.issuedAt)}
+                </time>
+              )}
+            </span>
+            <span className="lead">{point.leadTimeDays} days out</span>
+            <span className="track" aria-hidden="true">
+              <span
+                className="fill"
+                style={{ width: `${largest > 0 ? (point.height.value / largest) * 100 : 0}%` }}
+              />
+            </span>
+            <strong>{formatReading(point.height)}</strong>
+            {/* Not a band of zero width where a call recorded none, which would read as total
+                certainty about the oldest and least informed point in the series. Those are
+                calls issued before the pipeline built distributions at all. */}
+            <span className="range">
+              {point.range ? formatRange(point.range) : 'no range recorded'}
+            </span>
+            <span className={`call call-${point.status}`}>{CALL_LABELS[point.status]}</span>
+          </li>
+        ))}
+      </ol>
+      {/* The bound is stated because it is arbitrary, and stated as a bound on the *response*
+          rather than on the record. ADR 0005 keeps every call ever made; five per date is
+          `recent_calls`' default, and at a three-hourly cadence these rows can span half a day
+          of a fortnight-long approach. */}
+      <p className="aside">
+        The runs this page was sent, oldest first. Every call this system has ever made is kept, so
+        this is a recent window on a date that was spoken about far more often than these rows show.
+      </p>
+      {/* Named here rather than inherited from the panel above, exactly as `Delivered` and the
+          range calibration do on the track record. A reader who takes these metres for a wave
+          face reads a 6 m series as routine; one who takes it the other way reads it as
+          impossible. */}
+      <p className="aside">
+        Every height here is significant wave height 15km offshore — not the height of a wave face,
+        and not convertible to one by any fixed ratio.
+      </p>
+    </section>
   );
 }
 
