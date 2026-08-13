@@ -308,6 +308,16 @@ footer p {
   margin-left: 0.15rem;
 }
 
+/* The wind's bearing sits in the wind cell rather than in a column of its own, because a
+   bearing at 4 km/h and the same bearing at 40 mean different things and the two should not
+   be readable apart (#98). `margin-left: auto` does nothing outside a flex container, so the
+   gap is stated here rather than inherited from the badge's own rule. */
+.hours-scroll .bearing {
+  margin-left: 0.4rem;
+  font-size: 0.7rem;
+  padding: 0.05rem 0.3rem;
+}
+
 /* Prominence relative to the rest of the range, so the standout day is visible at a
    glance whether the week peaks at 1.2m or 12m. Selection is declared after these and
    with a higher-specificity selector, because the earlier version let the size classes

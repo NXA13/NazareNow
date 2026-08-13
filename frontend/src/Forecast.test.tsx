@@ -935,6 +935,49 @@ describe('the forecast range', () => {
     }
   });
 
+  it('gives every hour its wind direction, as a bearing and not only a number', async () => {
+    // Stories 3, 5, 6 and 8 of #1 (#98). CONTEXT.md's Offshore Conditions are swell height,
+    // swell period, swell direction, wind speed *and wind direction* — and this table
+    // rendered four of the five. The value was on the wire, asserted through the backend by
+    // `test_wind_is_carried_through.py`, and read by nothing.
+    //
+    // Story 6 is the one that binds: "so that I know when during the day to be at the
+    // beach" is, at Praia do Norte, mostly a question about which way the wind is blowing.
+    render(<ForecastRange />);
+
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
+    const table = await screen.findByRole('table');
+    const rows = within(table).getAllByRole('row').slice(1);
+
+    for (const hour of [0, 7, 23]) {
+      const reading = BIG.hours[hour]!;
+      const wind = within(rows[hour]!).getAllByRole('cell')[3]!;
+
+      expect(wind).toHaveTextContent(compassPoint(reading.wind_direction.value));
+      // The wind's own bearing and not the swell's, which is the mutant the test above
+      // names as having passed every assertion when the column did not exist.
+      expect(wind).not.toHaveTextContent(compassPoint(reading.swell_direction.value));
+    }
+  });
+
+  it('says a bearing is not a verdict when the wind is too light to matter', async () => {
+    // ADR 0009: below a fitted speed the rule does not consult wind direction at all,
+    // because a breeze that cannot raise a ripple cannot wreck a wave face whichever way it
+    // blows. On a page whose call detail refuses days for an onshore wind, a bearing beside
+    // 4 km/h invites exactly the conclusion the model deliberately declines to draw.
+    //
+    // The speed itself is absent on purpose. It is fitted, it lives in `thresholds.json`,
+    // and ADR 0005 makes this layer a reader — a copy typed in here is the defect #76 is
+    // about, and the digit guard is what stops one arriving later.
+    render(<ForecastRange />);
+
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
+
+    const note = await screen.findByTestId('wind-direction-note');
+    expect(note).toHaveTextContent(/light/i);
+    expect(note.textContent).not.toMatch(/\d/);
+  });
+
   it('shows a different day when a different day is opened', async () => {
     render(<ForecastRange />);
 
