@@ -460,6 +460,105 @@ footer p {
   font-size: 0.95rem;
 }
 
+/* The shape of a prediction across runs (#99).
+ *
+ * A ladder with a bar in it rather than a chart. The rows carry the run's own time, the Lead
+ * Time and the tier beside each height — which a bare sparkline cannot, and which is what
+ * stops the series reading as heights on an unlabelled axis. The bar is what answers the
+ * story's "at a glance"; the figures beside it are what a reader books on.
+ *
+ * At most five rows: `recent_calls` sends five calls per date and the current one is not
+ * among the superseded, so four previous plus the present.
+ *
+ * Quiet like `.shift`, which it extends, with the current run the one row in full ink: a
+ * reader scanning it is looking for where the series arrived, and every row at equal weight
+ * makes the present indistinguishable from the superseded opinions above it. */
+.history {
+  margin: 0.5rem 0;
+}
+
+.history h4 {
+  margin: 0 0 0.35rem;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.history ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.history li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.history li.current {
+  color: inherit;
+}
+
+/* Fixed widths so the columns line up down the ladder. A series read for its shape is read
+   down one column, and ragged left edges turn that into separate readings.
+
+   The run's own time leads, because Lead Time repeats: the pipeline is three-hourly and
+   `lead_time_days` is whole days, so two rows commonly say "6 days out". */
+.history .run {
+  flex: 0 0 7rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.history .lead {
+  flex: 0 0 5.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The bar. Scaled against the largest point in this series, so it needs no domain knowledge
+   and no calibrated threshold — the same relative treatment the day cards use. Deliberately
+   not the plausible range: it encodes the one height the row is about, and a track that also
+   drew the range would put two lengths on one line that mean different things. */
+.history .track {
+  flex: 1 1 4rem;
+  min-width: 3rem;
+  height: 0.4rem;
+  border-radius: 0.2rem;
+  background: #eef2f4;
+  overflow: hidden;
+}
+
+.history .fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  opacity: 0.45;
+}
+
+.history li.current .fill {
+  opacity: 1;
+}
+
+.history .range {
+  font-size: 0.85rem;
+}
+
+/* The present row's label sits where the superseded rows carry a timestamp, so the column
+   stays a column. */
+.history li.current .run {
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+}
+
 /* How much the forecasters agree.
  *
  * Styled as a companion to the call detail rather than as an alert. It qualifies the call

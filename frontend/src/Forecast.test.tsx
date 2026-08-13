@@ -17,7 +17,7 @@ import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { type CallStatus } from './api';
+import { type CallStatus, type EarlierCall } from './api';
 import { ForecastRange } from './Forecast';
 import { compassPoint } from './format';
 import { calibration, dayFrom, forecast, unmeasurableSpread } from './test/handlers';
@@ -1576,7 +1576,16 @@ describe('how the prediction has moved', () => {
     return screen.findByTestId(`shift-${date}`);
   }
 
-  const earlier = (value: number, lead: number, issued: string, status: CallStatus = 'watch') => ({
+  // Typed as the wire's own `EarlierCall` rather than inferred, so a fixture can set the
+  // nullable fields to null. Inference narrowed `plausible_range` to the object it happens to
+  // build here, which made the one case that matters — a call issued before the pipeline built
+  // distributions — unrepresentable in the suite that has to cover it.
+  const earlier = (
+    value: number,
+    lead: number,
+    issued: string,
+    status: CallStatus = 'watch',
+  ): EarlierCall => ({
     issued_at: issued,
     lead_time_days: lead,
     status,
@@ -1778,6 +1787,240 @@ describe('how the prediction has moved', () => {
       const statement = await tierChangeFor('none', 'watch');
 
       expect(statement).not.toHaveTextContent(/withheld|withhold/i);
+    });
+  });
+
+  describe('the whole series, not the last step', () => {
+    /**
+     * Story 22 of #1 (#99), and specifically its second clause: *"so that I can tell a
+     * firming forecast from a wavering one"*. `Shift` compares against one run, and one
+     * step has a direction but no shape — 4.1 → 5.2 → 6.1 → 6.4 and 7.9 → 3.4 → 6.1 → 6.4
+     * produced the identical sentence, both ending 0.3 m above the run before, while the
+     * first is a swell to book on and the second is a forecast to wait another cycle on.
+     * The two series share their last previous value on purpose: that is what `Shift`
+     * compares against, and without it they would not be indistinguishable at all.
+     *
+     * The suite itself carried the omission: the fixture in `says which way the prediction
+     * has moved` supplies two previous runs and asserts only the later one.
+     *
+     * **The run times are three hours and half a day apart, not two days.** Pipeline Runs are
+     * three-hourly (`cycle.py`) and `lead_time_days` is a whole number of days, so a series
+     * whose consecutive runs step 10 → 8 → 6 days out is spacing the pipeline cannot produce
+     * — and a fixture that is impossible is its own trap, as `handlers.ts` says at length. It
+     * hid exactly one bug here: rows labelled only by Lead Time, which in reality repeats.
+     */
+    async function seriesFor(runs: ReturnType<typeof earlier>[], now = 6.4) {
+      const day = {
+        ...BIG,
+        call: {
+          ...BIG_CALL,
+          predicted_significant_wave_height: { value: now, unit: 'm' },
+          previous_runs: runs,
+        },
+      };
+      server.use(
+        http.get('*/api/conditions/forecast', () =>
+          HttpResponse.json({ ...forecast, days: [forecast.days[0], day, forecast.days[2]] }),
+        ),
+      );
+      render(<ForecastRange />);
+      await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
+      return screen.findByTestId(`history-${BIG.date}`);
+    }
+
+    // Two of the three share a Lead Time, because at a three-hourly cadence that is the
+    // ordinary case rather than the edge one. `BIG_CALL` speaks at 4 days out, so the series
+    // closes on a fourth row the fixture does not list.
+    const FIRMING = [
+      earlier(4.1, 6, '2026-02-07T00:00:00Z'),
+      earlier(5.2, 6, '2026-02-07T12:00:00Z'),
+      earlier(6.1, 5, '2026-02-08T00:00:00Z'),
+    ];
+
+    it('tells a firming forecast from a wavering one', async () => {
+      // The defect itself, asserted directly rather than through any one clause: two series
+      // that end in the same place and arrived by opposite routes must not render the same
+      // text. Every other test here can be satisfied by a component that renders one point.
+      const firming = (await seriesFor(FIRMING)).textContent;
+      cleanup();
+      const wavering = (
+        await seriesFor([
+          earlier(7.9, 6, '2026-02-07T00:00:00Z'),
+          earlier(3.4, 6, '2026-02-07T12:00:00Z'),
+          earlier(6.1, 5, '2026-02-08T00:00:00Z'),
+        ])
+      ).textContent;
+
+      expect(firming).not.toEqual(wavering);
+    });
+
+    it('carries every run it was sent, not only the most recent', async () => {
+      // `Shift` reads `previous_runs.at(-1)`, so the oldest runs were fetched, sent, and
+      // rendered by nothing. 4.1 is the point that was invisible.
+      const history = await seriesFor(FIRMING);
+
+      for (const run of FIRMING) {
+        expect(history).toHaveTextContent(`${run.predicted_significant_wave_height.value}m`);
+      }
+      // And the run being read now, which is the end of the series rather than a fourth
+      // thing beside it — a series stopping one run short of the present says nothing
+      // about where the forecast has actually arrived.
+      expect(history).toHaveTextContent('6.4m');
+    });
+
+    it('runs oldest first, so the series reads in the direction time does', async () => {
+      // Reversing it renders every number this suite asserts, in an order that turns a
+      // firming swell into a fading one. Read off the DOM rather than the string, because
+      // the heights appear in the surrounding panel too.
+      const history = await seriesFor(FIRMING);
+      const points = within(history)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent ?? '');
+
+      expect(points).toHaveLength(FIRMING.length + 1);
+      expect(points[0]).toContain('4.1m');
+      expect(points.at(-1)).toContain('6.4m');
+    });
+
+    it('says how far out each run was speaking', async () => {
+      // A range narrowing from ten days out to three is the forecast doing its job; the
+      // same narrowing at a fixed Lead Time is something else entirely. A series of four
+      // heights with no distances on them is the more confident and less honest rendering.
+      const history = await seriesFor(FIRMING);
+
+      for (const run of FIRMING) {
+        expect(history).toHaveTextContent(new RegExp(`${run.lead_time_days}\\s*days`));
+      }
+    });
+
+    it('dates every superseded run, so runs at one lead time stay apart', async () => {
+      // The defect the impossible fixture hid. Pipeline Runs are three-hourly (`cycle.py`)
+      // and `lead_time_days` is whole days, so consecutive runs about one date routinely
+      // share a Lead Time — two of FIRMING's three do. Labelled only by Lead Time the ladder
+      // prints "6 days out" twice with nothing to order it by, which is the fixed-Lead-Time
+      // comparison #99 calls out as a different thing entirely.
+      //
+      // Read off the `datetime` attribute rather than the rendered text, as `dateOf` does
+      // above: this suite pins the zone and not the locale.
+      const history = await seriesFor(FIRMING);
+      const points = within(history).getAllByRole('listitem');
+      const stamps = points
+        .slice(0, FIRMING.length)
+        .map((point) => within(point).getByTestId('run-issued').getAttribute('datetime'));
+
+      expect(stamps).toEqual(FIRMING.map((run) => run.issued_at));
+    });
+
+    it('draws the series as well as printing it', async () => {
+      // The story's "so that" clause asks a reader to tell firming from wavering *at a
+      // glance*, and a column of figures makes them do the comparison the page was meant to
+      // make for them. Scaled against the largest point in the series — `prominence`'s
+      // relative treatment, needing no domain knowledge and no calibrated threshold.
+      const history = await seriesFor(FIRMING);
+      const widths = within(history)
+        .getAllByRole('listitem')
+        .map((point) => (point.querySelector('.fill') as HTMLElement | null)?.style.width ?? '');
+
+      // Ascending, and the largest point full width — a bar frozen at one value, or scaled
+      // against something other than the series, fails both halves.
+      expect(widths.at(-1)).toBe('100%');
+      expect(widths).toHaveLength(FIRMING.length + 1);
+      expect(new Set(widths).size).toBe(widths.length);
+    });
+
+    it('keeps the drawing out of the accessible reading', async () => {
+      // A width is not something a screen reader can act on, and the heights beside it are
+      // exactly what a reader books against. The bar is decoration over the numbers, never
+      // a substitute for them.
+      const history = await seriesFor(FIRMING);
+      const fill = history.querySelector('.fill');
+
+      expect(fill?.closest('[aria-hidden="true"]')).not.toBeNull();
+      expect(history).toHaveTextContent('4.1m');
+    });
+
+    it('names the quantity every height in it is measured in', async () => {
+      // CONTEXT.md puts "wave height (ambiguous)" and "wave size" on Face Height's Avoid
+      // list, and CLAUDE.md calls the distinction load-bearing. Every sibling block on this
+      // page spells the quantity out in its own copy rather than relying on a reader having
+      // arrived from one that did — a reader who takes a 6 m series for wave faces reads it
+      // as impossible, and one who takes it the other way reads a giant day as routine.
+      const history = await seriesFor(FIRMING);
+
+      expect(history).toHaveTextContent(/significant wave height/i);
+      expect(history).toHaveTextContent(/not the height of a wave face/i);
+    });
+
+    it('marks which point is the run being read now', async () => {
+      // Without it the current call is the fourth of four indistinguishable rows, and a
+      // reader cannot tell the series from a list of superseded opinions.
+      const history = await seriesFor(FIRMING);
+      const points = within(history).getAllByRole('listitem');
+
+      expect(points.at(-1)).toHaveTextContent(/this run/i);
+      expect(points[0]).not.toHaveTextContent(/this run/i);
+    });
+
+    it('says the rows are a window on the record rather than the record', async () => {
+      // Two facts, and the page needs both. ADR 0005 keeps every call ever made, so a caveat
+      // saying "the runs the record keeps for this date" states the opposite of what the
+      // store actually does — the bound belongs to `recent_calls`' response, not to the
+      // record. And at a three-hourly cadence these rows can span half a day of a
+      // fortnight-long approach, so saying nothing lets a reader take them for the lot.
+      const history = await seriesFor(FIRMING);
+
+      expect(history).toHaveTextContent(/every call .*is kept/i);
+      expect(history).toHaveTextContent(/more often than these rows show/i);
+    });
+
+    it('says a run recorded no range rather than drawing one of no width', async () => {
+      // Calls issued before the pipeline built distributions carry `plausible_range: null`,
+      // and a series can mix them with calls that have one. Zero width reads as total
+      // certainty, which would put the system's most confident-looking claim on its oldest
+      // and least informed point.
+      const history = await seriesFor([
+        { ...earlier(4.1, 10, '2026-02-07T06:00:00Z'), plausible_range: null },
+        earlier(5.2, 8, '2026-02-08T06:00:00Z'),
+      ]);
+      const points = within(history).getAllByRole('listitem');
+
+      expect(points[0]).toHaveTextContent(/no range/i);
+      expect(points[0]).not.toHaveTextContent(/4.1m to 4.1m/);
+    });
+
+    it('draws no series for a date with a single earlier run', async () => {
+      // Two points are a comparison and `Shift` already makes it in a sentence. Calling
+      // that a series would put a heading and a list around one arrow.
+      const day = {
+        ...BIG,
+        call: { ...BIG_CALL, previous_runs: [earlier(5.2, 8, '2026-02-09T06:00:00Z')] },
+      };
+      server.use(
+        http.get('*/api/conditions/forecast', () =>
+          HttpResponse.json({ ...forecast, days: [forecast.days[0], day, forecast.days[2]] }),
+        ),
+      );
+      render(<ForecastRange />);
+      await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
+
+      expect(await screen.findByTestId(`shift-${BIG.date}`)).toBeInTheDocument();
+      expect(screen.queryByTestId(`history-${BIG.date}`)).not.toBeInTheDocument();
+    });
+
+    it('draws no series on the first run that mentions a date', async () => {
+      render(<ForecastRange />);
+      await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
+
+      expect(screen.queryByTestId(`history-${BIG.date}`)).not.toBeInTheDocument();
+    });
+
+    it('does not resurrect a superseded call’s reasoning', async () => {
+      // `EarlierCall` drops the reasons and both withholding flags on purpose: a stale
+      // explanation beside a current one is worse than no history at all. The series
+      // carries numbers and tiers, and that is the whole of what it carries.
+      const history = await seriesFor(FIRMING);
+
+      expect(history).not.toHaveTextContent(/withheld|because|swell period \d/i);
     });
   });
 });

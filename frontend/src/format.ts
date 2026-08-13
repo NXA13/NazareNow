@@ -81,6 +81,21 @@ export function formatReading(reading: { value: number; unit: string }): string 
 }
 
 /**
+ * A span between two heights as a reader sees it: both ends formatted, both carrying the unit.
+ *
+ * One function for the reason `formatReading` is one. The plausible range under a call and the
+ * same range inside the series across runs were character-identical renders of one shape, and
+ * a figure rendered in two places is a figure that can drift apart (#99).
+ *
+ * The unit is repeated rather than hung on the end. "5.2 to 7m" reads as though only the
+ * second number carries it, and this page has already had to undo one reading where a
+ * quantity's units were left to be inferred.
+ */
+export function formatRange(range: { low: number; high: number; unit: string }): string {
+  return `${formatValue(range.low)}${range.unit} to ${formatValue(range.high)}${range.unit}`;
+}
+
+/**
  * A UTC timestamp rendered for a reader, in their local zone.
  *
  * The backend stores what the provider reported, which is UTC. Showing that verbatim
