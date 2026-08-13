@@ -579,46 +579,80 @@ function Agreement({ day }: { day: ForecastDay }) {
   );
 }
 
+/** The day's Offshore Conditions, hour by hour — all five of them.
+ *
+ * **Wind direction is a column because the glossary says it is one (#98).** CONTEXT.md
+ * defines Offshore Conditions as swell height, swell period, swell direction, wind speed
+ * *and* wind direction, and this table rendered four of the five: the value arrived in every
+ * `ForecastHour`, survived the backend under its own test, and was read by nothing. Story 6
+ * is what the omission cost — "so that I know when during the day to be at the beach" is,
+ * at Praia do Norte, mostly a question about which way the wind is blowing, and a table
+ * answering it with a flat column of speeds answers a different question.
+ *
+ * **It sits inside the wind cell rather than in a sixth column.** The two are one fact: a
+ * bearing means something different at 40 km/h than at 4, so separating them across the
+ * table would invite reading either alone. It also keeps the table at five columns, which
+ * is what makes it usable inside `.hours-scroll` on a phone.
+ *
+ * **No hour is marked light here, and that is deliberate.** ADR 0009's exemption speed is a
+ * fitted threshold in `thresholds.json`; applying it in this layer would reimplement the
+ * Heuristic Baseline in the presentation layer — the exact mistake `prominence` above
+ * documents having made once — and would put a copy of a calibrated number on a page that
+ * ADR 0005 makes a reader. The note under the table says the rule exists without naming its
+ * value, so nothing here can drift from the fit.
+ */
 function HourTable({ day }: { day: ForecastDay }) {
   return (
-    <div className="hours-scroll">
-      <table>
-        {/* Times are Nazaré's own, and labelled as such. Rendering them in the viewer's
-            zone would shift hours across the day boundary and quietly disagree with the
-            date above — and the viewer's zone is not the one they would be standing in.
-            A day here is a day at Praia do Norte (ADR 0008). */}
-        <caption>Hour by hour on {dayLabel(day.date)}, times in Nazaré</caption>
-        <thead>
-          <tr>
-            <th scope="col">Time (Nazaré)</th>
-            <th scope="col">Swell</th>
-            <th scope="col">Period</th>
-            <th scope="col">Dir</th>
-            <th scope="col">Wind</th>
-          </tr>
-        </thead>
-        <tbody>
-          {day.hours.map((hour) => (
-            <tr key={hour.at}>
-              <th scope="row">{hour.at.slice(11, 16)}</th>
-              <td>
-                {formatValue(hour.swell_height.value)}
-                <span className="unit">{hour.swell_height.unit}</span>
-              </td>
-              <td>
-                {formatValue(hour.swell_period.value)}
-                <span className="unit">{hour.swell_period.unit}</span>
-              </td>
-              <td>{compassPoint(hour.swell_direction.value)}</td>
-              <td>
-                {formatValue(hour.wind_speed.value)}
-                <span className="unit">{hour.wind_speed.unit}</span>
-              </td>
+    <>
+      <div className="hours-scroll">
+        <table>
+          {/* Times are Nazaré's own, and labelled as such. Rendering them in the viewer's
+              zone would shift hours across the day boundary and quietly disagree with the
+              date above — and the viewer's zone is not the one they would be standing in.
+              A day here is a day at Praia do Norte (ADR 0008). */}
+          <caption>Hour by hour on {dayLabel(day.date)}, times in Nazaré</caption>
+          <thead>
+            <tr>
+              <th scope="col">Time (Nazaré)</th>
+              <th scope="col">Swell</th>
+              <th scope="col">Period</th>
+              {/* "Dir" was unambiguous only while one direction was on the row. With the
+                  wind carrying a bearing too, a reader scanning for the wind's has to be
+                  able to tell which column is which without counting. */}
+              <th scope="col">Swell dir</th>
+              <th scope="col">Wind</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {day.hours.map((hour) => (
+              <tr key={hour.at}>
+                <th scope="row">{hour.at.slice(11, 16)}</th>
+                <td>
+                  {formatValue(hour.swell_height.value)}
+                  <span className="unit">{hour.swell_height.unit}</span>
+                </td>
+                <td>
+                  {formatValue(hour.swell_period.value)}
+                  <span className="unit">{hour.swell_period.unit}</span>
+                </td>
+                <td>{compassPoint(hour.swell_direction.value)}</td>
+                <td>
+                  {formatValue(hour.wind_speed.value)}
+                  <span className="unit">{hour.wind_speed.unit}</span>
+                  <span className="bearing">{compassPoint(hour.wind_direction.value)}</span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {/* Outside the scroll container, so a phone cannot scroll the qualification off the
+          side of the thing it qualifies. */}
+      <p className="aside" data-testid="wind-direction-note">
+        A wind light enough not to matter is treated as having no direction at all, so a bearing
+        here is a reading rather than a verdict on the hour.
+      </p>
+    </>
   );
 }
 
