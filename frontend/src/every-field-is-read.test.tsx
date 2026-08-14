@@ -49,16 +49,19 @@
  * whole app; both go through `holdToVerdict`, which is the only place in this file that decides
  * what a verdict costs. A second renderer must never mean a second standard.
  *
- * **What this does not cover, so nothing reads it as covering more.** Five of the wire's types:
- * `CurrentConditions` (#107), `ForecastDay`, `DayCall`, `ForecastHour` and `EarlierCall` (#104).
- * That is not everything the site renders, and reading it as such is the over-claim this
- * paragraph exists to stop: `Forecast`'s own fields are on the page, and so are `Calibration`'s
- * three Gold Day counts inside the threshold caveat, and neither has a registry. Nor has the
- * track-record tree, which is the largest uncovered surface left and has a page of its own.
- * `DaySpread` is the half-covered one and so the easiest to over-read:
- * `ForecastDay.model_spread` is decided about as a single field, which proves the map reaches
- * the page and proves nothing whatever about any one of a `DaySpread`'s ten. Nor is this finer
- * than one field anywhere: a field whose *unit* alone went unread would still pass.
+ * **What this does not cover, so nothing reads it as covering more.** Eight of the wire's types:
+ * `Forecast`, `Calibration`, `DaySpread`, `CurrentConditions`, `ForecastDay`, `DayCall`,
+ * `ForecastHour` and `EarlierCall` — everything the forecast and the conditions panel are built
+ * from. What is left is the track-record tree, all eleven types of it, which has a page of its
+ * own and is now the whole of the uncovered surface. Nor is this finer than one field anywhere:
+ * a field whose *unit* alone went unread would still pass.
+ *
+ * **The "not read" arm now carries weight, which until this point it did not.** Seven fields are
+ * declared unread outside `ForecastHour` — `Forecast.stale` and `stale_after_hours`, which the
+ * page reads once from `CurrentConditions` instead, and five of `Calibration`'s eight, which are
+ * the provenance of the fit rather than its size. Both arms have been verified in both
+ * directions: rendering a field declared unread fails its test, and ceasing to render one
+ * declared read fails its own, each alone.
  */
 
 import { render, screen } from '@testing-library/react';
@@ -67,11 +70,13 @@ import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 
 import type {
+  Calibration,
   CallStatus,
   CurrentConditions,
   DayCall,
   DaySpread,
   EarlierCall,
+  Forecast,
   ForecastDay,
   ForecastHour,
   HeightRange,
@@ -80,7 +85,7 @@ import type {
 } from './api';
 import { App } from './App';
 import { ForecastRange } from './Forecast';
-import { currentConditions, forecast, unmeasurableSpread } from './test/handlers';
+import { calibration, currentConditions, forecast, unmeasurableSpread } from './test/handlers';
 import { server } from './test/server';
 
 /** What the page does with one field the backend sends, and the proof of it. */
@@ -845,6 +850,303 @@ describe('CurrentConditions', () => {
       const changed = replace(STALE, name, spec.other);
 
       await holdToVerdict(spec, STALE, changed, () => panelFor(changed), baseline);
+    });
+  }
+});
+
+/**
+ * The whole forecast response as the range draws it, with one day open.
+ *
+ * `pageFor` above swaps the *days* into the shipped response and so can say nothing about the
+ * response's own fields. This serves a response entire, which makes `calibrated`,
+ * `amplification_model` and the rest the things being moved.
+ *
+ * A day is opened because two of those fields are reachable only through the panel a click
+ * opens, and `BIG` is the day opened — so no mutation below may take it out of the range.
+ */
+async function rangeFor(response: Forecast): Promise<string> {
+  server.use(http.get('*/api/conditions/forecast', () => HttpResponse.json(response)));
+
+  const view = render(<ForecastRange />);
+  await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
+  await screen.findByRole('table');
+
+  const html = view.container.innerHTML;
+  view.unmount();
+  return html;
+}
+
+/** A forecast whose calls were decided against fitted thresholds, which `handlers.ts` is not.
+ *
+ * The uncalibrated banner and the calibrated one are alternatives, and `Calibration` is reachable
+ * only through the second — `calibrated && calibration` guards it. On the shipped fixture the
+ * whole type sits behind a closed gate, so all eight of its fields would have read as unread. */
+const CALIBRATED: Forecast = { ...forecast, calibrated: true, calibration };
+
+describe('Forecast', () => {
+  /** What the range does with each of the seven fields the response itself carries.
+   *
+   * **Five are read and two are not — the first "not read" verdicts this file has recorded
+   * outside `ForecastHour`.** `stale` and `stale_after_hours` ride on this response because, as
+   * `api.ts` puts it, both endpoints serve the same pipeline run. The page reads neither of them
+   * here. The staleness banner is rendered once, above everything, from `CurrentConditions`,
+   * which is the right place for it: somebody deciding whether to book should learn the data is
+   * old before they read any of it, not once per section.
+   *
+   * So these two are duplication the wire carries and the page deliberately declines, which is a
+   * different thing from the defect this file was built for. `wind_direction` had nowhere else
+   * to be read; these have somewhere better. */
+  const fields: Registry<Forecast> = {
+    fetched_at: {
+      read: true,
+      note: 'the stamp in the provenance line under the range',
+      other: (at) => new Date(new Date(at).getTime() + 3 * 3_600_000).toISOString(),
+    },
+    stale: {
+      read: false,
+      note:
+        'not read here — the staleness banner is rendered once above everything from ' +
+        'CurrentConditions, so this copy of the same run’s verdict reaches nothing',
+      other: () => true,
+    },
+    stale_after_hours: {
+      read: false,
+      note: 'not read here, for the reason `stale` is not: the banner states the figure it arrived with',
+      other: (hours) => hours + 6,
+    },
+    amplification_model: {
+      read: true,
+      note: 'which provenance sentence the call panel carries, and whether it carries one at all',
+      // The learned fit — the other name `Forecast.tsx` matches explicitly rather than taking as
+      // an else-branch, because "carried through unchanged" is a claim about arithmetic nobody
+      // has seen and an unrecognised model has no honest sentence.
+      other: () => 'learned-amplification',
+    },
+    calibrated: {
+      read: true,
+      note: 'which of the two threshold banners renders — thresholds fitted, or a rule of thumb',
+      other: () => false,
+    },
+    calibration: {
+      read: true,
+      note: 'the Gold Day counts inside the calibrated banner, which renders nothing without it',
+      // A forecast whose calls were decided before there was a fit, which is what the shipped
+      // fixture sends and what this field’s `| null` is for.
+      other: () => null,
+    },
+    days: {
+      read: true,
+      note: 'every card in the range, and the count in the heading above them',
+      // One day shorter, from the far end. `BIG` sits at index 1 and has to survive, or the
+      // harness could not open the panel it is about to compare.
+      other: (days) => days.slice(0, -1),
+    },
+  };
+
+  for (const [name, spec] of decisions(fields)) {
+    it(`${name} is ${spec.read ? 'read' : 'not read'} — ${spec.note}`, async () => {
+      const baseline = await rangeFor(CALIBRATED);
+      const changed = replace(CALIBRATED, name, spec.other);
+
+      await holdToVerdict(spec, CALIBRATED, changed, () => rangeFor(changed), baseline);
+    });
+  }
+});
+
+describe('Calibration', () => {
+  /** What the calibrated banner does with each of the eight fields a fit carries.
+   *
+   * **Three are read and five are not, and the five are the provenance of the fit.** The banner
+   * says how many Gold Days chose the thresholds, how many were held back, and how few there are
+   * in total. It says nothing about which seasons were fitted or validated on, what method
+   * produced the fit, when it was made, or which script regenerates it.
+   *
+   * `source` is the one worth arguing about, and #106 is the reason it is written down rather
+   * than left implicit: a principle honoured at one call site and declined at another is how a
+   * true statement quietly becomes false. `TrackRecord` renders its own `source` precisely "so a
+   * reader can go and check it rather than take it on trust" — and this is the script behind the
+   * thresholds every call on the page was decided against. Whether it belongs on screen is not
+   * something this guard can settle. Recording the decision is the whole purpose of this arm. */
+  const fields: Registry<Calibration> = {
+    fitted_on: {
+      read: false,
+      note:
+        'not shown — the banner counts Gold Days rather than naming seasons, and a season range ' +
+        'says little to a reader who does not already know which winters were big',
+      other: () => '2019/20-2020/21',
+    },
+    validated_on: {
+      read: false,
+      note: 'not shown, for the reason `fitted_on` is not',
+      other: () => '2021/22-2025/26',
+    },
+    gold_days_fitted: {
+      read: true,
+      note: 'the count that chose the thresholds',
+      other: (days) => days + 3,
+    },
+    gold_days_validated: {
+      read: true,
+      note: 'the count held back to check them',
+      other: (days) => days + 2,
+    },
+    gold_days_total: {
+      read: true,
+      note: 'the total the banner leads with, in order to say how small it is',
+      other: (days) => days + 4,
+    },
+    method: {
+      read: false,
+      note:
+        'not shown — it describes how the fit was made, and the banner is about how little the ' +
+        'fit rests on',
+      other: () => 'Swell period fitted per tier against a wider Gold Day panel.',
+    },
+    source: {
+      read: false,
+      note:
+        'not shown, and arguably the one that should be: TrackRecord renders its own source so a ' +
+        'reader can check it rather than trust it, and this is the script behind every threshold',
+      other: () => 'analysis/calibration/refit.py',
+    },
+    fitted_at: {
+      read: false,
+      note:
+        'not shown — the range already carries its own fetch stamp, and a second date beside it ' +
+        'would invite reading the age of the fit as the age of the forecast',
+      other: () => '2026-06-01',
+    },
+  };
+
+  for (const [name, spec] of decisions(fields)) {
+    it(`${name} is ${spec.read ? 'read' : 'not read'} — ${spec.note}`, async () => {
+      const baseline = await rangeFor(CALIBRATED);
+      const changed = replace(calibration, name, spec.other);
+
+      await holdToVerdict(
+        spec,
+        calibration,
+        changed,
+        () => rangeFor({ ...CALIBRATED, calibration: changed }),
+        baseline,
+      );
+    });
+  }
+});
+
+/**
+ * A Model Spread measured against less than the full roster.
+ *
+ * `providers_expected` is read only inside the alert that `degraded` gates, and `handlers.ts`
+ * sends every organisation for this reading — so on the shipped fixture that field would read as
+ * unread. The same gate one more time, in the third type to have one.
+ *
+ * Two of three organisations, with `lowest` and `highest` bracketing `spread` exactly around
+ * `BIG`'s middle hour, because that is how the backend derives them: one real hour's real
+ * measurement rather than three numbers assembled separately.
+ */
+const DEGRADED_SPREAD: DaySpread = {
+  unit: 'm',
+  spread: 0.3,
+  lowest: 7.38,
+  highest: 7.68,
+  providers: ['DWD', 'NCEP'],
+  degraded: true,
+  providers_expected: 3,
+  bearing: false,
+  hours_measured: 24,
+  hours_total: 24,
+};
+
+describe('DaySpread', () => {
+  /** What the agreement section does with each of the ten fields a spread carries.
+   *
+   * All ten are read, which is the answer that makes `ForecastDay.model_spread` worth having as
+   * its own entry rather than trusted: that registry decides the *map* reaches the page and can
+   * say nothing about any single spread inside it. This is the half of the pair that can. */
+  const spreadWith = (spread: DaySpread): ForecastDay => ({
+    ...BIG,
+    model_spread: { ...BIG.model_spread, swell_height: spread },
+  });
+
+  const fields: Registry<DaySpread> = {
+    unit: {
+      read: true,
+      note: 'the unit beside the gap, and beside both ends of the arc under it',
+      // The unit alone, with the value left where it was. That is incoherent as a measurement
+      // and it is precisely the question being asked: whether the page reads the unit it was
+      // sent or prints one it assumed.
+      other: () => 'ft',
+    },
+    spread: {
+      read: true,
+      note: 'how far apart the forecasters are at this day’s middle hour',
+      other: (gap) => (gap === null ? null : Number((gap + 0.6).toFixed(2))),
+    },
+    lowest: {
+      read: true,
+      note: 'the low end of the arc the gap was measured across',
+      other: (low) => (low === null ? null : Number((low - 0.4).toFixed(2))),
+    },
+    highest: {
+      read: true,
+      note: 'the high end of that arc',
+      other: (high) => (high === null ? null : Number((high + 0.4).toFixed(2))),
+    },
+    providers: {
+      read: true,
+      note: 'the organisations named under the paragraph, and how many the sentence counts',
+      // Different names, same count. Holding the length still is what makes this a question
+      // about the names rather than about `degraded`, which is its own field below.
+      other: () => ['DWD', 'MeteoFrance'],
+    },
+    degraded: {
+      read: true,
+      note: 'the alert under the paragraph, and the marker the day card carries',
+      // Not degraded, which takes the alert away. It stops agreeing with the two names beside
+      // it — the backend derives one from the other — and that is the usual cost of moving one
+      // field of a pair.
+      other: () => false,
+    },
+    providers_expected: {
+      read: true,
+      note: 'the roster size the alert counts against, sent rather than known here',
+      // A roster that grew, which is exactly why this arrives over the wire: "two of three"
+      // must not go on saying three after a fourth organisation joins.
+      other: (expected) => expected + 2,
+    },
+    bearing: {
+      read: true,
+      note: 'whether the two ends are read as a compass arc or as an interval on a line',
+      // True, which turns the pair into an arc: across north the second number is the smaller
+      // one, and reading it as a minimum and a maximum would name the wrong 350 degrees.
+      other: () => true,
+    },
+    hours_measured: {
+      read: true,
+      note: 'how many of the day’s hours a spread could be measured for',
+      other: (hours) => hours - 6,
+    },
+    hours_total: {
+      read: true,
+      note: 'how many hours the day has, which is what that count is out of',
+      // A day clipped short, as the end of a range arrives.
+      other: (hours) => hours - 1,
+    },
+  };
+
+  for (const [name, spec] of decisions(fields)) {
+    it(`${name} is ${spec.read ? 'read' : 'not read'} — ${spec.note}`, async () => {
+      const baseline = await pageFor(spreadWith(DEGRADED_SPREAD));
+      const changed = replace(DEGRADED_SPREAD, name, spec.other);
+
+      await holdToVerdict(
+        spec,
+        DEGRADED_SPREAD,
+        changed,
+        () => pageFor(spreadWith(changed)),
+        baseline,
+      );
     });
   }
 });
