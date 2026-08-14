@@ -91,3 +91,9 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      # Story 27 of #1, which had no check behind it at all until now. This measures the
+      # compressed bytes a first visit costs, which is the part of "loads quickly" this
+      # repository controls; load time itself needs a host, and there is not one until #28.
+      - name: Payload budget
+        run: npm run check:payload
