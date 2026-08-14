@@ -45,15 +45,17 @@
  * happen to be open is a property of `handlers.ts` that can change without this file being
  * touched.
  *
- * **What this does not cover, so nothing reads it as covering more.** Four of the wire's types:
- * `ForecastDay`, `DayCall`, `ForecastHour` and `EarlierCall` (#104). That is not everything
- * `ForecastRange` renders, and reading it as such is the over-claim this paragraph exists to
- * stop: `Forecast`'s own fields are on the page, and so are `Calibration`'s three Gold Day
- * counts inside the threshold caveat, and neither has a registry. Nor has `CurrentConditions`,
- * which matters more than the rest of that list: `ForecastHour` is literally an `Omit` of it, so
- * a reader could take its ten readings for guarded. They are not — the current panel lives in
- * `App.tsx` and nothing here renders it. Nor has the whole track-record tree, which has its own
- * page. `DaySpread` is the half-covered one and so the easiest to over-read:
+ * **Two components, one verdict.** `pageFor` draws the forecast range and `panelFor` draws the
+ * whole app; both go through `holdToVerdict`, which is the only place in this file that decides
+ * what a verdict costs. A second renderer must never mean a second standard.
+ *
+ * **What this does not cover, so nothing reads it as covering more.** Five of the wire's types:
+ * `CurrentConditions` (#107), `ForecastDay`, `DayCall`, `ForecastHour` and `EarlierCall` (#104).
+ * That is not everything the site renders, and reading it as such is the over-claim this
+ * paragraph exists to stop: `Forecast`'s own fields are on the page, and so are `Calibration`'s
+ * three Gold Day counts inside the threshold caveat, and neither has a registry. Nor has the
+ * track-record tree, which is the largest uncovered surface left and has a page of its own.
+ * `DaySpread` is the half-covered one and so the easiest to over-read:
  * `ForecastDay.model_spread` is decided about as a single field, which proves the map reaches
  * the page and proves nothing whatever about any one of a `DaySpread`'s ten. Nor is this finer
  * than one field anywhere: a field whose *unit* alone went unread would still pass.
@@ -66,6 +68,7 @@ import { describe, expect, it } from 'vitest';
 
 import type {
   CallStatus,
+  CurrentConditions,
   DayCall,
   DaySpread,
   EarlierCall,
@@ -75,8 +78,9 @@ import type {
   ModelAgreement,
   Reading,
 } from './api';
+import { App } from './App';
 import { ForecastRange } from './Forecast';
-import { forecast, unmeasurableSpread } from './test/handlers';
+import { currentConditions, forecast, unmeasurableSpread } from './test/handlers';
 import { server } from './test/server';
 
 /** What the page does with one field the backend sends, and the proof of it. */
@@ -201,17 +205,23 @@ async function pageFor(day: ForecastDay): Promise<string> {
  * *unconditionally*, while its registry carried a `read` flag nobody consulted — half the file
  * verifying a claim the other half took on trust, under a field documented as "verified, never
  * trusted". A `read: false` entry there would have been asserted read.
+ *
+ * **It takes a thunk rather than a day, so that adding a second renderer could not add a second
+ * verdict (#107).** `CurrentConditions` is drawn by `panelFor` and everything else by `pageFor`,
+ * and the first draft of that block inlined its own two assertions — reintroducing exactly the
+ * split above, in the change that was widening the guard. The registries decide what is read;
+ * this is the only place that decides what "read" costs.
  */
 async function holdToVerdict(
   spec: Decision,
   sent: unknown,
   changed: unknown,
-  day: ForecastDay,
+  draw: () => Promise<string>,
   baseline: string,
 ): Promise<void> {
   expect(moved(sent, changed, spec.note)).toBe(true);
 
-  const after = await pageFor(day);
+  const after = await draw();
 
   if (spec.read) {
     expect(after).not.toEqual(baseline);
@@ -345,7 +355,7 @@ describe('ForecastHour', () => {
       // reason that says nothing about whether the *hour* was read.
       const changed = { ...BIG, hours: BIG.hours.map((hour) => replace(hour, name, spec.other)) };
 
-      await holdToVerdict(spec, BIG.hours, changed.hours, changed, baseline);
+      await holdToVerdict(spec, BIG.hours, changed.hours, () => pageFor(changed), baseline);
     });
   }
 });
@@ -473,7 +483,7 @@ describe('EarlierCall', () => {
         spec,
         RUNS,
         changed,
-        dayWith({ ...CALL_WITH_HISTORY, previous_runs: changed }),
+        () => pageFor(dayWith({ ...CALL_WITH_HISTORY, previous_runs: changed })),
         baseline,
       );
     });
@@ -614,7 +624,7 @@ describe('DayCall', () => {
       const baseline = await pageFor(dayWith(WITHHELD));
       const changed = replace(WITHHELD, name, spec.other);
 
-      await holdToVerdict(spec, WITHHELD, changed, dayWith(changed), baseline);
+      await holdToVerdict(spec, WITHHELD, changed, () => pageFor(dayWith(changed)), baseline);
     });
   }
 });
@@ -702,7 +712,139 @@ describe('ForecastDay', () => {
       const baseline = await pageFor(BIG);
       const changed = replace(BIG, name, spec.other);
 
-      await holdToVerdict(spec, BIG, changed, changed, baseline);
+      await holdToVerdict(spec, BIG, changed, () => pageFor(changed), baseline);
+    });
+  }
+});
+
+/**
+ * Everything the page draws for one set of current conditions, as markup.
+ *
+ * `<App />` rather than the panel alone, for the reason `pageFor` renders the whole range: the
+ * question is whether a value reaches a reader *anywhere*, and a helper pinned to the readings
+ * list would file the two stamps in the footer and the coordinates in the provenance line as
+ * dropped.
+ *
+ * All three fetches are waited on. The current panel is `App`'s own, but the forecast and the
+ * track record render inside it and settle on their own schedules — snapshotting before they
+ * land would compare a half-built page against a built one, which differs for every field and
+ * would call all sixteen read.
+ */
+async function panelFor(conditions: CurrentConditions): Promise<string> {
+  server.use(http.get('*/api/conditions/current', () => HttpResponse.json(conditions)));
+
+  const view = render(<App />);
+  await screen.findByTestId('freshness');
+  await screen.findByTestId('earliest-call');
+  await screen.findByTestId('gold-day-total');
+
+  const html = view.container.innerHTML;
+  view.unmount();
+  return html;
+}
+
+describe('CurrentConditions', () => {
+  /**
+   * The conditions panel, on a response the backend has marked stale.
+   *
+   * **`stale_after_hours` is read only inside the staleness banner, and `handlers.ts` is not
+   * stale (#107).** So on the shipped fixture a mutation of that field renders a byte-identical
+   * page, and this file would certify as unread the figure the banner is built around — the same
+   * trap `DayCall.model_agreement` sprang, in the type whose readings a reader is most likely to
+   * assume are already guarded. `ForecastHour` is literally an `Omit` of this one.
+   *
+   * **A stale response is one the backend emits, and the stamps beside the flag do not
+   * contradict it.** Staleness is the backend's verdict and arrives as a flag precisely so this
+   * layer does not derive it — `api.ts` says so, and `App.tsx` repeats it — so a response can
+   * carry `stale: true` with any pair of stamps on it. Nothing on the page compares the two.
+   */
+  const STALE: CurrentConditions = { ...currentConditions, stale: true };
+
+  /** What the page does with each of the sixteen fields the current reading carries.
+   *
+   * All sixteen are read, `latitude` and `longitude` included — the provenance line under the
+   * footer prints both to two decimals, which is the sentence saying these figures are modelled
+   * at a grid point rather than measured at the beach. They looked like the likeliest pair on
+   * the wire to be carried and never shown, and they are not. */
+  const fields: Registry<CurrentConditions> = {
+    observed_at: {
+      read: true,
+      note: 'the older of the two stamps in the footer — how old the picture itself is',
+      // Three hours on, keeping the naive shape the wire uses for this one field. It stops
+      // agreeing with the fetch stamp beside it, which is the usual cost of moving one of a
+      // pair; nothing on the page compares them.
+      other: (at) => shiftHours(at, 3),
+    },
+    fetched_at: {
+      read: true,
+      note: 'the second stamp in the footer — when the run that produced this ran',
+      // Through `Date`, because this stamp carries an explicit offset where `observed_at` does
+      // not. It comes back as `Z` rather than `+00:00`, which is the same instant written the
+      // other way and the same shape: an instant that states its zone.
+      other: (at) => new Date(new Date(at).getTime() + 3 * 3_600_000).toISOString(),
+    },
+    stale: {
+      read: true,
+      note: 'whether the banner above everything else renders at all',
+      // Fresh, which takes the banner away. The flag is the backend's verdict and this layer
+      // only reads it, so either value is a response it could send.
+      other: () => false,
+    },
+    stale_after_hours: {
+      read: true,
+      note: 'the number of hours the banner states, which is why the banner has to be reachable',
+      // Six hours further, so the page cannot go on saying "six" from a literal. It was written
+      // here as one once, which a change of cadence would have made silently untrue.
+      other: (hours) => hours + 6,
+    },
+    latitude: {
+      read: true,
+      note: 'the north coordinate in the provenance line, to two decimals',
+      // A different grid point rather than a different ocean: 0.05° is about five kilometres,
+      // which moves the second decimal the line prints without landing the forecast inland.
+      other: (lat) => lat + 0.05,
+    },
+    longitude: {
+      read: true,
+      note: 'the west coordinate in the provenance line, printed as its own magnitude',
+      // Further out to sea. The page renders `Math.abs`, so this moves the printed figure only
+      // because it moves away from zero — a mutation toward it would have to clear the same bar.
+      other: (lon) => lon - 0.05,
+    },
+    swell_height: { read: true, note: 'the swell height reading', other: feet },
+    swell_period: { read: true, note: 'the swell period reading', other: longer },
+    swell_direction: {
+      read: true,
+      note: 'the swell direction reading, as degrees and a compass point beside them',
+      other: veer,
+    },
+    significant_wave_height: {
+      read: true,
+      note: 'the combined sea’s height — shown here for now, which is what makes it a column nowhere else',
+      other: feet,
+    },
+    wave_period: { read: true, note: 'the combined sea’s period', other: longer },
+    wave_direction: {
+      read: true,
+      note: 'the combined sea’s direction, as degrees and a compass point',
+      other: veer,
+    },
+    water_temperature: { read: true, note: 'the water temperature reading', other: fahrenheit },
+    air_temperature: { read: true, note: 'the air temperature reading', other: fahrenheit },
+    wind_speed: { read: true, note: 'the wind speed reading', other: mph },
+    wind_direction: {
+      read: true,
+      note: 'the wind direction reading, as degrees and a compass point',
+      other: veer,
+    },
+  };
+
+  for (const [name, spec] of decisions(fields)) {
+    it(`${name} is ${spec.read ? 'read' : 'not read'} — ${spec.note}`, async () => {
+      const baseline = await panelFor(STALE);
+      const changed = replace(STALE, name, spec.other);
+
+      await holdToVerdict(spec, STALE, changed, () => panelFor(changed), baseline);
     });
   }
 });
