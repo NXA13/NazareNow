@@ -49,19 +49,29 @@
  * whole app; both go through `holdToVerdict`, which is the only place in this file that decides
  * what a verdict costs. A second renderer must never mean a second standard.
  *
- * **What this does not cover, so nothing reads it as covering more.** Eight of the wire's types:
- * `Forecast`, `Calibration`, `DaySpread`, `CurrentConditions`, `ForecastDay`, `DayCall`,
- * `ForecastHour` and `EarlierCall` — everything the forecast and the conditions panel are built
- * from. What is left is the track-record tree, all eleven types of it, which has a page of its
- * own and is now the whole of the uncovered surface. Nor is this finer than one field anywhere:
- * a field whose *unit* alone went unread would still pass.
+ * **Read is not the same as printed, and the difference is the point.**
+ * `RangeCoverage.widening_factor` appears nowhere on the page and is read all the same: it is
+ * the only thing that can decide whether the range's miss *grows* the further ahead the forecast
+ * looks, and the clause that says so turns on it. A guard that went looking for values in the
+ * markup would have called it dropped and invited somebody to delete it.
  *
- * **The "not read" arm now carries weight, which until this point it did not.** Seven fields are
- * declared unread outside `ForecastHour` — `Forecast.stale` and `stale_after_hours`, which the
- * page reads once from `CurrentConditions` instead, and five of `Calibration`'s eight, which are
- * the provenance of the fit rather than its size. Both arms have been verified in both
- * directions: rendering a field declared unread fails its test, and ceasing to render one
- * declared read fails its own, each alone.
+ * **What this covers, and the one thing it still cannot say.** Every type the wire carries:
+ * `Forecast`, `Calibration`, `DaySpread`, `CurrentConditions`, `ForecastDay`, `DayCall`,
+ * `ForecastHour`, `EarlierCall`, and the eleven of the track-record tree (#109). There is no
+ * longer a type a reader could take for guarded and find is not. What it still cannot say is
+ * anything finer than one field: `Reading` and `HeightRange` are decided about as parts of the
+ * fields holding them, so a reading whose *unit* alone went unread would pass everything here.
+ * That is the next hole, and it is named rather than left to be found.
+ *
+ * **The "not read" arm carries as much weight as the other.** Fourteen fields are declared
+ * unread and every one states why: five on `ForecastHour`, whose Combined Sea and temperatures
+ * belong to the panel above the forecast; `Forecast.stale` and `stale_after_hours`, which the
+ * page reads once from `CurrentConditions` instead; five of `Calibration`'s eight, which are the
+ * provenance of the fit rather than its size; `TierRecord.precision_lower_bound`, whose
+ * complement is printed instead because the page would rather be judged on the unkind number;
+ * and `DeliveryRecord.maximum_m`, the one figure of three that flatters. Both arms are verified
+ * in both directions — rendering a field declared unread fails its test, and ceasing to render
+ * one declared read fails its own, each alone.
  */
 
 import { render, screen } from '@testing-library/react';
@@ -70,22 +80,40 @@ import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 
 import type {
+  AccuracyBand,
   Calibration,
   CallStatus,
   CurrentConditions,
   DayCall,
   DaySpread,
+  DeliveredStepRecord,
+  DeliveryRecord,
   EarlierCall,
   Forecast,
   ForecastDay,
   ForecastHour,
   HeightRange,
+  IssuedRecord,
   ModelAgreement,
+  PanelRecord,
+  RangeCalibration,
+  RangeCoverage,
+  RangeLead,
   Reading,
+  RecordedDay,
+  TierRecord,
+  TrackRecord,
 } from './api';
 import { App } from './App';
 import { ForecastRange } from './Forecast';
-import { calibration, currentConditions, forecast, unmeasurableSpread } from './test/handlers';
+import { TrackRecordPage } from './TrackRecord';
+import {
+  calibration,
+  currentConditions,
+  forecast,
+  trackRecord,
+  unmeasurableSpread,
+} from './test/handlers';
 import { server } from './test/server';
 
 /** What the page does with one field the backend sends, and the proof of it. */
@@ -1147,6 +1175,645 @@ describe('DaySpread', () => {
         () => pageFor(spreadWith(changed)),
         baseline,
       );
+    });
+  }
+});
+
+/**
+ * The track record as its own page draws it.
+ *
+ * `<TrackRecordPage />` alone rather than through `App`, and that is a claim rather than a
+ * shortcut: `fetchTrackRecord` has exactly one caller, and the section fetches independently so
+ * that a failure here costs the record and not the forecast. So this subtree is everything that
+ * could read one of these values, and rendering the app around it would only add two more
+ * requests to wait on.
+ *
+ * The provenance line is the last thing on the page, so waiting for it waits for all of it.
+ */
+async function recordFor(record: TrackRecord): Promise<string> {
+  server.use(http.get('*/api/track-record', () => HttpResponse.json(record)));
+
+  const view = render(<TrackRecordPage />);
+  await screen.findByTestId('record-provenance');
+
+  const html = view.container.innerHTML;
+  view.unmount();
+  return html;
+}
+
+/** An installation that has issued calls, which `handlers.ts` has not.
+ *
+ * `IssuedRecord` has three branches — the store could not be read, nothing has been issued yet,
+ * and a real history — and the shipped fixture takes the middle one, where four of its five
+ * fields are never reached. All five would have read as unread. A fresh installation is the
+ * honest default for that fixture and the wrong baseline for this question.
+ *
+ * 148 calls over 37 dates is a three-hourly cadence speaking about a fortnight of dates at a
+ * time, and nine of them Go Calls is the proportion the record's own precision implies. */
+const ISSUED: IssuedRecord = {
+  calls_issued: 148,
+  dates_covered: 37,
+  go_calls_issued: 9,
+  first_issued_at: '2026-02-01T00:00:00Z',
+  last_issued_at: '2026-08-14T12:00:00Z',
+};
+
+const RECORD: TrackRecord = { ...trackRecord, issued: ISSUED };
+
+/** The held-out panel's Go Call tier, rebuilt into a whole record.
+ *
+ * That tier and not another, because it is the one the page reads three separate ways: the row
+ * in the panel, the waste statement under it, and the delivery section under that. A tier read
+ * once would answer a narrower question than the registry claims to. */
+const withGoCall = (tier: TierRecord): TrackRecord => ({
+  ...RECORD,
+  held_out: { ...RECORD.held_out, go_call: tier },
+});
+
+const GO_CALL = RECORD.held_out.go_call;
+const DELIVERED = GO_CALL.delivered!;
+const STEP = DELIVERED.above[0]!;
+const RANGE = RECORD.range_calibration;
+const LEAD = RANGE.leads[0]!;
+
+describe('TrackRecord', () => {
+  /** What the page does with each of the twelve fields the record itself carries. All twelve
+   * are read: this type is the page's spine, and every one of its fields is a section. */
+  const fields: Registry<TrackRecord> = {
+    published_at: {
+      read: true,
+      note: 'the date in the provenance line at the foot of the record',
+      other: () => '2026-08-14',
+    },
+    source: {
+      read: true,
+      note: 'the script named in the provenance line, so a reader can regenerate the figures',
+      other: () => 'analysis/track_record/republish.py',
+    },
+    held_out: {
+      read: true,
+      note: 'the panel to judge the system by, the basis caveat, and the waste statement',
+      other: (panel) => ({ ...panel, gold_days: panel.gold_days + 7 }),
+    },
+    full_record: {
+      read: true,
+      note: 'the second panel, and the span and season count the page opens with',
+      other: (panel) => ({ ...panel, big_wave_seasons: panel.big_wave_seasons + 4 }),
+    },
+    scored: {
+      read: true,
+      note: 'the accuracy table for both models reading the reconstruction directly',
+      // One band shorter. `api.ts` refuses a record whose bands lack either model, so a band
+      // may be removed but never emptied.
+      other: (bands) => bands.slice(0, -1),
+    },
+    served: {
+      read: true,
+      note: 'the accuracy table along the path the running system actually takes',
+      other: (bands) => bands.slice(0, -1),
+    },
+    range_calibration: {
+      read: true,
+      note: 'the whole section asking whether the range printed on every forecast means what it says',
+      other: (calibration) => ({ ...calibration, claimed: 0.75 }),
+    },
+    gold_days_fitted: {
+      read: true,
+      note: 'how many confirmed days chose the thresholds',
+      other: (days) => days + 5,
+    },
+    gold_days_validated: {
+      read: true,
+      note: 'how many were held back, said twice — in the lead and in the limitations',
+      other: (days) => days + 5,
+    },
+    gold_days_total: {
+      read: true,
+      note: 'the total everything on the page rests on, said twice for the same reason',
+      other: (days) => days + 7,
+    },
+    days: {
+      read: true,
+      note: 'every row of the day-by-day table, and the count in its caption',
+      other: (days) => days.slice(0, -1),
+    },
+    issued: {
+      read: true,
+      note: 'what this installation has issued for real, as against what the reports reconstruct',
+      // The store could not be opened, which is "we do not know" and renders differently from
+      // an installation that has issued nothing — reporting the second for the first would
+      // invent the more flattering of the two.
+      other: () => null,
+    },
+  };
+
+  for (const [name, spec] of decisions(fields)) {
+    it(`${name} is ${spec.read ? 'read' : 'not read'} — ${spec.note}`, async () => {
+      const baseline = await recordFor(RECORD);
+      const changed = replace(RECORD, name, spec.other);
+
+      await holdToVerdict(spec, RECORD, changed, () => recordFor(changed), baseline);
+    });
+  }
+});
+
+describe('PanelRecord', () => {
+  /** What a panel does with each of its six fields, measured on the held-out one.
+   *
+   * The held-out panel and not the full record, because `basis` is read from this one alone —
+   * the caveat above both panels names the held-out basis. The same field on `full_record`
+   * reaches nothing, which is a fact about that one instance rather than about the type, and is
+   * exactly the sort of thing a registry keyed by type cannot say. */
+  const panelIn = (panel: PanelRecord): TrackRecord => ({ ...RECORD, held_out: panel });
+  const PANEL = RECORD.held_out;
+
+  const fields: Registry<PanelRecord> = {
+    span: { read: true, note: 'the span in the panel’s caption', other: () => '2019/20-2025/26' },
+    basis: {
+      read: true,
+      note: 'what produced the calls, stated once above both panels before any figure',
+      other: () => 'Reanalysis',
+    },
+    gold_days: {
+      read: true,
+      note: 'how many confirmed giant days the span contains',
+      other: (days) => days + 6,
+    },
+    big_wave_seasons: {
+      read: true,
+      note: 'how many Big-Wave Seasons those days fall across',
+      other: (seasons) => seasons + 3,
+    },
+    watch_or_better: {
+      read: true,
+      note: 'the Watch row of the panel',
+      other: (tier) => ({ ...tier, days_flagged: tier.days_flagged + 40 }),
+    },
+    go_call: {
+      read: true,
+      note: 'the Go Call row, the waste statement and the delivery section',
+      other: (tier) => ({ ...tier, gold_days_called: tier.gold_days_called + 2 }),
+    },
+  };
+
+  for (const [name, spec] of decisions(fields)) {
+    it(`${name} is ${spec.read ? 'read' : 'not read'} — ${spec.note}`, async () => {
+      const baseline = await recordFor(RECORD);
+      const changed = replace(PANEL, name, spec.other);
+
+      await holdToVerdict(spec, PANEL, changed, () => recordFor(panelIn(changed)), baseline);
+    });
+  }
+});
+
+describe('TierRecord', () => {
+  /** What the page does with each of the nine fields a tier carries.
+   *
+   * **Eight are read and `precision_lower_bound` is not, which is a decision rather than an
+   * omission.** The page renders its complement — the share of flagged days that would have been
+   * wasted — and says why in the paragraph itself: the figure "is quoted the unkind way round
+   * because this number is asking you to spend money". Printing the precision beside the waste
+   * would put the flattering half of one fact next to the unflattering half of the same fact,
+   * and a reader would take the kinder one. So the wire carries both and the page picks the
+   * direction it is willing to be judged on. */
+  const fields: Registry<TierRecord> = {
+    gold_days_called: {
+      read: true,
+      note: 'how many confirmed giant days the tier caught, in the row and the waste statement',
+      other: (days) => days + 3,
+    },
+    gold_days_in_panel: {
+      read: true,
+      note: 'how many there were to catch',
+      other: (days) => days + 4,
+    },
+    days_flagged: {
+      read: true,
+      note: 'how many days it flagged, said in the row, the waste statement and the delivery',
+      other: (days) => days + 25,
+    },
+    recall: {
+      read: true,
+      note: 'that catch rate as a whole percentage beside the counts',
+      // A whole percentage point is what `percent` can show, and this clears it many times over.
+      other: () => 0.5,
+    },
+    precision_lower_bound: {
+      read: false,
+      note:
+        'not shown. The page renders its complement — the share that would have been wasted — ' +
+        'and says it is quoted the unkind way round because it is asking a reader to spend money',
+      other: () => 0.5,
+    },
+    wasted_upper_bound: {
+      read: true,
+      note: 'the share of flagged days that would have been wasted, at worst',
+      other: () => 0.5,
+    },
+    days_wasted_upper_bound: {
+      read: true,
+      note: 'that share as a count, in the row and again in the waste statement',
+      other: (days) => days + 11,
+    },
+    flags_per_big_wave_season: {
+      read: true,
+      note: 'how often the tier fires in a season, to one decimal',
+      other: (flags) => flags + 5,
+    },
+    delivered: {
+      read: true,
+      note: 'the lowest sea in the row, and the whole delivery section under the waste statement',
+      // The Watch tier's case: a record that publishes no delivery for this tier renders none,
+      // rather than an empty section that would read as a page that broke.
+      other: () => null,
+    },
+  };
+
+  for (const [name, spec] of decisions(fields)) {
+    it(`${name} is ${spec.read ? 'read' : 'not read'} — ${spec.note}`, async () => {
+      const baseline = await recordFor(RECORD);
+      const changed = replace(GO_CALL, name, spec.other);
+
+      await holdToVerdict(spec, GO_CALL, changed, () => recordFor(withGoCall(changed)), baseline);
+    });
+  }
+});
+
+describe('DeliveryRecord', () => {
+  /** What the delivery section does with each of its four fields.
+   *
+   * **Three are read and `maximum_m` is not.** The section leads with the *minimum* deliberately
+   * — "no Go Call landed on a day the sea peaked below 2.82m" is the strongest true sentence
+   * available here and a reader can check it — and gives the median beside it. The maximum is the
+   * one figure of the three that flatters: the biggest day a tier ever caught says nothing about
+   * the days it usually catches, and is the number a reader would remember. */
+  const deliveredIn = (delivered: DeliveryRecord) => withGoCall({ ...GO_CALL, delivered });
+
+  const fields: Registry<DeliveryRecord> = {
+    minimum_m: {
+      read: true,
+      note: 'the lowest sea any flagged day reached — the headline of the section and of the row',
+      other: (m) => m - 1.2,
+    },
+    median_m: {
+      read: true,
+      note: 'the middle of them, beside the minimum in both places',
+      other: (m) => m + 1.3,
+    },
+    maximum_m: {
+      read: false,
+      note:
+        'not shown. The section leads with the minimum because it is the checkable claim; the ' +
+        'largest day a tier ever caught is the figure that flatters and the one a reader keeps',
+      other: (m) => m + 2.6,
+    },
+    above: {
+      read: true,
+      note: 'every rung of the ladder under the statement',
+      other: (steps) => steps.slice(0, -1),
+    },
+  };
+
+  for (const [name, spec] of decisions(fields)) {
+    it(`${name} is ${spec.read ? 'read' : 'not read'} — ${spec.note}`, async () => {
+      const baseline = await recordFor(RECORD);
+      const changed = replace(DELIVERED, name, spec.other);
+
+      await holdToVerdict(
+        spec,
+        DELIVERED,
+        changed,
+        () => recordFor(deliveredIn(changed)),
+        baseline,
+      );
+    });
+  }
+});
+
+describe('DeliveredStepRecord', () => {
+  /** What one rung of the ladder does with each of its four fields. All four are read. */
+  const stepIn = (step: DeliveredStepRecord) =>
+    withGoCall({
+      ...GO_CALL,
+      delivered: { ...DELIVERED, above: [step, ...DELIVERED.above.slice(1)] },
+    });
+
+  const fields: Registry<DeliveredStepRecord> = {
+    metres: {
+      read: true,
+      note: 'the height this rung counts days above',
+      other: (m) => m + 0.5,
+    },
+    days: {
+      read: true,
+      note: 'how many flagged days cleared it',
+      other: (days) => days - 12,
+    },
+    of_days: {
+      read: true,
+      note: 'how many there were, which is what that count is out of',
+      other: (days) => days + 9,
+    },
+    share: {
+      read: true,
+      note: 'the same fraction as a whole percentage beside it',
+      // Already divided by the backend, and this layer does no arithmetic on it — so the
+      // mutation moves the share alone and leaves the two counts saying something else.
+      other: () => 0.5,
+    },
+  };
+
+  for (const [name, spec] of decisions(fields)) {
+    it(`${name} is ${spec.read ? 'read' : 'not read'} — ${spec.note}`, async () => {
+      const baseline = await recordFor(RECORD);
+      const changed = replace(STEP, name, spec.other);
+
+      await holdToVerdict(spec, STEP, changed, () => recordFor(stepIn(changed)), baseline);
+    });
+  }
+});
+
+describe('AccuracyBand', () => {
+  /** What an accuracy table does with each of the six fields a band carries. All six are read,
+   * and both error columns are structurally required — ADR 0006 forbids an accuracy figure
+   * without the Heuristic Baseline beside it, and `api.ts` throws rather than render one. */
+  const BAND = RECORD.scored[0]!;
+  const bandIn = (band: AccuracyBand): TrackRecord => ({
+    ...RECORD,
+    scored: [band, ...RECORD.scored.slice(1)],
+  });
+
+  const fields: Registry<AccuracyBand> = {
+    name: {
+      read: true,
+      note: 'the row heading naming the subset of hours',
+      other: () => 'every hour',
+    },
+    hours: {
+      read: true,
+      note: 'how many hours the row was measured over',
+      other: (hours) => hours + 1574,
+    },
+    baseline_mae_m: {
+      read: true,
+      note: 'the rule of thumb’s average error, which every figure here must appear beside',
+      other: (m) => m + 0.5,
+    },
+    learned_mae_m: {
+      read: true,
+      note: 'the learned model’s average error',
+      other: (m) => m + 0.5,
+    },
+    gain_m: {
+      read: true,
+      note: 'the signed difference between them, and whether the cell reads as better or worse',
+      // Across zero, because the sign is the whole point of the column and is one character.
+      other: (m) => m + 0.5,
+    },
+    caveat: {
+      read: true,
+      note: 'the note under the table, rendered in full rather than as a marker to chase',
+      // This row carries none, and gaining one is the direction that matters: a caveat the
+      // backend adds must reach the page, or the strongest-looking figure goes unqualified.
+      other: () => 'Measured on a single season.',
+    },
+  };
+
+  for (const [name, spec] of decisions(fields)) {
+    it(`${name} is ${spec.read ? 'read' : 'not read'} — ${spec.note}`, async () => {
+      const baseline = await recordFor(RECORD);
+      const changed = replace(BAND, name, spec.other);
+
+      await holdToVerdict(spec, BAND, changed, () => recordFor(bandIn(changed)), baseline);
+    });
+  }
+});
+
+describe('RangeCalibration', () => {
+  /** What the range section does with each of its five fields. All five are read, and two of
+   * them are whole sentences the backend writes rather than figures. */
+  const rangeIn = (calibration: RangeCalibration): TrackRecord => ({
+    ...RECORD,
+    range_calibration: calibration,
+  });
+
+  const fields: Registry<RangeCalibration> = {
+    claimed: {
+      read: true,
+      note: 'the share the range says it holds, and what every row is judged against',
+      other: () => 0.75,
+    },
+    big_swell_from_m: {
+      read: true,
+      note: 'the sea the kinder subset was drawn at, stated in its caption from the record',
+      other: (m) => m + 1.5,
+    },
+    understates_because: {
+      read: true,
+      note: 'why the figures are a floor, under the tables in full',
+      other: () => 'The running range carries a term these draws did not.',
+    },
+    rests_on: {
+      read: true,
+      note: 'what the whole table rests on, beside it',
+      other: () => 'It rests on a single confirmed giant day.',
+    },
+    leads: {
+      read: true,
+      note: 'every row of both tables, and the two lead times the statement above them names',
+      other: (leads) => leads.slice(0, -1),
+    },
+  };
+
+  for (const [name, spec] of decisions(fields)) {
+    it(`${name} is ${spec.read ? 'read' : 'not read'} — ${spec.note}`, async () => {
+      const baseline = await recordFor(RECORD);
+      const changed = replace(RANGE, name, spec.other);
+
+      await holdToVerdict(spec, RANGE, changed, () => recordFor(rangeIn(changed)), baseline);
+    });
+  }
+});
+
+describe('RangeLead', () => {
+  /** What one lead time contributes, across its three fields. All three are read, and both
+   * subsets are required by the type for the reason `PanelRecord`'s two tiers are: the
+   * big-swell rows read kinder than the whole, so no shape may carry one alone. */
+  const leadIn = (lead: RangeLead) => ({
+    ...RECORD,
+    range_calibration: { ...RANGE, leads: [lead, ...RANGE.leads.slice(1)] },
+  });
+
+  const fields: Registry<RangeLead> = {
+    lead_days: {
+      read: true,
+      note: 'the row heading, and the lead time the statement above the tables names',
+      other: (days) => days + 2,
+    },
+    all_hours: {
+      read: true,
+      note: 'this row of the every-hour table, and the coverage the verdict is derived from',
+      other: (coverage) => ({ ...coverage, covered: 0.5 }),
+    },
+    big_swell: {
+      read: true,
+      note: 'this row of the bigger-seas table',
+      other: (coverage) => ({ ...coverage, covered: 0.5 }),
+    },
+  };
+
+  for (const [name, spec] of decisions(fields)) {
+    it(`${name} is ${spec.read ? 'read' : 'not read'} — ${spec.note}`, async () => {
+      const baseline = await recordFor(RECORD);
+      const changed = replace(LEAD, name, spec.other);
+
+      await holdToVerdict(spec, LEAD, changed, () => recordFor(leadIn(changed)), baseline);
+    });
+  }
+});
+
+describe('RangeCoverage', () => {
+  /** What one measured subset contributes, across its five fields.
+   *
+   * All five are read, and `widening_factor` is the one that needs saying: it is never printed.
+   * It reaches a reader only through the clause deciding whether the miss *grows* with lead time
+   * — a claim the widths cannot support on their own, because widths grow with lead time whether
+   * or not the excess does. So a field rendered nowhere is still read, which is the distinction
+   * this whole file turns on. */
+  const coverageIn = (coverage: RangeCoverage) => ({
+    ...RECORD,
+    range_calibration: {
+      ...RANGE,
+      leads: [{ ...LEAD, all_hours: coverage }, ...RANGE.leads.slice(1)],
+    },
+  });
+  const COVERAGE = LEAD.all_hours;
+
+  const fields: Registry<RangeCoverage> = {
+    hours: {
+      read: true,
+      note: 'the hours in the row, and the figure the statement above the tables leads with',
+      other: (hours) => hours + 207,
+    },
+    covered: {
+      read: true,
+      note: 'how often the range held, and which way the verdict above the tables falls',
+      other: () => 0.5,
+    },
+    median_width_m: {
+      read: true,
+      note: 'the width the range prints at this lead time',
+      other: (m) => m + 0.6,
+    },
+    justified_width_m: {
+      read: true,
+      note: 'the width the outcomes would have asked for',
+      other: (m) => m + 0.6,
+    },
+    widening_factor: {
+      read: true,
+      note:
+        'never printed, and still read: it is the only thing that can say whether the miss grows ' +
+        'with lead time, which the widths cannot because they grow either way',
+      // Close enough to the longest lead's factor that the growth falls under the tenth of a
+      // half-width the page requires before it will say so.
+      other: () => 0.55,
+    },
+  };
+
+  for (const [name, spec] of decisions(fields)) {
+    it(`${name} is ${spec.read ? 'read' : 'not read'} — ${spec.note}`, async () => {
+      const baseline = await recordFor(RECORD);
+      const changed = replace(COVERAGE, name, spec.other);
+
+      await holdToVerdict(spec, COVERAGE, changed, () => recordFor(coverageIn(changed)), baseline);
+    });
+  }
+});
+
+describe('RecordedDay', () => {
+  /** What the day-by-day table does with each of the six fields a row carries. All six are
+   * read. The row chosen is a confirmed giant day, because `gold_tier` renders only on one. */
+  const DAY = RECORD.days[0]!;
+  const dayIn = (day: RecordedDay): TrackRecord => ({
+    ...RECORD,
+    days: [day, ...RECORD.days.slice(1)],
+  });
+
+  const fields: Registry<RecordedDay> = {
+    date: { read: true, note: 'the row heading', other: () => '2012-01-28' },
+    season: { read: true, note: 'the Big-Wave Season column', other: () => '2012/13' },
+    call: {
+      read: true,
+      note: 'what the system called that day',
+      other: () => 'go' as CallStatus,
+    },
+    peak_significant_wave_height_m: {
+      read: true,
+      note: 'the height column, which the caveat above says is an input and not an outcome',
+      other: (m) => m + 1.4,
+    },
+    gold_day: {
+      read: true,
+      note: 'the confirmed column, and whether the row is marked as one',
+      other: () => false,
+    },
+    gold_tier: {
+      read: true,
+      note: 'how it was confirmed, named in brackets beside the yes',
+      other: () => 'documented',
+    },
+  };
+
+  for (const [name, spec] of decisions(fields)) {
+    it(`${name} is ${spec.read ? 'read' : 'not read'} — ${spec.note}`, async () => {
+      const baseline = await recordFor(RECORD);
+      const changed = replace(DAY, name, spec.other);
+
+      await holdToVerdict(spec, DAY, changed, () => recordFor(dayIn(changed)), baseline);
+    });
+  }
+});
+
+describe('IssuedRecord', () => {
+  /** What the issued section does with each of its five fields. All five are read — on a
+   * baseline that has issued something, which `handlers.ts` has not. */
+  const issuedIn = (issued: IssuedRecord): TrackRecord => ({ ...RECORD, issued });
+
+  const fields: Registry<IssuedRecord> = {
+    calls_issued: {
+      read: true,
+      note: 'how many calls this installation has made, and which of the three branches renders',
+      other: (calls) => calls + 60,
+    },
+    dates_covered: {
+      read: true,
+      note: 'how many dates those calls were about',
+      other: (dates) => dates + 9,
+    },
+    go_calls_issued: {
+      read: true,
+      note: 'how many of them were Go Calls',
+      other: (calls) => calls + 4,
+    },
+    first_issued_at: {
+      read: true,
+      note: 'when the first of them was issued',
+      other: () => '2026-01-05T00:00:00Z',
+    },
+    last_issued_at: {
+      read: true,
+      note: 'when the most recent was',
+      other: () => '2026-08-15T09:00:00Z',
+    },
+  };
+
+  for (const [name, spec] of decisions(fields)) {
+    it(`${name} is ${spec.read ? 'read' : 'not read'} — ${spec.note}`, async () => {
+      const baseline = await recordFor(RECORD);
+      const changed = replace(ISSUED, name, spec.other);
+
+      await holdToVerdict(spec, ISSUED, changed, () => recordFor(issuedIn(changed)), baseline);
     });
   }
 });
