@@ -25,6 +25,14 @@ const POINTS = [
  * Shown alongside the number rather than instead of it: a reader should not need to
  * know that 298° is west-north-west, and a surfer checking the swell direction should
  * not have to trust our rounding.
+ *
+ * **That was a claim about four call sites that had stopped honouring it (#106).** The current
+ * panel and the Model Spread arcs printed both; the forecast's day cards and both direction
+ * columns of the hourly table printed the name alone. The cost fell exactly where the rounding
+ * is coarsest: 16 sectors are 22.5° wide, so an hourly column of names changes about once every
+ * four hours on a slowly backing swell and looks frozen in between. `Forecast.tsx`'s `Bearing`
+ * now renders every one of them, so the rule above holds everywhere rather than being a
+ * principle one module states and another declines.
  */
 export function compassPoint(degrees: number): string {
   const index = Math.round((((degrees % 360) + 360) % 360) / 22.5) % POINTS.length;

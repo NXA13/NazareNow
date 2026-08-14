@@ -960,6 +960,64 @@ describe('the forecast range', () => {
     }
   });
 
+  it('prints the degrees beside every bearing, not only the sector name', async () => {
+    // #106. `compassPoint` has documented itself since it was written as "shown alongside the
+    // number rather than instead of it … a surfer checking the swell direction should not have
+    // to trust our rounding" — and the forecast rendered the name alone on the day card and in
+    // both direction columns here.
+    render(<ForecastRange />);
+
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
+    const table = await screen.findByRole('table');
+    const rows = within(table).getAllByRole('row').slice(1);
+
+    for (const hour of [0, 7, 23]) {
+      const reading = BIG.hours[hour]!;
+      const cells = within(rows[hour]!).getAllByRole('cell');
+
+      for (const [cell, direction] of [
+        [cells[2]!, reading.swell_direction],
+        [cells[3]!, reading.wind_direction],
+      ] as const) {
+        expect(cell).toHaveTextContent(`${direction.value}${direction.unit}`);
+        expect(cell).toHaveTextContent(compassPoint(direction.value));
+      }
+    }
+
+    // The whole point of the change, and the assertion the substring checks above cannot make:
+    // two consecutive hours *inside one sector* must still read differently. Sixteen sectors are
+    // 22.5° wide and this swell backs five degrees an hour, so before #106 these two cells were
+    // character-identical and a reader watching the swell come round saw a frozen column.
+    const inSameSector = BIG.hours.findIndex(
+      (hour, index) =>
+        index > 0 &&
+        compassPoint(hour.swell_direction.value) ===
+          compassPoint(BIG.hours[index - 1]!.swell_direction.value),
+    );
+    expect(inSameSector).toBeGreaterThan(0);
+
+    const previous = within(rows[inSameSector - 1]!).getAllByRole('cell')[2]!;
+    const next = within(rows[inSameSector]!).getAllByRole('cell')[2]!;
+    expect(compassPoint(BIG.hours[inSameSector]!.swell_direction.value)).toEqual(
+      compassPoint(BIG.hours[inSameSector - 1]!.swell_direction.value),
+    );
+    expect(next.textContent).not.toEqual(previous.textContent);
+  });
+
+  it('gives the day card the peak swell direction in degrees as well as its sector', async () => {
+    // The same fix on the summary above the table, where the figure is what a reader compares
+    // one day against another on. `aria-label` carries it too, since that overrides the card's
+    // content for exactly the readers who cannot go looking for the number elsewhere (#25).
+    render(<ForecastRange />);
+
+    const card = await screen.findByRole('button', { name: new RegExp(BIG.date) });
+    const bearing = `${BIG.swell_direction_at_peak.value}${BIG.swell_direction_at_peak.unit}`;
+
+    expect(card).toHaveTextContent(bearing);
+    expect(card).toHaveTextContent(compassPoint(BIG.swell_direction_at_peak.value));
+    expect(card.getAttribute('aria-label')).toContain(bearing);
+  });
+
   it('says a bearing is not a verdict when the wind is too light to matter', async () => {
     // ADR 0009: below a fitted speed the rule does not consult wind direction at all,
     // because a breeze that cannot raise a ripple cannot wreck a wave face whichever way it
