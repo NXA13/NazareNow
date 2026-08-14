@@ -53,6 +53,35 @@ const CALL_MEANINGS: Record<CallStatus | typeof UNJUDGED, string> = {
  */
 export type Prominence = 'leading' | 'notable' | 'ordinary';
 
+/**
+ * A direction as its own number and the sector that number falls in.
+ *
+ * **The name alone hides movement, which is what #106 was about.** `compassPoint` rounds to 16
+ * sectors 22.5° wide, so a column of names changes about once every four hours on a swell backing
+ * five degrees an hour, and looks frozen in between. Story 6 of #1 — "how conditions change hour
+ * by hour, so that I know when during the day to be at the beach" — is at Praia do Norte largely a
+ * question about direction, and a reader watching for the swell to come round into the canyon's
+ * window could not see it happening.
+ *
+ * `format.ts` has said since it was written that the name is "shown alongside the number rather
+ * than instead of it: a reader should not need to know that 298° is west-north-west, and a surfer
+ * checking the swell direction should not have to trust our rounding." The current panel and the
+ * Model Spread arcs did that; the day card and both direction columns of this table rendered the
+ * name *instead of* the number, so one module stated a principle its main consumer declined.
+ *
+ * One component rather than the same three lines in three places, so the rule stays uniform — a
+ * bearing rendered one way here and another way there is how the docstring came apart the first
+ * time.
+ */
+function Bearing({ reading }: { reading: Reading }) {
+  return (
+    <span className="bearing">
+      {formatValue(reading.value)}
+      {reading.unit} {compassPoint(reading.value)}
+    </span>
+  );
+}
+
 function prominence(value: number, largest: number): Prominence {
   if (largest <= 0) return 'ordinary';
   const share = value / largest;
@@ -172,7 +201,8 @@ function DaySummary({
       aria-label={
         `${day.date} — peak swell ${formatReading(day.peak_swell_height)}, ` +
         `period ${formatReading(day.swell_period_at_peak)}, ` +
-        `from ${compassPoint(day.swell_direction_at_peak.value)}, ` +
+        `from ${formatReading(day.swell_direction_at_peak)} ` +
+        `${compassPoint(day.swell_direction_at_peak.value)}, ` +
         `longest period ${formatReading(day.longest_swell_period)}` +
         (flag ? `, ${FLAG_MEANINGS[flag]}` : '')
       }
@@ -197,7 +227,7 @@ function DaySummary({
       <span className="day-detail">
         <span className="value">{formatValue(day.swell_period_at_peak.value)}</span>
         <span className="unit">{day.swell_period_at_peak.unit}</span>
-        <span className="bearing">{compassPoint(day.swell_direction_at_peak.value)}</span>
+        <Bearing reading={day.swell_direction_at_peak} />
       </span>
       {flag && (
         <span className="day-agreement" data-testid={`day-agreement-${day.date}`}>
@@ -791,11 +821,13 @@ function HourTable({ day }: { day: ForecastDay }) {
                   {formatValue(hour.swell_period.value)}
                   <span className="unit">{hour.swell_period.unit}</span>
                 </td>
-                <td>{compassPoint(hour.swell_direction.value)}</td>
+                <td>
+                  <Bearing reading={hour.swell_direction} />
+                </td>
                 <td>
                   {formatValue(hour.wind_speed.value)}
                   <span className="unit">{hour.wind_speed.unit}</span>
-                  <span className="bearing">{compassPoint(hour.wind_direction.value)}</span>
+                  <Bearing reading={hour.wind_direction} />
                 </td>
               </tr>
             ))}
