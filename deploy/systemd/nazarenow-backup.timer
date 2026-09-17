@@ -5,7 +5,8 @@ Documentation=https://github.com/NXA13/NazareNow/blob/main/deploy/README.md
 [Timer]
 # Daily, in the small hours, well clear of a Pipeline Run boundary. The store grows by one
 # run every three hours, so a day is at most eight runs of loss — acceptable against a
-# record measured in seasons, and cheap enough to keep thirty of.
+# record measured in seasons. Retention is grandfather-father-son rather than a flat count,
+# so a year of these costs about twenty snapshots rather than 365.
 OnCalendar=*-*-* 03:20:00
 
 # A Pi that was off at 03:20 still gets its backup when it comes back, rather than skipping

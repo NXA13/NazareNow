@@ -238,9 +238,37 @@ database yields an archive that looks fine and restores to a corrupt one. Each s
 integrity-checked before it counts, then gzipped, then copied off the host if
 `NAZARENOW_BACKUP_REMOTE` is set.
 
-**Set that remote.** Without it, snapshots sit on the same SSD as the database they protect,
-which defends against corruption but not against losing the machine — and losing the machine
-is the scenario ADR 0007 is written about.
+### How big this gets
+
+Measured, not guessed. A Pipeline Run appends about **180 kB** and there are eight a day, so
+the store grows by roughly **half a gigabyte a year**. It compresses about ten to one, so
+today's 1.2 MB store snapshots to 120 kB; a year from now expect tens of megabytes per
+snapshot.
+
+Retention is grandfather-father-son — 7 daily, 4 weekly, 12 monthly — which turns a year of
+daily backups into **about twenty snapshots** reaching back twelve months, rather than thirty
+near-identical copies of the last month. `deploy/bin/test-retention.sh` checks that policy
+against fabricated snapshots, which is the only way to exercise it without waiting a year.
+
+Note what that does and does not fix. It bounds what is *stored*, not what is *uploaded*:
+each snapshot is an independent gzip of the whole store, so a full copy goes off the host
+every night regardless. If that ever becomes the problem, the answer is a deduplicating
+backup tool — restic or borg, which upload only changed blocks — and not a smaller retention
+number.
+
+### Set the remote
+
+Without it, snapshots sit on the same SSD as the database they protect, which defends against
+corruption but not against losing the machine — and losing the machine is the scenario ADR
+0007 is written about. The script warns on every run until this is set.
+
+**Cloudflare R2 or Backblaze B2** both fit inside a free tier at this scale (10 GB free
+each, and ingress is free on both), and rclone speaks to either. Encryption is not worth the
+key-management risk here: the store is derived public weather data, and losing a key is a
+bigger threat to it than anyone reading it.
+
+A second machine on your own LAN is fine as an *extra* sink and no good as the only one — it
+burns in the same fire and gets stolen in the same burglary.
 
 ```bash
 rclone config                      # once, interactively
@@ -248,6 +276,10 @@ sudo nano /etc/nazarenow/nazarenow.env   # set NAZARENOW_BACKUP_REMOTE
 sudo systemctl start nazarenow-backup.service   # prove it works now, not at 03:20
 journalctl -u nazarenow-backup -n 20
 ```
+
+The remote is pruned on the same policy as the local directory, so it does not grow without
+limit. A prune that fails on the network is reported and never fails the run — by that point
+the new snapshot is already uploaded, which is the part that matters.
 
 ### The rehearsal
 

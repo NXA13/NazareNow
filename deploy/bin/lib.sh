@@ -39,3 +39,80 @@ restart_services() {
   sleep 5
   sudo systemctl restart nazarenow-api.service
 }
+
+# Grandfather-father-son retention over a directory of snapshots.
+#
+#   prune_snapshots <dir> <keep_daily> <keep_weekly> <keep_monthly> [rclone_remote]
+#
+# Walks newest first and keeps each snapshot that is the most recent one in a day, a week or
+# a month still within that bucket's budget. A snapshot kept as today's daily also occupies
+# this week's and this month's slot, which is what makes the buckets nest rather than
+# multiply. Everything else is deleted, locally and — if a remote is given — from the remote
+# too, because an archive nobody prunes is a storage bill that eventually ends the backups.
+#
+# The date arithmetic reads the stamp out of the filename rather than the filesystem. A copy,
+# a restore or an rsync rewrites mtime, and a retention policy that quietly re-ages its own
+# archive when someone moves a directory is worse than no policy at all.
+prune_snapshots() {
+  local dir="$1" keep_daily="$2" keep_weekly="$3" keep_monthly="$4" remote="${5:-}"
+
+  local -A day_taken week_taken month_taken
+  local daily=0 weekly=0 monthly=0 pruned=0 kept=0
+  local path stamp day week month keep
+
+  local snapshots=()
+  mapfile -t snapshots < <(ls -1 "$dir"/nazarenow-*.db.gz 2>/dev/null | sort -r)
+
+  for path in "${snapshots[@]:-}"; do
+    [[ -n "$path" ]] || continue
+
+    # nazarenow-20260917T032000Z.db.gz -> 20260917T032000Z
+    stamp="$(basename "$path")"
+    stamp="${stamp#nazarenow-}"
+    stamp="${stamp%.db.gz}"
+    day="${stamp:0:8}"
+
+    # An unparseable name is kept, never deleted. A stray file is a mystery worth looking
+    # at, not a reason for a backup script to start removing things it cannot read.
+    if ! week="$(date -u -d "$day" +%G-%V 2>/dev/null)"; then
+      echo "  keeping $(basename "$path"): cannot read a date from its name" >&2
+      continue
+    fi
+    month="${stamp:0:6}"
+
+    keep=false
+    if [[ -z "${day_taken[$day]:-}" && "$daily" -lt "$keep_daily" ]]; then
+      day_taken[$day]=1
+      daily=$((daily + 1))
+      keep=true
+    fi
+    if [[ -z "${week_taken[$week]:-}" && "$weekly" -lt "$keep_weekly" ]]; then
+      week_taken[$week]=1
+      weekly=$((weekly + 1))
+      keep=true
+    fi
+    if [[ -z "${month_taken[$month]:-}" && "$monthly" -lt "$keep_monthly" ]]; then
+      month_taken[$month]=1
+      monthly=$((monthly + 1))
+      keep=true
+    fi
+
+    if [[ "$keep" == true ]]; then
+      kept=$((kept + 1))
+      continue
+    fi
+
+    rm -f -- "$path"
+    pruned=$((pruned + 1))
+
+    # Failure here is reported, never fatal: the local snapshot is already gone and the new
+    # one is already uploaded, so a network problem at this point must not fail the run.
+    if [[ -n "$remote" ]]; then
+      if ! rclone deletefile "$remote/$(basename "$path")" 2>/dev/null; then
+        echo "  could not prune $(basename "$path") from $remote" >&2
+      fi
+    fi
+  done
+
+  echo "  retention: $kept kept ($daily daily, $weekly weekly, $monthly monthly), $pruned pruned"
+}
