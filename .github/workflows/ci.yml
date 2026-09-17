@@ -50,14 +50,19 @@ jobs:
       # Lint only. These scripts need their own heavy dependencies and real data to
       # run, so they are checked statically rather than executed. Committed code
       # nothing checks tends to rot.
+      #
+      # scenarios/ joins them for the same reason and with a different excuse: it runs the
+      # real pipeline, but against live Open-Meteo archive requests, so executing it here
+      # would spend the provider's rate budget on every push to prove something a person
+      # verifies by looking at the page.
       - name: Install ruff
         run: pip install ruff
 
       - name: Lint
-        run: ruff check analysis/
+        run: ruff check analysis/ scenarios/
 
       - name: Format
-        run: ruff format --check analysis/
+        run: ruff format --check analysis/ scenarios/
 
   frontend:
     name: Frontend
@@ -97,3 +102,10 @@ jobs:
       # repository controls; load time itself needs a host, and there is not one until #28.
       - name: Payload budget
         run: npm run check:payload
+
+      # ADR 0007 serves the page and the API from one origin behind one password. A built
+      # bundle naming a host of its own is either blocked by the browser or reaches a
+      # backend the wall does not cover, and neither failure is visible to the suites —
+      # both mock the boundary between frontend and backend.
+      - name: Same origin
+        run: npm run check:same-origin

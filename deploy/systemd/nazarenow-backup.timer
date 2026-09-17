@@ -1,0 +1,22 @@
+[Unit]
+Description=Daily snapshot of the NazareNow store
+Documentation=https://github.com/NXA13/NazareNow/blob/main/deploy/README.md
+
+[Timer]
+# Daily, in the small hours, well clear of a Pipeline Run boundary. The store grows by one
+# run every three hours, so a day is at most eight runs of loss — acceptable against a
+# record measured in seasons. Retention is grandfather-father-son rather than a flat count,
+# so a year of these costs about twenty snapshots rather than 365.
+OnCalendar=*-*-* 03:20:00
+
+# A Pi that was off at 03:20 still gets its backup when it comes back, rather than skipping
+# a day silently. Losing the machine is the scenario this all guards against, so the day
+# after an outage is exactly when a snapshot matters most.
+Persistent=true
+
+# Spread the write, so a backup and a Pipeline Run that happen to coincide are not both
+# hammering the SSD at the same instant.
+RandomizedDelaySec=600
+
+[Install]
+WantedBy=timers.target

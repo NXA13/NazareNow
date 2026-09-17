@@ -6,7 +6,22 @@
  * boundary rather than scattering handlers across components.
  */
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000';
+/**
+ * Empty, so every request below is a relative path and resolves against whatever origin
+ * the page was served from.
+ *
+ * ADR 0007 puts the page and the API on one origin behind one wall — the API under
+ * `/api` on the same host as the page — because a private page in front of a public
+ * `/api/conditions/forecast` is not private: that endpoint is the store. A configurable
+ * base would let a build name a second origin, which is either blocked by the browser or,
+ * worse, reachable without the password.
+ *
+ * Development has the same shape: `vite.config.ts` proxies `/api` to the backend, so the
+ * dev server is same-origin too and a fault can be reproduced on a laptop. The allowlist
+ * in `api.py` stays for anyone pointing a tool straight at port 8000, and is local
+ * development only.
+ */
+const API_BASE = '';
 
 /**
  * One measured quantity and the unit the provider reported it in.

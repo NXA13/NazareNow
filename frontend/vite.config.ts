@@ -11,6 +11,16 @@ export default defineConfig({
     // browser console. 5273 is chosen to sit clear of the usual 5173-5176 range.
     port: 5273,
     strictPort: true,
+    // Development runs the same shape as the deployed host: ADR 0007 serves the page and
+    // the API from one origin, with a reverse proxy sending `/api` to the backend. This is
+    // that proxy, so `api.ts` can use relative paths in both places and a same-origin
+    // fault is reproducible on a laptop rather than only on the Pi.
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+    },
   },
   test: {
     environment: 'jsdom',
