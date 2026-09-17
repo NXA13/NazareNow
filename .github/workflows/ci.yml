@@ -50,14 +50,19 @@ jobs:
       # Lint only. These scripts need their own heavy dependencies and real data to
       # run, so they are checked statically rather than executed. Committed code
       # nothing checks tends to rot.
+      #
+      # scenarios/ joins them for the same reason and with a different excuse: it runs the
+      # real pipeline, but against live Open-Meteo archive requests, so executing it here
+      # would spend the provider's rate budget on every push to prove something a person
+      # verifies by looking at the page.
       - name: Install ruff
         run: pip install ruff
 
       - name: Lint
-        run: ruff check analysis/
+        run: ruff check analysis/ scenarios/
 
       - name: Format
-        run: ruff format --check analysis/
+        run: ruff format --check analysis/ scenarios/
 
   frontend:
     name: Frontend
