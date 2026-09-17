@@ -22,13 +22,6 @@ from pathlib import Path
 PACKAGE = Path(__file__).resolve().parent.parent / "src" / "nazarenow"
 PYPROJECT = Path(__file__).resolve().parent.parent / "pyproject.toml"
 
-# The module a file imports is not always the distribution that provides it. This project
-# has no such case today; the mapping exists so that adding one is an edit here rather
-# than a puzzling failure.
-DISTRIBUTION_FOR_MODULE = {
-    "uvicorn": "uvicorn",
-}
-
 
 def _imported_top_level_modules() -> set[str]:
     """Every top-level module name imported anywhere under the runtime package."""
@@ -64,11 +57,11 @@ def test_every_third_party_module_the_runtime_imports_is_a_runtime_dependency() 
     }
     declared = _declared_runtime_distributions()
 
-    undeclared = {
-        module
-        for module in third_party
-        if DISTRIBUTION_FOR_MODULE.get(module, module).lower() not in declared
-    }
+    # Module name and distribution name are assumed to match, which holds for every
+    # dependency this project has. The day one does not — the import and the thing you pip
+    # install spelled differently — this is where the translation goes, and the failure
+    # names the module clearly enough to say so.
+    undeclared = {module for module in third_party if module.lower() not in declared}
 
     assert not undeclared, (
         f"imported by the runtime but not declared as a runtime dependency: "

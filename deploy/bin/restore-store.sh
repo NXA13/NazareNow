@@ -14,6 +14,9 @@
 
 set -euo pipefail
 
+# shellcheck source=deploy/bin/lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+
 snapshot="${1:-}"
 destination="${2:-${NAZARENOW_DB:-}}"
 
@@ -37,15 +40,13 @@ gunzip -c "$snapshot" >"$work/restored.db"
 # Check before touching anything live. A snapshot that cannot be read is not a restore
 # candidate, and finding that out after overwriting the original would be the one
 # unrecoverable mistake this whole file exists to prevent.
-if ! sqlite3 "$work/restored.db" 'PRAGMA integrity_check;' | grep -qx 'ok'; then
+if ! store_is_intact "$work/restored.db"; then
   echo "Snapshot failed its integrity check. Refusing to restore it." >&2
   exit 1
 fi
 
-runs="$(sqlite3 "$work/restored.db" 'SELECT COUNT(*) FROM pipeline_run;')"
-calls="$(sqlite3 "$work/restored.db" 'SELECT COUNT(*) FROM day_call;')"
-latest="$(sqlite3 "$work/restored.db" 'SELECT COALESCE(MAX(started_at), "never") FROM pipeline_run;')"
-echo "Snapshot holds $runs pipeline runs, $calls day calls, most recent run $latest"
+runs="$(store_run_count "$work/restored.db")"
+echo "Snapshot holds $(store_summary "$work/restored.db")"
 
 live=false
 if [[ -n "${NAZARENOW_DB:-}" && "$destination" == "$NAZARENOW_DB" ]]; then
@@ -71,6 +72,16 @@ if [[ -f "$destination" ]]; then
   aside="$destination.displaced-$(date -u +%Y%m%dT%H%M%SZ)"
   echo "Moving the existing database aside to $aside"
   mv "$destination" "$aside"
+  # The store uses SQLite's default rollback journal, not WAL, so there is normally nothing
+  # beside it — but a scheduler killed mid-transaction leaves a hot `-journal`, and leaving
+  # that next to a freshly restored file would have SQLite replay one database's uncommitted
+  # transaction into another's.
+  # Written as an if rather than `[[ ... ]] && mv`, which under `set -e` is a trap: an
+  # and-list whose test fails is survivable mid-script but exits with the script's status
+  # if it ever ends up last.
+  if [[ -f "$destination-journal" ]]; then
+    mv "$destination-journal" "$aside-journal"
+  fi
 fi
 
 mkdir -p "$(dirname "$destination")"
@@ -78,12 +89,7 @@ cp "$work/restored.db" "$destination"
 echo "Restored to $destination"
 
 if [[ "$live" == true ]]; then
-  # Scheduler first: it opens the store writable and runs any migration the restored file
-  # predates. The API opens read-only and cannot, so starting it first would fail until
-  # the scheduler had been round once anyway.
   echo "Starting services"
-  sudo systemctl start nazarenow-scheduler.service
-  sleep 5
-  sudo systemctl start nazarenow-api.service
+  restart_services
   systemctl --no-pager --lines=0 status nazarenow-scheduler.service nazarenow-api.service
 fi

@@ -11,11 +11,40 @@
 
 set -euo pipefail
 
+# shellcheck source=deploy/bin/lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+
 REPO="${REPO:-/opt/nazarenow}"
 WEB_ROOT="${WEB_ROOT:-/var/www/nazarenow}"
 ENV_FILE="${ENV_FILE:-/etc/nazarenow/nazarenow.env}"
 
+# The public name, so the check at the end is not pinned to one spelling in code. The repo's
+# own record has disagreed with itself about this — #28's body resolves it to
+# `www.nazarenow.com` while the v3 milestone title says `.co.uk` — and a deployment that
+# hardcodes the wrong one fails at TLS rather than at a setting.
+SITE_URL="${SITE_URL:-https://www.nazarenow.com}"
+
 cd "$REPO"
+
+# --- Preflight ---------------------------------------------------------------------
+#
+# Run as your ordinary login user, not as `nazarenow`. That user is a system account with
+# no sudo, so it cannot restart a service; you are in the `nazarenow` group, which is what
+# lets you read the config below. Both halves fail confusingly if they are wrong, so they
+# are checked here where the message can say what to do about it.
+
+if [[ ! -r "$ENV_FILE" ]]; then
+  echo "Cannot read $ENV_FILE." >&2
+  echo "It is mode 640 root:nazarenow. Are you in the nazarenow group?" >&2
+  echo "  sudo usermod -aG nazarenow \"\$USER\"   # then log out and back in" >&2
+  exit 1
+fi
+
+if ! sudo -n true 2>/dev/null; then
+  echo "This needs sudo for systemctl, nginx and the web root." >&2
+  echo "Run it as your login user — not as 'nazarenow', which has no sudo." >&2
+  exit 1
+fi
 
 echo "==> Deploying $(git rev-parse --short HEAD) — $(git log -1 --format=%s)"
 
@@ -56,11 +85,7 @@ echo
 echo "==> Restarting services"
 cd "$REPO"
 sudo systemctl daemon-reload
-# Scheduler first: it opens the store writable and applies any migration a new version
-# brings. The API opens read-only and cannot.
-sudo systemctl restart nazarenow-scheduler.service
-sleep 5
-sudo systemctl restart nazarenow-api.service
+restart_services
 sudo nginx -t && sudo systemctl reload nginx
 
 echo
@@ -79,11 +104,12 @@ fi
 
 # And through nginx, to prove the wall is up. A 401 here is the pass condition: anything
 # else means /api is reachable without the password, and that endpoint is the store.
-code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 https://www.nazarenow.com/api/conditions/current || true)"
+code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$SITE_URL/api/conditions/current" || true)"
 if [[ "$code" == "401" ]]; then
-  echo "Wall is up: unauthenticated /api returns 401."
+  echo "Wall is up: unauthenticated /api returns 401 at $SITE_URL."
 else
-  echo "WARNING: unauthenticated /api returned $code, expected 401." >&2
+  echo "Unauthenticated /api at $SITE_URL returned $code, expected 401." >&2
+  echo "That endpoint is the store. Do not leave it reachable." >&2
   exit 1
 fi
 

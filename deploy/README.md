@@ -50,15 +50,32 @@ sudo apt install -y nginx sqlite3 rsync curl git python3-venv apache2-utils cert
   python3-certbot-nginx nodejs npm rclone
 ```
 
-### 1. User, directories, SSD
+### 1. Users, directories, SSD
+
+Two identities, and the split matters — getting it wrong is the difference between a deploy
+that runs and one that cannot read its own configuration.
+
+- **`nazarenow`** is a system user with no login and no sudo. The three services run as it.
+  It owns the store and nothing else.
+- **You**, your ordinary login user, own the checkout and run the deploy. You need sudo for
+  systemctl and nginx, which is exactly what a system user does not have.
+
+So you are added to the `nazarenow` group, which is what lets you read the config the
+services read and write the backup directory they write.
 
 ```bash
 sudo adduser --system --group --home /opt/nazarenow nazarenow
+sudo usermod -aG nazarenow "$USER"
+# Group membership only applies to new sessions. Log out and back in, or `exec newgrp
+# nazarenow`, before going further — otherwise step 7 fails on a file you can plainly see.
 
 # The store lives on the SSD, never the SD card. A Pipeline Run writes every three hours
 # forever, and an SD card's write endurance is finite.
 sudo mkdir -p /mnt/ssd/nazarenow/backups
 sudo chown -R nazarenow:nazarenow /mnt/ssd/nazarenow
+# setgid, so anything created here keeps the group and both you and the services can write
+# the backups directory.
+sudo chmod -R 2775 /mnt/ssd/nazarenow
 ```
 
 Confirm the SSD is actually mounted at boot (`/etc/fstab`, by UUID — a device name can move
@@ -68,11 +85,17 @@ reappear, apparently empty, the next time the SSD mounts.
 
 ### 2. The checkout and its virtualenv
 
+Cloned as **you**, not as `nazarenow`. The services only ever read this directory; you are
+the one who pulls, builds and installs into it, and a checkout owned by a user you cannot
+become is a checkout you cannot deploy from.
+
 ```bash
-sudo -u nazarenow git clone https://github.com/NXA13/NazareNow.git /opt/nazarenow
+sudo mkdir -p /opt/nazarenow
+sudo chown "$USER":nazarenow /opt/nazarenow
+git clone https://github.com/NXA13/NazareNow.git /opt/nazarenow
 cd /opt/nazarenow
-sudo -u nazarenow python3 -m venv venv
-sudo -u nazarenow ./venv/bin/pip install ./backend
+python3 -m venv venv
+./venv/bin/pip install ./backend
 ```
 
 Runtime dependencies are only FastAPI, uvicorn, httpx and pydantic — no numpy, scipy or
@@ -126,20 +149,50 @@ sudo chmod 640 /etc/nginx/nazarenow.htpasswd
 
 ### 6. nginx and TLS
 
+**DNS first.** Point both `nazarenow.com` and `www.nazarenow.com` at the Pi's public address
+before going further — certbot proves control of the name over port 80, so the names have to
+resolve. On a home connection that means the router forwards 80 and 443 to the Pi, and a
+dynamic address needs a DDNS updater, or the renewal fails one night months from now.
+
+The order below is not interchangeable, and the reason is worth knowing: `nazarenow.conf`
+listens on 443 and names certificate files, and nginx refuses to start a TLS listener whose
+certificate does not exist. Installing it before certbot has run fails `nginx -t` — and
+certbot then has no enabled block to work with either. `nazarenow-bootstrap.conf` breaks
+that cycle by serving nothing but the ACME challenge.
+
 ```bash
+# Somewhere to serve the ACME challenge from, and somewhere for the site itself.
+sudo mkdir -p /var/www/certbot /var/www/nazarenow
+sudo chown -R www-data:www-data /var/www/certbot /var/www/nazarenow
+
+# The headers snippet, included by the server block and by every location that sets a
+# header of its own — see the comment at the top of the file for why that repetition is
+# the fix rather than the problem.
+sudo mkdir -p /etc/nginx/snippets
+sudo cp /opt/nazarenow/deploy/nginx/nazarenow-headers.conf /etc/nginx/snippets/
+
+# Port 80 only, to get the first certificate.
+sudo cp /opt/nazarenow/deploy/nginx/nazarenow-bootstrap.conf /etc/nginx/sites-available/
+sudo ln -s /etc/nginx/sites-available/nazarenow-bootstrap.conf /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+
+sudo certbot certonly --webroot -w /var/www/certbot   -d www.nazarenow.com -d nazarenow.com
+
+# Now the certificate exists, so the real config will load. Swap it in.
+sudo rm /etc/nginx/sites-enabled/nazarenow-bootstrap.conf
 sudo cp /opt/nazarenow/deploy/nginx/nazarenow.conf /etc/nginx/sites-available/
 sudo ln -s /etc/nginx/sites-available/nazarenow.conf /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
-
-sudo certbot --nginx -d www.nazarenow.com -d nazarenow.com
 ```
 
-Point both `nazarenow.com` and `www.nazarenow.com` at the Pi's public address before
-running certbot — it proves control of the name over port 80, so DNS has to be live first.
-On a home connection that means the router forwards 80 and 443 to the Pi, and a dynamic
-address needs a DDNS updater or the certificate renewal will fail one night months from now.
+`certonly --webroot` rather than `--nginx` on purpose: `--nginx` rewrites the config file,
+and this one is version-controlled and full of comments explaining itself. Renewals use the
+ACME location that `nazarenow.conf` keeps ahead of its redirects in both port-80 blocks, so
+nothing has to be swapped back.
 
-certbot installs its own renewal timer. Confirm it, rather than assuming:
+certbot installs its own renewal timer. Confirm it, rather than assuming — this is the
+"renews without intervention" criterion, and a dry run is the only thing that actually
+demonstrates it:
 
 ```bash
 sudo certbot renew --dry-run
@@ -245,6 +298,29 @@ invisible until something needs them.
 
 ## Logs
 
+**Turn persistent journald on first, or most of this is fiction.** Pi OS Lite ships
+`Storage=auto` with no `/var/log/journal` directory, which means the journal lives in memory
+and is emptied by every reboot. #28 asks that "logs from the scheduler are readable after the
+fact, so a wrong prediction can be traced to the run that made it" — after a reboot, on the
+default configuration, they are not. Reboot survival is a criterion in its own right, so this
+is precisely the case that matters.
+
+```bash
+sudo mkdir -p /var/log/journal
+sudo systemd-tmpfiles --create --prefix /var/log/journal
+printf '[Journal]
+Storage=persistent
+SystemMaxUse=200M
+'   | sudo tee /etc/systemd/journald.conf.d/nazarenow.conf
+sudo systemctl restart systemd-journald
+
+# Prove it survives, rather than assuming — reboot, then look for entries from before it.
+journalctl --list-boots
+```
+
+`SystemMaxUse=200M` is a cap, not a target: unbounded journals on a small host are their own
+failure mode, and at one Pipeline Run every three hours this holds many months.
+
 ```bash
 journalctl -u nazarenow-scheduler -f          # runs as they happen
 journalctl -u nazarenow-scheduler --since '7 days ago' | grep -i fail
@@ -258,10 +334,10 @@ no explanation beside it cannot be told apart from a host nobody switched on.
 
 ## Taking the wall down
 
-When the range is calibrated and the site should be public: delete the two `auth_basic`
-lines from the `/` block and the two from the `/api/` block in
-`/etc/nginx/sites-available/nazarenow.conf`, then `sudo nginx -t && sudo systemctl reload
-nginx`. Consider the `X-Robots-Tag` header in the same change, which is there because
+When the range is calibrated and the site should be public: delete the `auth_basic` and
+`auth_basic_user_file` lines from the **server block** and from `location /api/` in
+`/etc/nginx/sites-available/nazarenow.conf` — four lines in two places, not in `location /`,
+which has none of its own — then `sudo nginx -t && sudo systemctl reload nginx`. Consider the `X-Robots-Tag` header in the same change, which is there because
 nothing unauthenticated can currently reach the site to crawl it.
 
 Open-Meteo's free tier is non-commercial. A freely accessible site is within it; advertising,

@@ -11,6 +11,9 @@
 
 set -euo pipefail
 
+# shellcheck source=deploy/bin/lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+
 : "${NAZARENOW_DB:?NAZARENOW_DB is not set — refusing to guess which database to back up}"
 : "${NAZARENOW_BACKUP_DIR:?NAZARENOW_BACKUP_DIR is not set}"
 KEEP="${NAZARENOW_BACKUP_KEEP:-30}"
@@ -34,20 +37,19 @@ sqlite3 "$NAZARENOW_DB" ".backup '$snapshot'"
 
 # Prove the snapshot is readable before it is allowed to count as a backup. An unverified
 # copy is the same belief ADR 0007 refuses to accept.
-if ! sqlite3 "$snapshot" 'PRAGMA integrity_check;' | grep -qx 'ok'; then
-  echo "Snapshot $snapshot failed its integrity check. Keeping it for inspection." >&2
+if ! store_is_intact "$snapshot"; then
+  # Renamed rather than left as-is. The rotation below globs *.db.gz, so a bare .db would
+  # sit there forever, invisible to the count that decides what to delete.
+  mv "$snapshot" "$snapshot.corrupt"
+  echo "Snapshot failed its integrity check. Kept for inspection as $snapshot.corrupt" >&2
   exit 1
 fi
 
-# Report what was actually captured, so the journal answers "was the record still growing?"
-# without anyone opening the database.
-runs="$(sqlite3 "$snapshot" 'SELECT COUNT(*) FROM pipeline_run;')"
-calls="$(sqlite3 "$snapshot" 'SELECT COUNT(*) FROM day_call;')"
-latest="$(sqlite3 "$snapshot" 'SELECT COALESCE(MAX(started_at), "never") FROM pipeline_run;')"
+summary="$(store_summary "$snapshot")"
 
 gzip -f "$snapshot"
 echo "Backed up $NAZARENOW_DB -> $snapshot.gz"
-echo "  pipeline runs: $runs, day calls: $calls, most recent run: $latest"
+echo "  $summary"
 
 # Off the host. Without this the snapshot sits on the same SSD as the original and dies
 # with it — which is a defence against corruption, not against losing the machine, and

@@ -6,12 +6,16 @@
 # a private page in front of a public /api/conditions/forecast is not private: that
 # endpoint *is* the store.
 #
-# Ordered after the scheduler deliberately. `api.py`'s store is opened with `create=False`,
-# so on a host where nothing has ingested yet there is no database to open and this exits.
-# That is the correct behaviour — creating one here would turn a misconfigured path into an
-# empty database and answer "no conditions yet", a config fault wearing the costume of a
-# data gap — but it means the first start after a rebuild has to wait for the scheduler's
-# first run. Restart= below is what makes that self-healing rather than a manual step.
+# `After=` the scheduler, which orders boot only. It does nothing for a `systemctl restart`
+# of this unit alone, so it is not the mechanism that makes the ordering hold — `Restart=`
+# below is.
+#
+# The ordering matters because `api.py`'s store is opened with `create=False`: on a host
+# where nothing has ingested yet there is no database to open, and this exits. That is the
+# correct behaviour — creating one here would turn a misconfigured path into an empty
+# database and answer "no conditions yet", a config fault wearing the costume of a data gap
+# — but it means the first start after a rebuild waits for the scheduler's first run, and
+# recovers by retrying rather than by anyone intervening.
 Description=NazareNow read-only API
 Documentation=https://github.com/NXA13/NazareNow/blob/main/deploy/README.md
 After=network-online.target nazarenow-scheduler.service
