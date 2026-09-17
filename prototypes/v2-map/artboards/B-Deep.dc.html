@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; background: #0b0d10; }
+    a { color: #ff7a5c; } a:hover { color: #ffa78f; }
+    @keyframes deepSwell { from { transform: rotate(-50deg) translateY(0); } to { transform: rotate(-50deg) translateY(70px); } }
+    @keyframes deepWind  { from { transform: rotate(-20deg) translateY(0); } to { transform: rotate(-20deg) translateY(34px); } }
+    @keyframes deepPulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 0.9; } }
+  </style>
+</helmet>
+
+<div style="width: 1280px; height: 820px; box-sizing: border-box; display: flex; flex-direction: column; background: #0b0d10; color: #e9ecef; font-family: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;">
+
+  <header style="height: 62px; box-sizing: border-box; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 28px; border-bottom: 1px solid #1d222a;">
+    <div style="display: flex; align-items: baseline; gap: 12px;">
+      <span style="font-size: 15px; font-weight: 700; letter-spacing: 0.17em; text-transform: uppercase;">Nazaré<span style="color: #ff5f3d;">Now</span></span>
+      <span style="font-size: 11px; color: #8f979f;">Praia do Norte, Portugal</span>
+    </div>
+    <nav style="display: flex; align-items: center; gap: 22px;">
+      <a href="#forecast" style="font-size: 12px; font-weight: 600; text-decoration: none; color: #e9ecef; border-bottom: 2px solid #ff5f3d; padding-bottom: 2px;">Forecast</a>
+      <a href="#how" style="font-size: 12px; text-decoration: none; color: #8f979f;">How it works</a>
+      <span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 10.5px; color: #767e86;">Updated 06:12 WEST</span>
+    </nav>
+  </header>
+
+  <main style="flex-grow: 1; display: flex; gap: 20px; padding: 20px 28px 22px; box-sizing: border-box; min-height: 0;">
+
+    <div style="width: 604px; flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; min-height: 0;">
+
+      <section style="background: linear-gradient(180deg, rgba(255,95,61,0.16), rgba(255,95,61,0.04)); border: 1px solid rgba(255,95,61,0.5); border-radius: 4px; padding: 16px 18px 17px;">
+        <div style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #ff8a6b; font-weight: 600;">Go Call &middot; issued 4 days ahead</div>
+        <h1 style="margin: 6px 0 0; font-size: 34px; line-height: 1.05; letter-spacing: -0.02em; font-weight: 700;">Book for Sun 20 Sept</h1>
+        <p style="margin: 9px 0 0; font-size: 12.5px; line-height: 1.5; color: #b9c0c7; max-width: 52ch;">Predicted <strong style="font-family: 'IBM Plex Mono', ui-monospace, monospace; color: #e9ecef;">6.42&nbsp;m</strong> significant wave height, plausibly <strong style="font-family: 'IBM Plex Mono', ui-monospace, monospace; color: #e9ecef;">4.28&ndash;8.79&nbsp;m</strong>. The independent wave models agree. Height only &mdash; period, direction and wind are not priced in this range.</p>
+      </section>
+
+      <section style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px;">
+        <div style="background: #13171c; border: 1px solid #232830; border-radius: 4px; padding: 9px 10px;">
+          <div style="font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: #8f979f;">Sig. wave</div>
+          <div style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 21px; font-weight: 500; margin-top: 3px;">5.62<span style="font-size: 12px; color: #8f979f;">&nbsp;m</span></div>
+        </div>
+        <div style="background: #13171c; border: 1px solid #232830; border-radius: 4px; padding: 9px 10px;">
+          <div style="font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: #8f979f;">Swell period</div>
+          <div style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 21px; font-weight: 500; margin-top: 3px;">13.75<span style="font-size: 12px; color: #8f979f;">&nbsp;s</span></div>
+        </div>
+        <div style="background: #13171c; border: 1px solid #232830; border-radius: 4px; padding: 9px 10px;">
+          <div style="font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: #8f979f;">Swell dir.</div>
+          <div style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 21px; font-weight: 500; margin-top: 3px;">310<span style="font-size: 12px; color: #8f979f;">&deg; NW</span></div>
+        </div>
+        <div style="background: #13171c; border: 1px solid #232830; border-radius: 4px; padding: 9px 10px;">
+          <div style="font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: #8f979f;">Wind</div>
+          <div style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 21px; font-weight: 500; margin-top: 3px;">12.6<span style="font-size: 12px; color: #8f979f;">&nbsp;km/h</span></div>
+        </div>
+      </section>
+
+      <section style="flex-grow: 1; display: flex; flex-direction: column; gap: 4px; min-height: 0;">
+        <div style="display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 2px;">
+          <span style="font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: #8f979f; font-weight: 600;">Next 11 days</span>
+          <span style="font-size: 10px; color: #767e86;">Measured accuracy to day 7</span>
+        </div>
+
+        <button type="button" style="display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; font: inherit; color: inherit; background: #13171c; border: 1px solid #232830; border-radius: 3px; padding: 7px 10px; cursor: pointer;">
+          <span style="width: 58px; font-size: 12px; color: #b9c0c7;">Thu 17</span>
+          <span style="width: 52px; text-align: right; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 12.5px;">2.4 m</span>
+          <span style="flex-grow: 1; height: 5px; background: #1d222a; border-radius: 3px;"><span style="display: block; height: 100%; width: 30%; background: #5b6570; border-radius: 3px;"></span></span>
+          <span style="width: 54px; text-align: right; font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: #767e86;">Quiet</span>
+        </button>
+        <button type="button" style="display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; font: inherit; color: inherit; background: #13171c; border: 1px solid #232830; border-radius: 3px; padding: 7px 10px; cursor: pointer;">
+          <span style="width: 58px; font-size: 12px; color: #b9c0c7;">Fri 18</span>
+          <span style="width: 52px; text-align: right; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 12.5px;">3.1 m</span>
+          <span style="flex-grow: 1; height: 5px; background: #1d222a; border-radius: 3px;"><span style="display: block; height: 100%; width: 39%; background: #5b6570; border-radius: 3px;"></span></span>
+          <span style="width: 54px; text-align: right; font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: #767e86;">Quiet</span>
+        </button>
+        <button type="button" style="display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; font: inherit; color: inherit; background: #13171c; border: 1px solid rgba(224,168,60,0.45); border-radius: 3px; padding: 7px 10px; cursor: pointer;">
+          <span style="width: 58px; font-size: 12px; color: #b9c0c7;">Sat 19</span>
+          <span style="width: 52px; text-align: right; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 12.5px;">4.6 m</span>
+          <span style="flex-grow: 1; height: 5px; background: #1d222a; border-radius: 3px;"><span style="display: block; height: 100%; width: 58%; background: #e0a83c; border-radius: 3px;"></span></span>
+          <span style="width: 54px; text-align: right; font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: #e0a83c; font-weight: 600;">Watch</span>
+        </button>
+        <button type="button" style="display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; font: inherit; color: inherit; background: rgba(255,95,61,0.15); border: 1px solid rgba(255,95,61,0.75); border-radius: 3px; padding: 9px 10px; cursor: pointer;">
+          <span style="width: 58px; font-size: 13px; font-weight: 700;">Sun 20</span>
+          <span style="width: 52px; text-align: right; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 14px; font-weight: 600;">6.4 m</span>
+          <span style="flex-grow: 1; height: 7px; background: rgba(255,95,61,0.18); border-radius: 4px;"><span style="display: block; height: 100%; width: 80%; background: #ff5f3d; border-radius: 4px;"></span></span>
+          <span style="width: 54px; text-align: right; font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: #ff8a6b; font-weight: 700;">Go</span>
+        </button>
+        <button type="button" style="display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; font: inherit; color: inherit; background: rgba(255,95,61,0.15); border: 1px solid rgba(255,95,61,0.75); border-radius: 3px; padding: 9px 10px; cursor: pointer;">
+          <span style="width: 58px; font-size: 13px; font-weight: 700;">Mon 21</span>
+          <span style="width: 52px; text-align: right; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 14px; font-weight: 600;">5.9 m</span>
+          <span style="flex-grow: 1; height: 7px; background: rgba(255,95,61,0.18); border-radius: 4px;"><span style="display: block; height: 100%; width: 74%; background: #ff5f3d; border-radius: 4px;"></span></span>
+          <span style="width: 54px; text-align: right; font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: #ff8a6b; font-weight: 700;">Go</span>
+        </button>
+        <button type="button" style="display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; font: inherit; color: inherit; background: #13171c; border: 1px solid rgba(224,168,60,0.45); border-radius: 3px; padding: 7px 10px; cursor: pointer;">
+          <span style="width: 58px; font-size: 12px; color: #b9c0c7;">Tue 22</span>
+          <span style="width: 52px; text-align: right; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 12.5px;">3.8 m</span>
+          <span style="flex-grow: 1; height: 5px; background: #1d222a; border-radius: 3px;"><span style="display: block; height: 100%; width: 48%; background: #e0a83c; border-radius: 3px;"></span></span>
+          <span style="width: 54px; text-align: right; font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: #e0a83c; font-weight: 600;">Watch</span>
+        </button>
+        <button type="button" style="display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; font: inherit; color: inherit; background: #13171c; border: 1px solid #232830; border-radius: 3px; padding: 7px 10px; cursor: pointer;">
+          <span style="width: 58px; font-size: 12px; color: #b9c0c7;">Wed 23</span>
+          <span style="width: 52px; text-align: right; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 12.5px;">2.9 m</span>
+          <span style="flex-grow: 1; height: 5px; background: #1d222a; border-radius: 3px;"><span style="display: block; height: 100%; width: 36%; background: #5b6570; border-radius: 3px;"></span></span>
+          <span style="width: 54px; text-align: right; font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: #767e86;">Quiet</span>
+        </button>
+
+        <div style="display: flex; align-items: center; gap: 8px; margin: 5px 0 1px;">
+          <span style="flex-grow: 1; height: 1px; background: #1d222a;"></span>
+          <span style="font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: #767e86;">Beyond the measured archive</span>
+          <span style="flex-grow: 1; height: 1px; background: #1d222a;"></span>
+        </div>
+
+        <button type="button" style="display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; font: inherit; color: inherit; background: transparent; border: 1px dashed #232830; border-radius: 3px; padding: 6px 10px; cursor: pointer;">
+          <span style="width: 58px; font-size: 12px; color: #8f979f;">Thu 24</span>
+          <span style="width: 52px; text-align: right; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 12px; color: #8f979f;">2.2 m</span>
+          <span style="flex-grow: 1; height: 4px; background: #171b21; border-radius: 3px;"><span style="display: block; height: 100%; width: 28%; background: #434c56; border-radius: 3px;"></span></span>
+          <span style="width: 54px; text-align: right; font-size: 9.5px; text-transform: uppercase; color: #6b7078;">Quiet</span>
+        </button>
+        <button type="button" style="display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; font: inherit; color: inherit; background: transparent; border: 1px dashed #232830; border-radius: 3px; padding: 6px 10px; cursor: pointer;">
+          <span style="width: 58px; font-size: 12px; color: #8f979f;">Fri 25</span>
+          <span style="width: 52px; text-align: right; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 12px; color: #8f979f;">2.6 m</span>
+          <span style="flex-grow: 1; height: 4px; background: #171b21; border-radius: 3px;"><span style="display: block; height: 100%; width: 33%; background: #434c56; border-radius: 3px;"></span></span>
+          <span style="width: 54px; text-align: right; font-size: 9.5px; text-transform: uppercase; color: #6b7078;">Quiet</span>
+        </button>
+        <button type="button" style="display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; font: inherit; color: inherit; background: transparent; border: 1px dashed #232830; border-radius: 3px; padding: 6px 10px; cursor: pointer;">
+          <span style="width: 58px; font-size: 12px; color: #8f979f;">Sat 26</span>
+          <span style="width: 52px; text-align: right; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 12px; color: #8f979f;">3.4 m</span>
+          <span style="flex-grow: 1; height: 4px; background: #171b21; border-radius: 3px;"><span style="display: block; height: 100%; width: 43%; background: #434c56; border-radius: 3px;"></span></span>
+          <span style="width: 54px; text-align: right; font-size: 9.5px; text-transform: uppercase; color: #6b7078;">Quiet</span>
+        </button>
+        <button type="button" style="display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; font: inherit; color: inherit; background: transparent; border: 1px dashed #232830; border-radius: 3px; padding: 6px 10px; cursor: pointer;">
+          <span style="width: 58px; font-size: 12px; color: #8f979f;">Sun 27</span>
+          <span style="width: 52px; text-align: right; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 12px; color: #8f979f;">2.8 m</span>
+          <span style="flex-grow: 1; height: 4px; background: #171b21; border-radius: 3px;"><span style="display: block; height: 100%; width: 35%; background: #434c56; border-radius: 3px;"></span></span>
+          <span style="width: 54px; text-align: right; font-size: 9.5px; text-transform: uppercase; color: #6b7078;">Quiet</span>
+        </button>
+      </section>
+
+      <p style="margin: 0; font-size: 11px; color: #a4acb4; line-height: 1.5; border-top: 1px solid #1d222a; padding-top: 9px;">
+        <strong style="font-family: 'IBM Plex Mono', ui-monospace, monospace; color: #e9ecef;">258</strong> Go Calls checked against <strong style="font-family: 'IBM Plex Mono', ui-monospace, monospace; color: #e9ecef;">10,958</strong> reconstructed days &middot; <strong style="font-family: 'IBM Plex Mono', ui-monospace, monospace; color: #e9ecef;">0.62&nbsp;m</strong> average height error &mdash; <a href="#how" style="font-weight: 600;">how we know</a>
+      </p>
+    </div>
+
+    <div style="flex-grow: 1; position: relative; overflow: hidden; border: 1px solid #1d222a; border-radius: 4px; background: #05070a;">
+      <svg viewBox="0 0 640 780" preserveAspectRatio="xMidYMid slice" style="position: absolute; inset: 0; width: 100%; height: 100%;" aria-hidden="true">
+        <rect x="0" y="0" width="640" height="780" fill="#05070a"></rect>
+        <g fill="none" stroke="#2b333c" stroke-width="1">
+          <path d="M470,0 L488,348 L502,390 L488,432 L470,780"></path>
+          <path d="M418,0 L436,332 L499,390 L436,448 L418,780"></path>
+          <path d="M360,0 L378,312 L496,390 L378,468 L360,780"></path>
+          <path d="M300,0 L318,292 L492,390 L318,488 L300,780"></path>
+          <path d="M238,0 L256,270 L488,390 L256,510 L238,780"></path>
+          <path d="M172,0 L190,245 L484,390 L190,535 L172,780"></path>
+          <path d="M104,0 L122,220 L480,390 L122,560 L104,780"></path>
+          <path d="M34,0 L52,194 L476,390 L52,586 L34,780"></path>
+        </g>
+      </svg>
+
+      <div style="position: absolute; left: 50%; top: 50%; width: 1700px; height: 1700px; margin-left: -850px; margin-top: -850px; background-image: repeating-linear-gradient(to bottom, rgba(79,209,255,0.62) 0 2px, rgba(79,209,255,0) 2px 70px); animation: deepSwell 3.2s linear infinite;"></div>
+
+      <div style="position: absolute; left: 50%; top: 50%; width: 1700px; height: 1700px; margin-left: -850px; margin-top: -850px; background-image: repeating-linear-gradient(to bottom, rgba(214,224,234,0.35) 0 1.5px, rgba(214,224,234,0) 1.5px 34px); -webkit-mask-image: repeating-linear-gradient(to right, #000 0 22px, transparent 22px 60px); mask-image: repeating-linear-gradient(to right, #000 0 22px, transparent 22px 60px); animation: deepWind 2.4s linear infinite;"></div>
+
+      <svg viewBox="0 0 640 780" preserveAspectRatio="xMidYMid slice" style="position: absolute; inset: 0; width: 100%; height: 100%;" aria-hidden="true">
+        <path d="M560,0 L556,90 L548,170 L553,250 L546,320 L541,356 L508,392 L516,418 L548,448 L554,520 L547,600 L554,680 L549,780 L640,780 L640,0 Z" fill="#11161c" stroke="#333b45" stroke-width="1.2"></path>
+        <circle cx="524" cy="372" r="8" fill="#ff5f3d" opacity="0.28" style="animation: deepPulse 2.6s ease-in-out infinite;"></circle>
+        <circle cx="524" cy="372" r="3.5" fill="#ff5f3d"></circle>
+        <text x="500" y="346" text-anchor="end" font-family="'Space Grotesk', sans-serif" font-size="11" font-weight="600" fill="#d3d9df">Praia do Norte</text>
+        <circle cx="404" cy="386" r="2.5" fill="none" stroke="#9aa3ac" stroke-width="1.2"></circle>
+        <text x="394" y="376" text-anchor="end" font-family="'IBM Plex Mono', monospace" font-size="9.5" fill="#8f979f">forecast point</text>
+        <text x="196" y="700" font-family="'Space Grotesk', sans-serif" font-size="10.5" letter-spacing="2.6" fill="#59626b">NAZAR&Eacute; CANYON</text>
+      </svg>
+
+      <div style="position: absolute; left: 14px; bottom: 12px; display: flex; gap: 16px; background: rgba(11,13,16,0.85); border: 1px solid #232830; border-radius: 3px; padding: 7px 11px;">
+        <span style="display: flex; align-items: center; gap: 6px; font-size: 10px; color: #c7cdd4;"><span style="width: 18px; height: 2px; background: #4fd1ff;"></span>Swell 310&deg; &middot; 13.75 s</span>
+        <span style="display: flex; align-items: center; gap: 6px; font-size: 10px; color: #c7cdd4;"><span style="width: 18px; height: 1.5px; background: repeating-linear-gradient(to right, #d6e0ea 0 5px, transparent 5px 9px);"></span>Wind 12.6 km/h</span>
+      </div>
+      <div style="position: absolute; right: 14px; top: 12px; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 9.5px; letter-spacing: 0.08em; color: #8f979f; background: rgba(11,13,16,0.85); border: 1px solid #232830; border-radius: 3px; padding: 5px 8px;">GEBCO bathymetry &middot; 50&ndash;4000 m</div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":1280,"height":820}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
