@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; background: #05070a; }
+    @keyframes flowSwellA { from { transform: rotate(-50deg) translateY(0); } to { transform: rotate(-50deg) translateY(120px); } }
+    @keyframes flowSwellB { from { transform: rotate(-53deg) translateY(0); } to { transform: rotate(-53deg) translateY(120px); } }
+    @keyframes flowWind { from { transform: rotate(-20deg) translateY(0); } to { transform: rotate(-20deg) translateY(46px); } }
+  </style>
+</helmet>
+
+<div style="width: 640px; height: 780px; box-sizing: border-box; position: relative; overflow: hidden; background: #05070a; color: #e9ecef; font-family: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;">
+
+  <svg viewBox="0 0 640 780" preserveAspectRatio="xMidYMid slice" style="position: absolute; inset: 0; width: 100%; height: 100%;" aria-hidden="true">
+    <rect x="0" y="0" width="640" height="780" fill="#05070a"></rect>
+    <g fill="none" stroke="#242c34" stroke-width="1">
+      <path d="M470,0 L488,348 L502,390 L488,432 L470,780"></path>
+      <path d="M418,0 L436,332 L499,390 L436,448 L418,780"></path>
+      <path d="M360,0 L378,312 L496,390 L378,468 L360,780"></path>
+      <path d="M300,0 L318,292 L492,390 L318,488 L300,780"></path>
+      <path d="M238,0 L256,270 L488,390 L256,510 L238,780"></path>
+      <path d="M172,0 L190,245 L484,390 L190,535 L172,780"></path>
+      <path d="M104,0 L122,220 L480,390 L122,560 L104,780"></path>
+      <path d="M34,0 L52,194 L476,390 L52,586 L34,780"></path>
+    </g>
+  </svg>
+
+  <div style="position: absolute; left: 50%; top: 50%; width: 1700px; height: 1700px; margin-left: -850px; margin-top: -850px; background-image: repeating-linear-gradient(to bottom, rgba(79,209,255,0.85) 0 2px, rgba(79,209,255,0) 2px 120px); -webkit-mask-image: repeating-linear-gradient(to right, transparent 0 8px, #000 8px 54px, transparent 54px 96px); mask-image: repeating-linear-gradient(to right, transparent 0 8px, #000 8px 54px, transparent 54px 96px); animation: flowSwellA 2.6s linear infinite;"></div>
+  <div style="position: absolute; left: 50%; top: 50%; width: 1700px; height: 1700px; margin-left: -850px; margin-top: -850px; background-image: repeating-linear-gradient(to bottom, rgba(79,209,255,0.45) 0 1.5px, rgba(79,209,255,0) 1.5px 120px); -webkit-mask-image: repeating-linear-gradient(to right, transparent 0 40px, #000 40px 76px, transparent 76px 130px); mask-image: repeating-linear-gradient(to right, transparent 0 40px, #000 40px 76px, transparent 76px 130px); animation: flowSwellB 3.4s linear infinite;"></div>
+
+  <div style="position: absolute; left: 50%; top: 50%; width: 1700px; height: 1700px; margin-left: -850px; margin-top: -850px; background-image: repeating-linear-gradient(to bottom, rgba(214,224,234,0.4) 0 1.4px, rgba(214,224,234,0) 1.4px 46px); -webkit-mask-image: repeating-linear-gradient(to right, #000 0 16px, transparent 16px 62px); mask-image: repeating-linear-gradient(to right, #000 0 16px, transparent 16px 62px); animation: flowWind 1.5s linear infinite;"></div>
+
+  <svg viewBox="0 0 640 780" preserveAspectRatio="xMidYMid slice" style="position: absolute; inset: 0; width: 100%; height: 100%;" aria-hidden="true">
+    <path d="M560,0 L556,90 L548,170 L553,250 L546,320 L541,356 L508,392 L516,418 L548,448 L554,520 L547,600 L554,680 L549,780 L640,780 L640,0 Z" fill="#11161c" stroke="#333b45" stroke-width="1.2"></path>
+    <circle cx="524" cy="372" r="3.5" fill="#ff5f3d"></circle>
+    <text x="500" y="346" text-anchor="end" font-family="'Space Grotesk', sans-serif" font-size="12" font-weight="600" fill="#d3d9df">Praia do Norte</text>
+    <text x="196" y="700" font-family="'Space Grotesk', sans-serif" font-size="11" letter-spacing="2.8" fill="#59626b">NAZAR&Eacute; CANYON</text>
+  </svg>
+
+  <div style="position: absolute; left: 16px; bottom: 14px; display: flex; flex-direction: column; gap: 5px; background: rgba(5,7,10,0.8); border: 1px solid #232830; padding: 9px 12px;">
+    <span style="font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: #8f979f;">Particle flow</span>
+    <span style="display: flex; align-items: center; gap: 7px; font-size: 10.5px; color: #c7cdd4;"><span style="width: 20px; height: 2px; background: #4fd1ff;"></span>Swell 310&deg; &middot; 13.75 s</span>
+    <span style="display: flex; align-items: center; gap: 7px; font-size: 10.5px; color: #c7cdd4;"><span style="width: 20px; height: 1.4px; background: repeating-linear-gradient(to right, #d6e0ea 0 5px, transparent 5px 9px);"></span>Wind 12.6 km/h</span>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":640,"height":780}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
