@@ -197,6 +197,14 @@ is 160 crests and a moiré pattern. And the model is refraction alone — it ign
 reflection, currents and non-linearity, and a real swell is a spread of periods and directions
 rather than one. **It is not a spectral wave model and must not be described as one.**
 
+**Where the solve happens, settled 2026-09-18 while the tickets were written.** The refraction
+solve is too heavy to run per request, so the crest fields are precomputed at build time for
+binned swell period and direction, and the page picks the bin nearest the latest conditions.
+This keeps v2 to a single backend ticket. The honest cost is that the crests are quantised, so
+the bin resolution is written down beside the bytes it costs — and at this scale a 13 s swell
+and a 13.75 s swell bend indistinguishably, which is what makes the quantisation acceptable
+rather than merely convenient.
+
 ### Wind
 
 **Sharp darts, one per forecast grid point**, pointing downwind and drifting along their own
@@ -216,9 +224,13 @@ the same function the map uses so the legend cannot disagree with the map.
 
 ### What the map needs that the backend does not yet have
 
-A grid. Today the pipeline stores **one** Open-Meteo point about 15 km offshore. The map needs
-roughly 20–30 points across the frame, fetched each Pipeline Run and stored, with a new read
-endpoint to serve them.
+A grid. Today the pipeline stores **one** Open-Meteo point about 15 km offshore. The map needs a
+grid of them, fetched each Pipeline Run and stored, with a new read endpoint to serve them.
+
+**Extent, settled 2026-09-18:** 25 points, 5 by 5, over exactly the frame the map draws —
+39.40–39.82°N, 9.04–9.52°W. Sharing the bathymetry's bounds rather than choosing new ones means a
+wind glyph can never appear outside the drawn map. Open-Meteo accepts several coordinates in one
+request, so this is one request per run rather than twenty-five.
 
 **Scope decision: latest conditions only.** No time scrubber, no per-day fields. One grid
 snapshot per run. A scrubber can be added later without redesigning anything — the endpoint
@@ -266,14 +278,19 @@ record invisibly.
 
 ## 8. Open questions
 
+One is left.
+
 1. **The wind bearing is not in the scenario data used for the mockups.** Only the speed was
    recorded, so 160° is a stand-in throughout the artboards. The live field carries a real
    bearing; nothing depends on this beyond the mockups.
-2. **Exact grid extent and spacing for the wind fetch**, and whether the map's bathymetry frame
-   and the wind grid should share bounds.
 
-Question 1 as originally written — where the six condition readings that are not tiles go — was
-settled on the day the spec was written and now sits in §2.
+The other two were settled and moved into the body of this spec rather than left here. Where the
+six condition readings that are not tiles go is now §2; the wind grid's extent and spacing, and
+where the refraction solve happens, are now §5.
+
+**The work is ticketed.** Milestone 2 carries eleven issues, #113 to #123, with native blocking
+edges between them. #113 (the router) and #120 (the conditions grid) have no blockers and can
+start in parallel.
 
 ---
 
