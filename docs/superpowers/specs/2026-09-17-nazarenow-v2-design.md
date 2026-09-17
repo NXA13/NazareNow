@@ -63,6 +63,30 @@ This rule exists because a redesign is exactly the change that quietly turns a d
 elegant grey 11px fine print, and the project exists to avoid overclaiming. Treat "the limits
 stay as prominent as the numbers" as a requirement with the same standing as any other.
 
+### The four tiles, and the six readings that are not on them
+
+Settled 2026-09-17, after the spec was written. `/api/conditions/current` sends ten readings and
+the design shows four tiles, and the four are not an arbitrary selection: they are exactly the
+quantities a Go Call is gated on. That is the rule — **the tile row is what the call is decided
+on, at the size of a headline.**
+
+The other six are not dropped. **Each tile carries the rest of its own wave field, small.**
+
+| Tile | The number | What rides with it |
+|---|---|---|
+| Significant Wave Height | the gated height | `wave_period`, `wave_direction` — this tile *is* the Combined Sea |
+| Swell period | the gated period | `swell_height`, which keeps the Swell's own height visibly apart from the combined figure above |
+| Swell direction | the gated bearing | degrees and a compass point, as today |
+| Wind speed | the gated speed | `wind_direction`, as a compass point with the same dart glyph the map uses |
+
+The two temperatures gate nothing, so they take **one quiet line under the tiles** — "Sea 16 °C ·
+Air 19 °C". They were nearly declared unread, and were not, because the pipeline would then go on
+fetching and storing two numbers the site never shows, which is worse than one short line.
+
+The effect on `every-field-is-read.test.tsx` is the point of doing this deliberately: all sixteen
+fields of `CurrentConditions` stay in the registry's *read* arm, so the rebuild never has to
+argue a field onto the "not read" list under test pressure.
+
 ---
 
 ## 3. Layout
@@ -242,15 +266,14 @@ record invisibly.
 
 ## 8. Open questions
 
-1. **What replaces the current home page's condition readings?** The design shows four tiles;
-   the backend sends ten readings. Where the other six go — the second page, a disclosure on the
-   first, or dropped — is not yet decided, and `every-field-is-read.test.tsx` will force the
-   question.
-2. **The wind bearing is not in the scenario data used for the mockups.** Only the speed was
+1. **The wind bearing is not in the scenario data used for the mockups.** Only the speed was
    recorded, so 160° is a stand-in throughout the artboards. The live field carries a real
    bearing; nothing depends on this beyond the mockups.
-3. **Exact grid extent and spacing for the wind fetch**, and whether the map's bathymetry frame
+2. **Exact grid extent and spacing for the wind fetch**, and whether the map's bathymetry frame
    and the wind grid should share bounds.
+
+Question 1 as originally written — where the six condition readings that are not tiles go — was
+settled on the day the spec was written and now sits in §2.
 
 ---
 
