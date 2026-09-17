@@ -1,0 +1,45 @@
+[Unit]
+# The Pipeline Run, every three hours, forever.
+#
+# This is the unit that matters. ADR 0007: the record accumulates because the *scheduler*
+# runs continuously — whether anyone can load the page is unrelated. A gap here cannot be
+# backfilled, because a record of what this system predicted, at what Lead Time, on a day
+# it turned out to be wrong about, exists only if it was running and kept it.
+#
+# It is also the unit that creates and migrates the store, which is why the API waits for
+# it rather than the other way round.
+Description=NazareNow Pipeline Run scheduler
+Documentation=https://github.com/NXA13/NazareNow/blob/main/deploy/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nazarenow
+Group=nazarenow
+EnvironmentFile=/etc/nazarenow/nazarenow.env
+WorkingDirectory=/opt/nazarenow
+ExecStart=/opt/nazarenow/venv/bin/python -m nazarenow schedule
+
+# `schedule` already catches every exception per run, so an exit means something worse
+# than a failed fetch — the process itself died. Restart rather than leave the record with
+# a hole in it, and wait long enough that a crash loop is visible in the journal rather
+# than drowning it.
+Restart=always
+RestartSec=60
+
+# Unbuffered, so `journalctl -u nazarenow-scheduler` shows a run as it happens rather than
+# whenever Python decides to flush. #28 asks for scheduler logs readable after the fact, so
+# a wrong prediction can be traced to the run that made it.
+Environment=PYTHONUNBUFFERED=1
+
+# The store is the only thing this may write to. If a future change tries to write beside
+# the checkout, it fails here rather than quietly succeeding somewhere unbacked-up.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/mnt/ssd/nazarenow
+
+[Install]
+WantedBy=multi-user.target

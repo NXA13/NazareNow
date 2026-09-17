@@ -6,12 +6,17 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
+    # Imported by the Pipeline Run, the scheduler and the Open-Meteo source, so it is the
+    # deployed scheduler's dependency and not only the test suite's. FastAPI happens to
+    # install pydantic too, but the API imports it directly and a transitive install is a
+    # dependency nobody declared.
+    "httpx>=0.27",
+    "pydantic>=2.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
-    "httpx>=0.27",
     "ruff>=0.6",
 ]
 
