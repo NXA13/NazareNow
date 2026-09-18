@@ -198,7 +198,17 @@
   --edge: 3px;
   --edge-bold: 4px;
 
-  /* The reading column, and the width prose stops at inside it. */
+  /* Three widths, because this site has two kinds of page.
+   *
+   * `--measure-instrument` is the home page: two columns side by side, a map in one of them,
+   * and nothing scrolling. It wants the screen. Capped all the same, because a map and a
+   * forecast stretched across an ultrawide monitor are further apart than one pair of eyes can
+   * hold.
+   *
+   * `--measure-page` is the reading page, where the limit is how far a line of text can run
+   * before the eye loses the start of the next one. `--measure-prose` is the tighter limit for
+   * a paragraph inside a wider layout. */
+  --measure-instrument: 100rem;
   --measure-page: 60rem;
   --measure-prose: 40rem;
 }

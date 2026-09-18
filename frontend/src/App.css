@@ -57,12 +57,28 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* The frame both pages sit in. It sets the ground and the padding and leaves the width to the
+ * page, because the two pages want different ones: a reading page is bounded by how far a line
+ * of text can run, and the home page is an instrument that wants the screen.
+ *
+ * Until #115 this was one `max-width: 60rem` for both, which was right while there was only one
+ * kind of page. Left in place it would have squeezed the two columns into a 928px box on a
+ * 1440px screen — a left column of 527px, and columns whose widths were identical at every
+ * desktop width, which is also why the proportion this ticket asks about could not be observed
+ * to hold or fail. */
 main {
-  max-width: var(--measure-page);
   margin: 0 auto;
   padding: var(--space-6) var(--space-5) var(--space-8);
   background: var(--ink-page);
   min-height: 100vh;
+}
+
+.page-forecast {
+  max-width: var(--measure-instrument);
+}
+
+.page-reading {
+  max-width: var(--measure-page);
 }
 
 /* The wordmark, in Ice. One of the three places the main colour is allowed. */
@@ -280,8 +296,10 @@ footer p {
    without having to say so, and it says so as well. */
 .map-slot {
   height: 100%;
-  /* So the slot still has presence when it is stacked under the forecast at narrow widths,
-     where it has no column beside it to take its height from. */
+  /* A floor, for the two cases where the column beside it is short or absent: stacked under the
+     forecast at narrow widths, and — on desktop too — the failure state, where the left column
+     is one alert and nothing else. Without it the slot collapses to its own two lines of text at
+     exactly the moment a reader is deciding whether this site works. */
   min-height: 20rem;
   display: flex;
   flex-direction: column;

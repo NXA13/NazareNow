@@ -2,21 +2,33 @@ import react from '@vitejs/plugin-react';
 // Imported from vitest/config, not vite — only this one knows about the `test` key.
 import { defineConfig } from 'vitest/config';
 
+/**
+ * The port the dev server is pinned to.
+ *
+ * Pinned, and strict so a clash fails loudly. Vite's default is to walk up from 5173 until it
+ * finds a free port, which silently lands the app on an origin the backend's CORS whitelist does
+ * not allow — a failure that only appears in the browser console. 5273 is chosen to sit clear of
+ * the usual 5173-5176 range.
+ *
+ * Exported because `playwright.config.ts` needs the same number twice, for the base URL its
+ * tests resolve against and for the server it waits on. Three copies of a port is ADR 0013's
+ * hazard in miniature: nothing would have compared them, and the failure — a layout suite
+ * silently testing whatever else was on 5273 — does not look like a wrong port.
+ */
+export const DEV_PORT = 5273;
+
 export default defineConfig({
   plugins: [react()],
   server: {
-    // Pinned, and strict so a clash fails loudly. Vite's default is to walk up from
-    // 5173 until it finds a free port, which silently lands the app on an origin the
-    // backend's CORS whitelist does not allow — a failure that only appears in the
-    // browser console. 5273 is chosen to sit clear of the usual 5173-5176 range.
-    port: 5273,
+    port: DEV_PORT,
     strictPort: true,
   },
   test: {
-    // Vitest owns `src/**`. The Playwright specs under `e2e/` are `.spec.ts`, which vitest's
-    // default glob would happily collect and then fail to run — they import `@playwright/test`,
-    // which has no meaning inside jsdom. The boundary is stated from both sides; the other half
-    // is `testDir: './e2e'` in `playwright.config.ts`.
+    // Vitest owns `src/**`; Playwright owns `e2e/**` through its own `testDir`. Two tools with
+    // two globs is a boundary stated twice, which is usually where things drift — but not
+    // silently here: a Playwright spec collected by vitest fails on importing
+    // `@playwright/test`, and a vitest file collected by Playwright fails on the globals it
+    // expects. A misfiled test breaks the run it lands in rather than disappearing from both.
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     environment: 'jsdom',
     globals: true,

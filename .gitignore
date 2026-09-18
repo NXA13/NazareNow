@@ -56,4 +56,3 @@ Thumbs.db
 # Playwright writes these on every run of the layout suite (#115).
 frontend/test-results/
 frontend/playwright-report/
-frontend/blob-report/

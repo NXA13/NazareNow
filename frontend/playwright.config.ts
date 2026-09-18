@@ -21,6 +21,12 @@
 
 import { defineConfig, devices } from '@playwright/test';
 
+import { DEV_PORT } from './vite.config';
+
+/** The dev server's own address, derived from the port Vite is pinned to rather than written
+ * again here. */
+const ORIGIN = `http://localhost:${DEV_PORT}`;
+
 /** The desktop viewport the no-scroll promise is made at, named in one place so a test cannot
  * quietly check a different one than it reports. A common laptop size, and the smallest of the
  * usual desktop widths — the promise is worth least if it only holds on a large monitor. */
@@ -38,7 +44,7 @@ export default defineConfig({
   retries: 0,
   reporter: process.env.CI ? [['github'], ['list']] : [['list']],
   use: {
-    baseURL: 'http://localhost:5273',
+    baseURL: ORIGIN,
     trace: 'retain-on-failure',
   },
   projects: [
@@ -51,7 +57,7 @@ export default defineConfig({
   // terminal is not fought over. In CI there is never one, so it starts and stops with the run.
   webServer: {
     command: 'npm run dev',
-    url: 'http://localhost:5273',
+    url: ORIGIN,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
   },

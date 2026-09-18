@@ -228,6 +228,36 @@ export const forecast: Forecast = {
   ],
 };
 
+/**
+ * A forecast as long as the provider can make it, for the layout suite.
+ *
+ * The three-day `forecast` above is right for behaviour: it is the smallest set that exercises
+ * every call status, and a shorter fixture makes a failing assertion easier to read. It is the
+ * wrong one to measure a page against. `open_meteo.py` asks for sixteen days and the page
+ * renders whatever the merged marine and weather forecasts cover — about ten today — so a
+ * layout proved against three days is a layout proved against a page no reader sees.
+ *
+ * Sixteen, because the design spec is emphatic that **"any layout that assumes a fixed count is
+ * a layout that breaks silently"**, and the honest number to hold a layout to is the most the
+ * provider can send rather than the count it happens to send this week.
+ *
+ * The days are ordinary — one call status, repeated. What varies here is how many rows there
+ * are, which is the only thing this fixture exists to vary.
+ */
+export const longForecast: Forecast = {
+  ...forecast,
+  days: Array.from({ length: 16 }, (_, index) =>
+    dayFrom(
+      `2026-02-${String(12 + index).padStart(2, '0')}`,
+      2 + (index % 5),
+      8 + (index % 4),
+      250 + index,
+      index === 1 ? 'go' : index === 2 ? 'watch' : 'none',
+      index,
+    ),
+  ),
+};
+
 /** The provenance a calibrated forecast carries (#12).
  *
  * The counts are the real ones. A test asserting the interface states how few Gold Days are
@@ -510,8 +540,26 @@ export const trackRecord: TrackRecord = {
   },
 };
 
-export const handlers = [
-  http.get('*/api/conditions/forecast', () => HttpResponse.json(forecast)),
-  http.get('*/api/conditions/current', () => HttpResponse.json(currentConditions)),
-  http.get('*/api/track-record', () => HttpResponse.json(trackRecord)),
-];
+/**
+ * Every endpoint this site reads, and what a healthy one answers with.
+ *
+ * One table, because two suites need it: the jsdom suite serves it through msw, and the layout
+ * suite in `e2e/` serves it through Playwright's own routing — msw intercepts in the process that
+ * imports it, and the layout suite's requests come from a browser, so the two cannot share a
+ * mechanism. They can share this, and a path added here reaches both.
+ *
+ * Without it the paths were written twice, which is the shape ADR 0013 warns about: an endpoint
+ * renamed on one side leaves the other stubbing an address nothing calls, and a test whose stub
+ * quietly stops matching does not fail — it tests the failure state and passes.
+ */
+export const FIXTURE_BY_PATH = {
+  '/api/conditions/forecast': forecast,
+  '/api/conditions/current': currentConditions,
+  '/api/track-record': trackRecord,
+};
+
+/** The same table as msw handlers. `*` for the origin, because the app reads `VITE_API_BASE`
+ * and falls back to a different host than the one serving the page. */
+export const handlers = Object.entries(FIXTURE_BY_PATH).map(([path, body]) =>
+  http.get(`*${path}`, () => HttpResponse.json(body)),
+);
