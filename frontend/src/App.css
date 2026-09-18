@@ -3,11 +3,24 @@
  *
  * The re-skin only: the ground, the two faces and the three colour systems, applied to the
  * pages exactly as #113 left them, so the skin can be judged on its own before #115-#119 start
- * moving layout. Every selector here is one that existed before.
+ * moving layout.
  *
- * **No value is decided in this file.** Colour, face, size, space, radius and rule all come
- * from `tokens.css`, which is where a re-skin is argued about; `src/ink.test.ts` fails if a hex
- * value, a `font-family` or a `font-size` is named anywhere but there.
+ * **Every selector here existed before, with two additions.** A bare `a`, because the spec puts
+ * links in Ice and the browser's default blue is close to unreadable on graphite — the old sheet
+ * only ever styled the nav's links, because the nav was the only place a link had appeared. And
+ * `:focus-visible`, because the default focus ring is drawn in a colour that vanishes on a
+ * near-black ground, which would have left the keyboard with no visible cursor.
+ *
+ * **No colour, face or type size is decided in this file.** Those come from `tokens.css`, which
+ * is where a re-skin is argued about, and `src/ink.test.ts` fails if a hex value, a
+ * `font-family` or a `font-size` is named anywhere but there. Space, radius and rule come from
+ * there too.
+ *
+ * What stays local is *layout dimension*: the narrowest a card may shrink to before the grid
+ * drops a column, the flex basis that lines the history ladder's columns up, the height the day
+ * table caps at. Those are decisions about this page's geometry rather than about the visual
+ * system — a token named `--space-5` has no business being the answer to "how wide is a
+ * readable card" — and #115-#118 are the tickets that will move them.
  *
  * Three rules this sheet is held to, all three enforced by that test:
  *

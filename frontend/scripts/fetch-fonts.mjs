@@ -17,6 +17,18 @@
  * subsets from the upstream source the family is actually published from. The cost is that
  * replacing a font needs network once, which is what committing the output buys back.
  *
+ * **What the three files cost**, as fetched on 2026-09-18 and committed:
+ *
+ * | file | bytes | what it carries |
+ * |---|---|---|
+ * | `space-grotesk-variable.woff2` | 19,172 (18.72 kB) | all text, every weight 400-700 |
+ * | `ibm-plex-mono-600.woff2` | 12,960 (12.66 kB) | bold figures |
+ * | `ibm-plex-mono-400.woff2` | 11,576 (11.30 kB) | ordinary figures |
+ *
+ * 42.68 kB on disk, 42.75 kB as the payload check counts it — woff2 is brotli already, so
+ * gzipping it again adds a few bytes rather than removing any. That is the figure #114's budget
+ * commit moves the ceiling for, and re-running this script prints the same table.
+ *
  * **The known limit, stated rather than discovered.** A subset font covers the glyphs listed
  * in `REPERTOIRE` and nothing else. Every string this site renders is either literal English
  * copy, a number, or a unit from the API — all inside it — with one exception:
@@ -31,13 +43,11 @@ import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 
-// Lazy, and script-only, for the reason `check-contrast.mjs` explains: `src/ink.test.ts`
-// imports `REPERTOIRE` from this module through Vite, where `import.meta.url` is not a
-// `file:` URL.
-const fontsDir = () => fileURLToPath(new URL('../src/fonts/', import.meta.url));
+import { runAsScript } from './run-as-script.mjs';
 
-const runAsScript = () =>
-  import.meta.url.startsWith('file:') && process.argv[1] === fileURLToPath(import.meta.url);
+// Lazy, for the reason `run-as-script.mjs` explains: `src/ink.test.ts` imports `REPERTOIRE`
+// from this module through Vite, where `import.meta.url` is not a `file:` URL.
+const fontsDir = () => fileURLToPath(new URL('../src/fonts/', import.meta.url));
 
 /**
  * Every character this site can render, and therefore every glyph the subsets carry.
@@ -177,6 +187,6 @@ async function main() {
   );
 }
 
-if (runAsScript()) {
+if (runAsScript(import.meta.url)) {
   await main();
 }

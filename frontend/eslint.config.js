@@ -24,8 +24,10 @@ export default tseslint.config(
         console: 'readonly',
         process: 'readonly',
         URL: 'readonly',
-        // `fetch` and `Buffer` for `fetch-fonts.mjs`, which is the one script that reaches the
-        // network — once, by hand, to replace a committed font.
+        // `fetch` and `Buffer` are here for `fetch-fonts.mjs`, the one script that reaches the
+        // network — once, by hand, to replace a committed font. Granted to every script rather
+        // than that one, because this config block is per-directory and carving out a single
+        // file would claim a precision it does not have.
         fetch: 'readonly',
         Buffer: 'readonly',
       },

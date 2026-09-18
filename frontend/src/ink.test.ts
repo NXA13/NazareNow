@@ -20,7 +20,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { measure } from '../scripts/check-contrast.mjs';
+import { contrastRatio, measure, parseColour, parseTokens } from '../scripts/check-contrast.mjs';
 import { REPERTOIRE } from '../scripts/fetch-fonts.mjs';
 
 // Through `fileURLToPath` rather than the URL's own `pathname`, which on Windows hands back
@@ -234,16 +234,55 @@ describe('contrast is measured against the ground, not assumed', () => {
     expect(colours.filter((token) => !paired.has(token))).toEqual([]);
   });
 
-  it.each(measure(TOKENS).filter((row) => row.gate !== null))(
+  it.each(measured.filter((row) => row.gate !== null))(
     '$fore on $back clears $gate:1',
     ({ fore, back, gate, ratio }) => {
       expect(ratio, `${fore} on ${back} is ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(gate!);
     },
   );
 
+  it('has the contract its declaration file claims it has', () => {
+    // `scripts/` is outside tsconfig's `include`, so `tsc` never reads the `.mjs` and cannot
+    // compare it with the `.d.mts` beside it. That is ADR 0013's hazard — two names for one
+    // thing across a file boundary, with nothing checking them — so the check is here instead.
+    // A field renamed or a return type changed in the script fails this rather than
+    // type-checking cleanly against a description that has stopped being true.
+    expect(typeof parseTokens).toBe('function');
+    expect(typeof parseColour).toBe('function');
+    expect(typeof contrastRatio).toBe('function');
+    expect(typeof measure).toBe('function');
+
+    expect(parseTokens('--a: #fff;').get('--a')).toBe('#fff');
+    expect(parseColour('#8ecfe6')).toEqual({ channels: [142, 207, 230], alpha: 1 });
+    expect(parseColour('rgba(206, 202, 194, 0.85)')).toEqual({
+      channels: [206, 202, 194],
+      alpha: 0.85,
+    });
+
+    // White on black is the one ratio in WCAG with a known exact value, so it checks the
+    // arithmetic rather than only the plumbing.
+    const ratio = contrastRatio(
+      { channels: [255, 255, 255], alpha: 1 },
+      { channels: [0, 0, 0], alpha: 1 },
+    );
+    expect(ratio).toBeCloseTo(21, 5);
+
+    for (const row of measured) {
+      expect(Object.keys(row).sort()).toEqual(
+        ['back', 'fore', 'gate', 'passes', 'ratio', 'why'].sort(),
+      );
+      expect(typeof row.fore).toBe('string');
+      expect(typeof row.back).toBe('string');
+      expect(typeof row.ratio).toBe('number');
+      expect(typeof row.passes).toBe('boolean');
+      expect(typeof row.why).toBe('string');
+      expect(row.gate === null || typeof row.gate === 'number').toBe(true);
+    }
+  });
+
   it('reports the pastels as clearing AA on the graphite ground', () => {
     // The claim the prototype's palette comment makes — "light enough to clear 4.5:1 on this
-    // ground at small sizes" — - now measured rather than believed.
+    // ground at small sizes" — now measured rather than believed.
     const statuses = measured.filter(
       (row) => /--ink-(go|watch)$/.test(row.fore) && row.back === '--ink-page',
     );

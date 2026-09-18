@@ -1,21 +1,33 @@
 /**
  * Types for `check-contrast.mjs`, so `src/ink.test.ts` can import the measurement instead of
- * reimplementing it. The script itself stays plain JavaScript: it runs under bare `node` in CI
+ * reimplementing it. The script itself stays plain JavaScript: it runs under bare `node`
  * beside `check-payload.mjs`, and a build step between a check and the thing it checks is a
  * place for the two to drift apart.
+ *
+ * **This file restates a contract that lives in JavaScript, which is ADR 0013's named hazard**
+ * — "one quantity wearing two names across a file boundary, with nothing checking they mean
+ * the same thing". `scripts/` sits outside `tsconfig.json`'s `include`, so `tsc` never reads
+ * the `.mjs` and cannot compare the two. What closes it is a test rather than the compiler:
+ * `src/ink.test.ts` asserts, at runtime, that every export declared here exists and has the
+ * shape declared for it. A field renamed in the script fails that test instead of silently
+ * type-checking against a description that is no longer true.
  */
+
+/** A colour as this script handles one: channels in 0-255, and an alpha in 0-1 that matters,
+ * because a translucent token has to be composited before it can be measured. */
+export interface Colour {
+  channels: number[];
+  alpha: number;
+}
 
 /** A `--name: value` map of every token declared in the sheet. */
 export function parseTokens(css: string): Map<string, string>;
 
-/** `#rgb`, `#rrggbb` or `rgba(...)` as channels in 0-255 and an alpha in 0-1. */
-export function parseColour(value: string): { channels: number[]; alpha: number };
+/** `#rgb`, `#rrggbb` or `rgba(...)` as a `Colour`. */
+export function parseColour(value: string): Colour;
 
 /** The WCAG contrast ratio between a foreground and the backdrop it is composited over. */
-export function contrastRatio(
-  foreground: { channels: number[]; alpha: number },
-  backdrop: { channels: number[]; alpha: number },
-): number;
+export function contrastRatio(foreground: Colour, backdrop: Colour): number;
 
 export interface MeasuredPair {
   /** The foreground token, e.g. `--ink-go`. */

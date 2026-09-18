@@ -22,17 +22,14 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
+import { runAsScript } from './run-as-script.mjs';
+
 // Resolved when it is needed rather than at import, and through `fileURLToPath` rather than
 // the URL's `pathname`, which on Windows hands back `/C:/...` — the trap `check-payload.mjs`
 // documents. Lazily, because the test suite imports this module through Vite, where
 // `import.meta.url` is not a `file:` URL and resolving one at import time throws before a
 // single assertion runs.
 const tokensPath = () => fileURLToPath(new URL('../src/tokens.css', import.meta.url));
-
-/** True only when this file is being run as a script, which is the only time it may read the
- * filesystem or exit the process. */
-const runAsScript = () =>
-  import.meta.url.startsWith('file:') && process.argv[1] === fileURLToPath(import.meta.url);
 
 /** Every `--name: value` pair in the tokens sheet, which is the only place colour is defined. */
 export function parseTokens(css) {
@@ -106,6 +103,11 @@ export const PAIRS = [
   { fore: '--ink-text', back: '--ink-panel', gate: 4.5, why: 'body copy on a panel' },
   { fore: '--ink-muted', back: '--ink-page', gate: 4.5, why: 'labels, captions, quiet notes' },
   { fore: '--ink-muted', back: '--ink-panel', gate: 4.5, why: 'the same, inside a panel' },
+  // The hourly table bands its even rows down to the deeper ground, and `body` declares the
+  // text colour over that same tone, so both foregrounds genuinely appear on it. Measuring only
+  // the page and the panel would have left a third of the rows in that table unaccounted for.
+  { fore: '--ink-text', back: '--ink-deep', gate: 4.5, why: 'a banded row in the hourly table' },
+  { fore: '--ink-muted', back: '--ink-deep', gate: 4.5, why: 'a banded row, quiet cells' },
   { fore: '--ink-main', back: '--ink-page', gate: 4.5, why: 'Ice: the wordmark, the nav, links' },
   { fore: '--ink-go', back: '--ink-page', gate: 4.5, why: 'a Go Call, the loudest thing here' },
   { fore: '--ink-go', back: '--ink-panel', gate: 4.5, why: 'a Go Call on a panel' },
@@ -146,6 +148,9 @@ export function measure(css = readFileSync(tokensPath(), 'utf8')) {
       parseColour(tokens.get(pair.fore)),
       parseColour(tokens.get(pair.back)),
     );
+    // `passes` is "not short of what was asked of it", so an ungated row passes by having
+    // nothing to clear. The reporter prints those with a blank rather than a tick for that
+    // reason: reported, not vouched for.
     return { ...pair, ratio, passes: pair.gate === null || ratio >= pair.gate };
   });
 }
@@ -181,6 +186,6 @@ function main() {
 
 // Only when run as a script. The suite imports `measure` and asserts on it, and a
 // `process.exit` reached through an import would take the whole run down with it.
-if (runAsScript()) {
+if (runAsScript(import.meta.url)) {
   main();
 }
