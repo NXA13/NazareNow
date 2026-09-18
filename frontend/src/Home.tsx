@@ -1,15 +1,23 @@
 /**
  * The forecast page: the current conditions, the days ahead, and where the figures came from.
  *
- * Lifted out of `App.tsx` whole when v2 put the site behind a router (#113). Nothing here was
- * redesigned in that move — the simplified home page is #115 to #119, and this is the page as
- * v1 left it, now living at an address of its own.
+ * Lifted out of `App.tsx` whole when v2 put the site behind a router (#113), and given its two
+ * columns by #115 — the forecast on the left, the map on the right, matching its height.
+ *
+ * **The contents of the left column are still v1's.** #115 built the shell and moved nothing
+ * into it: the verdict and the four gated tiles are #116, the day rows are #117, the hours
+ * taking the day list's slot are #118, and moving the teaching material off this page is #119.
+ * So this page does not yet keep the no-scroll promise the shell is built for — it is about
+ * twice a desktop viewport tall, and the tickets that shorten it are the ones above. What the
+ * shell guarantees today is that neither column scrolls on its own and the two stay level; what
+ * it cannot guarantee yet is that their content fits.
  */
 
 import { useEffect, useState } from 'react';
 
 import { fetchCurrentConditions, type CurrentConditions, type Reading } from './api';
 import { ForecastRange } from './Forecast';
+import { MapSlot } from './MapSlot';
 import { compassPoint, formatTimestamp, formatValue } from './format';
 
 type LoadState =
@@ -59,111 +67,121 @@ export function Home() {
   }, []);
 
   return (
-    <>
-      {state.status === 'loading' && <p>Loading conditions...</p>}
+    <div className="home">
+      {/* The left column, and everything that was on this page before it had columns. */}
+      <div className="home-forecast">
+        {state.status === 'loading' && <p>Loading conditions...</p>}
 
-      {state.status === 'failed' && (
-        <p role="alert" className="alert">
-          Could not load conditions. The forecast service may be unavailable, or no pipeline run has
-          stored anything yet.
-        </p>
-      )}
+        {state.status === 'failed' && (
+          <p role="alert" className="alert">
+            Could not load conditions. The forecast service may be unavailable, or no pipeline run
+            has stored anything yet.
+          </p>
+        )}
 
-      {state.status === 'loaded' && (
-        <>
-          {/* Above everything, not in the footer. ADR 0005 promises the site stays up and
+        {state.status === 'loaded' && (
+          <>
+            {/* Above everything, not in the footer. ADR 0005 promises the site stays up and
               honest when the provider is unreachable — and a timestamp at the bottom of
               the page is not honest enough on its own. Someone deciding whether to book a
               flight should learn the data is old before they read the data, not after.
               Whether it *is* old is the backend's judgement, not this layer's. */}
-          {state.conditions.stale && (
-            <p role="alert" className="alert stale">
-              <strong>These conditions are out of date.</strong> No forecast has been retrieved for
-              at least {state.conditions.stale_after_hours} hours, so this is the last data we
-              received rather than the current picture. Treat the calls below as history, not
-              advice.
-            </p>
-          )}
+            {state.conditions.stale && (
+              <p role="alert" className="alert stale">
+                <strong>These conditions are out of date.</strong> No forecast has been retrieved
+                for at least {state.conditions.stale_after_hours} hours, so this is the last data we
+                received rather than the current picture. Treat the calls below as history, not
+                advice.
+              </p>
+            )}
 
-          <section aria-labelledby="swell-heading">
-            <h2 id="swell-heading">Swell</h2>
-            <dl className="readings">
-              <ReadingBlock label="Swell height" reading={state.conditions.swell_height} />
-              <ReadingBlock label="Swell period" reading={state.conditions.swell_period} />
-              <ReadingBlock
-                label="Swell direction"
-                reading={state.conditions.swell_direction}
-                bearing
-              />
-            </dl>
-          </section>
+            <section aria-labelledby="swell-heading">
+              <h2 id="swell-heading">Swell</h2>
+              <dl className="readings">
+                <ReadingBlock label="Swell height" reading={state.conditions.swell_height} />
+                <ReadingBlock label="Swell period" reading={state.conditions.swell_period} />
+                <ReadingBlock
+                  label="Swell direction"
+                  reading={state.conditions.swell_direction}
+                  bearing
+                />
+              </dl>
+            </section>
 
-          {/* Swell is the travelled component the canyon amplifies; the combined sea also
+            {/* Swell is the travelled component the canyon amplifies; the combined sea also
               includes locally raised wind waves. CONTEXT.md keeps the two apart. */}
-          <section aria-labelledby="combined-heading">
-            <h2 id="combined-heading">Combined sea</h2>
-            <dl className="readings">
-              <ReadingBlock
-                label="Significant wave height"
-                reading={state.conditions.significant_wave_height}
-              />
-              <ReadingBlock label="Wave period" reading={state.conditions.wave_period} />
-              <ReadingBlock
-                label="Wave direction"
-                reading={state.conditions.wave_direction}
-                bearing
-              />
-            </dl>
-          </section>
+            <section aria-labelledby="combined-heading">
+              <h2 id="combined-heading">Combined sea</h2>
+              <dl className="readings">
+                <ReadingBlock
+                  label="Significant wave height"
+                  reading={state.conditions.significant_wave_height}
+                />
+                <ReadingBlock label="Wave period" reading={state.conditions.wave_period} />
+                <ReadingBlock
+                  label="Wave direction"
+                  reading={state.conditions.wave_direction}
+                  bearing
+                />
+              </dl>
+            </section>
 
-          <section aria-labelledby="wind-heading">
-            <h2 id="wind-heading">Wind and temperature</h2>
-            <dl className="readings">
-              <ReadingBlock label="Wind speed" reading={state.conditions.wind_speed} />
-              <ReadingBlock
-                label="Wind direction"
-                reading={state.conditions.wind_direction}
-                bearing
-              />
-              <ReadingBlock label="Air temperature" reading={state.conditions.air_temperature} />
-              <ReadingBlock
-                label="Water temperature"
-                reading={state.conditions.water_temperature}
-              />
-            </dl>
-          </section>
+            <section aria-labelledby="wind-heading">
+              <h2 id="wind-heading">Wind and temperature</h2>
+              <dl className="readings">
+                <ReadingBlock label="Wind speed" reading={state.conditions.wind_speed} />
+                <ReadingBlock
+                  label="Wind direction"
+                  reading={state.conditions.wind_direction}
+                  bearing
+                />
+                <ReadingBlock label="Air temperature" reading={state.conditions.air_temperature} />
+                <ReadingBlock
+                  label="Water temperature"
+                  reading={state.conditions.water_temperature}
+                />
+              </dl>
+            </section>
 
-          <ForecastRange />
+            <ForecastRange />
 
-          <footer>
-            <p data-testid="freshness">
-              Observed{' '}
-              <time dateTime={state.conditions.observed_at}>
-                {formatTimestamp(state.conditions.observed_at)}
-              </time>
-              , fetched{' '}
-              <time dateTime={state.conditions.fetched_at}>
-                {formatTimestamp(state.conditions.fetched_at)}
-              </time>
-              .
-            </p>
-            {/* "Measured" was a lie, and a flattering one. Nothing on this page is an
+            <footer>
+              <p data-testid="freshness">
+                Observed{' '}
+                <time dateTime={state.conditions.observed_at}>
+                  {formatTimestamp(state.conditions.observed_at)}
+                </time>
+                , fetched{' '}
+                <time dateTime={state.conditions.fetched_at}>
+                  {formatTimestamp(state.conditions.fetched_at)}
+                </time>
+                .
+              </p>
+              {/* "Measured" was a lie, and a flattering one. Nothing on this page is an
                 observation: every figure is Open-Meteo model output at a grid point, and no
                 buoy reading reaches the live system at all — Monican02's record exists only
                 in the analysis directory, for training a model that does not exist yet. A
                 modelled figure described as measured invites a reader to trust it more than
                 it deserves, which is the whole failure this project is built to avoid. */}
-            <p className="provenance" data-testid="provenance">
-              Swell and sea are <strong>modelled</strong>, not measured — Open-Meteo's forecast for{' '}
-              {state.conditions.latitude.toFixed(2)}°N,{' '}
-              {Math.abs(state.conditions.longitude).toFixed(2)}
-              °W, roughly 15km offshore near the head of the Nazaré Canyon. No buoy reading reaches
-              this page. Wind and air temperature come from the nearest land forecast cell, which is
-              not the same point.
-            </p>
-          </footer>
-        </>
-      )}
-    </>
+              <p className="provenance" data-testid="provenance">
+                Swell and sea are <strong>modelled</strong>, not measured — Open-Meteo's forecast
+                for {state.conditions.latitude.toFixed(2)}°N,{' '}
+                {Math.abs(state.conditions.longitude).toFixed(2)}
+                °W, roughly 15km offshore near the head of the Nazaré Canyon. No buoy reading
+                reaches this page. Wind and air temperature come from the nearest land forecast
+                cell, which is not the same point.
+              </p>
+            </footer>
+          </>
+        )}
+      </div>
+
+      {/* The right column. It exists in every state, including before the conditions load and
+          after they fail: a column that appeared only on success would make the page jump at
+          the moment a reader is deciding whether to trust it. */}
+      <div className="home-map">
+        <MapSlot />
+      </div>
+    </div>
   );
 }

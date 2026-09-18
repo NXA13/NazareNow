@@ -235,6 +235,104 @@ footer p {
   max-width: var(--measure-prose);
 }
 
+/* ---------------------------------------------------------------------------
+ * The home page's two columns (#115).
+ *
+ * The forecast on the left, the map on the right, the map matching the column's height rather
+ * than being pinned or sticky. A fixed map with content sliding past it was considered and
+ * rejected: that is Windy's solution, and it reads as two unrelated panels rather than as one
+ * instrument.
+ *
+ * **Neither column scrolls on its own**, which is a rule about what is *absent* here — no
+ * `overflow` on either column, and no height cap that would make one necessary. A column with
+ * its own scrollbar is the same failure as a pinned map: the two halves stop moving together and
+ * stop reading as one thing.
+ *
+ * `minmax(0, …fr)` rather than a bare `fr`, because a grid track's default minimum is its
+ * content, and the hourly table is wider than its share. Without the explicit zero the table
+ * would push the left column past its fraction and shove the map off the proportion this ticket
+ * asks it to keep.
+ *
+ * The split is in fractions, so the proportion holds at every width rather than at one. The map
+ * takes the smaller share: it is the instrument's context, and the figures are what a reader
+ * came to read.
+ * ------------------------------------------------------------------------ */
+.home {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: var(--space-6);
+  /* Both columns to the height of the taller, which is what "equal height" is. It is the grid
+     default and is stated anyway, because it is a promise this page is tested against rather
+     than an accident of the display type. */
+  align-items: stretch;
+}
+
+/* A grid item is a block, and a block's children establish their own flow — the left column
+   needs nothing but to exist and to be allowed to shrink. `min-width: 0` for the same reason
+   the track uses `minmax(0, …)`: without it the table inside sets the floor. */
+.home-forecast,
+.home-map {
+  min-width: 0;
+}
+
+/* Where the map goes, and visibly not a map. See `MapSlot.tsx` for why it refuses to resemble
+   one. Dashed, because a dashed edge is the one border convention that reads as "not finished"
+   without having to say so, and it says so as well. */
+.map-slot {
+  height: 100%;
+  /* So the slot still has presence when it is stacked under the forecast at narrow widths,
+     where it has no column beside it to take its height from. */
+  min-height: 20rem;
+  display: flex;
+  flex-direction: column;
+  /* Top, not centre. The slot is as tall as the column beside it, and that column is currently
+     about twice a viewport — a label centred in it sits below the fold, so the page opens on
+     what looks like an empty panel. A placeholder nobody can see without scrolling is not
+     "visibly a placeholder", and it stays visible at the top once #117 brings the column down
+     to one viewport. */
+  justify-content: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  background: var(--ink-panel);
+  /* Dashed, and in the muted neutral rather than the hairline: a border at `--ink-border` is
+     1.28:1 against this panel, which is right for a hairline dividing rows and wrong for the
+     one thing on the page whose whole job is to announce that it is not finished. */
+  border: var(--rule) dashed var(--ink-muted);
+  border-radius: var(--radius);
+  text-align: center;
+}
+
+.map-slot-what {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: var(--text-tiny);
+  font-weight: var(--weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-widest);
+}
+
+.map-slot-note {
+  margin: 0 auto;
+  max-width: 22rem;
+  color: var(--ink-muted);
+  font-size: var(--text-small);
+}
+
+/* Narrow widths: one column, the forecast first.
+ *
+ * **This is not the phone design**, which is a separate piece of work and is not part of v2. It
+ * is the promise that the phone is not broken while it waits for one: everything still renders,
+ * in an order that makes sense, and the page scrolls — because the no-scroll promise is a
+ * desktop promise and pretending otherwise on a 390px screen would mean hiding things.
+ *
+ * The breakpoint is where two columns stop being readable rather than a device width. Below it
+ * the left column would be narrower than the hourly table it has to hold. */
+@media (max-width: 60rem) {
+  .home {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* --- forecast range ------------------------------------------------------- */
 
 /* The one sentence a Traveller came for (#86).
