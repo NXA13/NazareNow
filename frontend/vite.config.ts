@@ -13,6 +13,11 @@ export default defineConfig({
     strictPort: true,
   },
   test: {
+    // Vitest owns `src/**`. The Playwright specs under `e2e/` are `.spec.ts`, which vitest's
+    // default glob would happily collect and then fail to run — they import `@playwright/test`,
+    // which has no meaning inside jsdom. The boundary is stated from both sides; the other half
+    // is `testDir: './e2e'` in `playwright.config.ts`.
+    include: ['src/**/*.{test,spec}.{ts,tsx}'],
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
