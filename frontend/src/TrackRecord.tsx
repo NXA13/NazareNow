@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 import {
   fetchTrackRecord,
@@ -10,6 +10,7 @@ import {
   type TierRecord,
   type TrackRecord,
 } from './api';
+import { Figure } from './Figure';
 
 type LoadState =
   { status: 'loading' } | { status: 'loaded'; record: TrackRecord } | { status: 'failed' };
@@ -142,9 +143,15 @@ function Delivered({ tier }: { tier: TierRecord }) {
       <p data-testid="delivered-statement">
         The figure above asks whether a day was <em>recorded</em> as giant. This asks whether the
         ocean showed up. Across the same <strong>{tier.days_flagged}</strong> Go Calls, the lowest
-        peak any of them landed on was <strong>{metres(delivered.minimum_m)}</strong> of Significant
-        Wave Height — not one landed on a flat day — and the median was{' '}
-        <strong>{metres(delivered.median_m)}</strong>.
+        peak any of them landed on was{' '}
+        <strong>
+          <Figure>{metres(delivered.minimum_m)}</Figure>
+        </strong>{' '}
+        of Significant Wave Height — not one landed on a flat day — and the median was{' '}
+        <strong>
+          <Figure>{metres(delivered.median_m)}</Figure>
+        </strong>
+        .
       </p>
       <ul data-testid="delivered-ladder">
         {delivered.above.map((step) => (
@@ -152,7 +159,7 @@ function Delivered({ tier }: { tier: TierRecord }) {
             <strong>
               {step.days} of {step.of_days}
             </strong>{' '}
-            peaked above {metres(step.metres)}{' '}
+            peaked above <Figure>{metres(step.metres)}</Figure>{' '}
             <span className="aside">({percent(step.share)})</span>
           </li>
         ))}
@@ -320,7 +327,9 @@ function RangeTable({
   testId,
 }: {
   leads: RangeCalibration['leads'];
-  caption: string;
+  /** A node rather than a string: the big-swell caption carries a figure, and a figure in prose
+   * needs `Figure` around it to come out in the mono face. */
+  caption: ReactNode;
   subset: 'all_hours' | 'big_swell';
   testId: string;
 }) {
@@ -431,11 +440,12 @@ function RangeCalibrationSection({ calibration }: { calibration: RangeCalibratio
         <p data-testid="range-verdict">
           <strong>So the range is wider than the outcomes justify</strong>
           {grows ? ', and increasingly so the further ahead it looks' : ''}: a {longest.lead_days}
-          -day range spanning {metres(longest.all_hours.median_width_m)} would have held the same
-          share of outcomes at {metres(longest.all_hours.justified_width_m)}. That is the error
-          running in the forgiving direction — the system claims less certainty than it turns out to
-          have, so it stays quiet on days it could have called rather than calling days it should
-          not. It is still a statement that is not true, which is why it is on this page.
+          -day range spanning <Figure>{metres(longest.all_hours.median_width_m)}</Figure> would have
+          held the same share of outcomes at{' '}
+          <Figure>{metres(longest.all_hours.justified_width_m)}</Figure>. That is the error running
+          in the forgiving direction — the system claims less certainty than it turns out to have,
+          so it stays quiet on days it could have called rather than calling days it should not. It
+          is still a statement that is not true, which is why it is on this page.
         </p>
       ) : (
         <p data-testid="range-verdict">
@@ -460,9 +470,13 @@ function RangeCalibrationSection({ calibration }: { calibration: RangeCalibratio
         leads={calibration.leads}
         subset="big_swell"
         testId="range-big-swell"
-        caption={`Only the hours the buoy measured at ${metres(
-          calibration.big_swell_from_m,
-        )} or more — the bigger seas, and the kinder of the two`}
+        caption={
+          <>
+            Only the hours the buoy measured at{' '}
+            <Figure>{metres(calibration.big_swell_from_m)}</Figure> or more — the bigger seas, and
+            the kinder of the two
+          </>
+        }
       />
 
       {/* Rendered under the tables, in full. Both say the figures above are narrower evidence

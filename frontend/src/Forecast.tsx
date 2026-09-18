@@ -10,6 +10,7 @@ import {
   type HeightRange,
   type Reading,
 } from './api';
+import { Figure } from './Figure';
 import { compassPoint, formatRange, formatReading, formatTimestamp, formatValue } from './format';
 
 type LoadState =
@@ -266,8 +267,10 @@ function CallDetail({ day, model }: { day: ForecastDay; model: string | null }) 
           <p className="provenance">
             Predicted significant wave height{' '}
             <strong>
-              {formatValue(day.call.predicted_significant_wave_height.value)}
-              {day.call.predicted_significant_wave_height.unit}
+              <Figure>
+                {formatValue(day.call.predicted_significant_wave_height.value)}
+                {day.call.predicted_significant_wave_height.unit}
+              </Figure>
             </strong>
             . That is the instrument's measure of the sea, not the height of the wave face a surfer
             rides — the canyon makes the face far larger, and this system does not yet predict it.
@@ -362,7 +365,10 @@ function PlausibleRange({ day }: { day: ForecastDay }) {
   return (
     <div className="plausible-range" data-testid={`plausible-range-${day.date}`}>
       <p>
-        Plausibly <strong>{formatRange(range)}</strong>
+        Plausibly{' '}
+        <strong>
+          <Figure>{formatRange(range)}</Figure>
+        </strong>
         {probability !== null && (
           <>
             {' '}
@@ -435,16 +441,25 @@ function Shift({ day }: { day: ForecastDay }) {
         {moved ? (
           <>
             <strong>
-              {formatValue(Math.abs(change))}
-              {now.unit} {change > 0 ? 'larger' : 'smaller'}
+              <Figure>
+                {formatValue(Math.abs(change))}
+                {now.unit}
+              </Figure>{' '}
+              {change > 0 ? 'larger' : 'smaller'}
             </strong>{' '}
-            than the run before, which put this day at {formatValue(before.value)}
-            {before.unit}
+            than the run before, which put this day at{' '}
+            <Figure>
+              {formatValue(before.value)}
+              {before.unit}
+            </Figure>
           </>
         ) : (
           <>
-            Unchanged since the run before, which also put this day at {formatValue(before.value)}
-            {before.unit}
+            Unchanged since the run before, which also put this day at{' '}
+            <Figure>
+              {formatValue(before.value)}
+              {before.unit}
+            </Figure>
           </>
         )}
         {/* The lead time the earlier run spoke at, because a range narrowing as a date
@@ -636,7 +651,9 @@ function History({ day }: { day: ForecastDay }) {
                 style={{ width: `${largest > 0 ? (point.height.value / largest) * 100 : 0}%` }}
               />
             </span>
-            <strong>{formatReading(point.height)}</strong>
+            <strong>
+              <Figure>{formatReading(point.height)}</Figure>
+            </strong>
             {/* Not a band of zero width where a call recorded none, which would read as total
                 certainty about the oldest and least informed point in the series. Those are
                 calls issued before the pipeline built distributions at all. */}
@@ -730,19 +747,28 @@ function Agreement({ day }: { day: ForecastDay }) {
             {height.providers.length} independent forecasters, and at this day's middle hour they
             are{' '}
             <strong>
-              {formatValue(height.spread)}
-              {height.unit}
+              <Figure>
+                {formatValue(height.spread)}
+                {height.unit}
+              </Figure>
             </strong>{' '}
-            apart on the swell — {spreadRange(height)}.
+            apart on the swell — <Figure>{spreadRange(height)}</Figure>.
             {period?.spread !== null && period !== undefined && (
               <>
                 {' '}
-                They differ by {formatValue(period.spread)}
-                {period.unit} on the period.
+                They differ by{' '}
+                <Figure>
+                  {formatValue(period.spread)}
+                  {period.unit}
+                </Figure>{' '}
+                on the period.
               </>
             )}
             {direction?.spread !== null && direction !== undefined && (
-              <> On the direction they span {spreadRange(direction)}.</>
+              <>
+                {' '}
+                On the direction they span <Figure>{spreadRange(direction)}</Figure>.
+              </>
             )}
           </p>
           <p className="provenance">

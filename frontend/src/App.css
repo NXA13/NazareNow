@@ -162,6 +162,20 @@ h2 {
   font-weight: var(--weight-semibold);
 }
 
+/* A figure that lands in prose, wrapped by `Figure` (#114).
+ *
+ * The digit-scoped face in `tokens.css` sets every digit on both pages in Plex wherever it sits,
+ * including mid-sentence. What it cannot claim is the characters a number shares with prose — the
+ * decimal point, the comma, the unit — because a range covering those would set every full stop
+ * in the site's copy in the mono face. This rule is the other half: inside the wrapper the whole
+ * figure is mono, so "6.42m to 8.79m" has no Space Grotesk left in it.
+ *
+ * Size and weight are inherited deliberately. A figure in a sentence is part of that sentence,
+ * and one that changed size mid-line would read as a pull-quote. */
+.figure {
+  font-family: var(--font-mono);
+}
+
 .unit {
   font-family: var(--font-mono);
   color: var(--ink-muted);

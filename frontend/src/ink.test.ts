@@ -154,7 +154,7 @@ describe('every number is set in IBM Plex Mono', () => {
   it('sets the tables, the figures and the ladder in the full mono face', () => {
     // Anything that is all figures asks for the face by name; these are the selectors where a
     // number would otherwise be left in the text face at a size where it is read as data.
-    const mono = ['.value', '.unit', '.bearing', '.tier dd', '.history .range'];
+    const mono = ['.value', '.unit', '.bearing', '.figure', '.tier dd', '.history .range'];
     for (const selector of mono) {
       const rule = rules(APP).find((candidate) => candidate.selector === selector);
       expect(rule?.body, `${selector} should set the mono face`).toContain(
@@ -169,6 +169,43 @@ describe('every number is set in IBM Plex Mono', () => {
       );
     }
   });
+});
+
+describe('a figure that lands in prose is wrapped', () => {
+  /**
+   * A figure interpolated into JSX — `{metres(x)}` — and deliberately not one interpolated into
+   * a template literal, which is `${metres(x)}` and matches nothing here.
+   *
+   * That single character is the whole distinction between markup and string-building, and it is
+   * what keeps this guard honest. A figure inside a template literal is either an `aria-label`,
+   * which a screen reader is read and a browser never draws, so it has no face to get wrong; or
+   * it is a helper like `spreadRange` returning a string, in which case the face is decided
+   * where that string lands in JSX, and this guard checks it there instead.
+   */
+  const FIGURE_IN_JSX = /(?<!\$)\{(formatValue|formatReading|formatRange|metres|signedMetres)\(/g;
+
+  /** Contexts already mono by selector, so a figure inside one needs no wrapper. */
+  const ALREADY_MONO = /<Figure>|<td|<dd>|className="value"|className="bearing"|className="range"/;
+
+  it.each(['Forecast.tsx', 'TrackRecord.tsx'])(
+    'sets every figure in %s in the mono face, by selector or by wrapper',
+    (name) => {
+      const source = withoutComments(read(`./${name}`));
+      const bare: string[] = [];
+
+      for (const match of source.matchAll(FIGURE_IN_JSX)) {
+        // The window either side is generous because JSX puts the opening tag on its own line as
+        // often as not. This is a guard against a figure landing in prose with nothing around
+        // it, not a parser.
+        const context = source.slice(Math.max(0, match.index - 220), match.index + 160);
+        if (!ALREADY_MONO.test(context)) {
+          bare.push(source.slice(Math.max(0, match.index - 70), match.index + 70).trim());
+        }
+      }
+
+      expect(bare).toEqual([]);
+    },
+  );
 });
 
 describe('both fonts are served from this origin', () => {
