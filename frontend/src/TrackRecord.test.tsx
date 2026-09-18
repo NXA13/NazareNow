@@ -623,7 +623,13 @@ describe('the range it prints, measured', () => {
 
     const table = await screen.findByTestId('range-big-swell');
 
-    expect(within(table).getByText(/4\.25m or more/)).toBeInTheDocument();
+    // Through `toHaveTextContent`, which reads the whole subtree, rather than `getByText`,
+    // which reads an element's own direct text children only. The bar is a figure, so #114
+    // wrapped it in `Figure` to set it in the mono face, and that puts "4.25m" in a child of
+    // the caption. The rendered sentence is unchanged — this asserts it as a reader sees it,
+    // across the wrapper, which is what the test was always about.
+    expect(within(table).getByText('4.25m')).toBeInTheDocument();
+    expect(table).toHaveTextContent(/4\.25m or more/);
     expect(table).not.toHaveTextContent(/Go Call/);
   });
 
