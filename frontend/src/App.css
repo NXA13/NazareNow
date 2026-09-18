@@ -45,15 +45,16 @@ header h1 {
 }
 
 .tagline {
-  margin: 0.25rem 0 0.75rem;
+  margin: 0.25rem 0 2rem;
   color: var(--muted);
 }
 
 /*
  * The two pages, offered before either of them is read.
  *
- * Restrained on purpose. The Ink system (#114) is what will make this look like anything,
- * and a nav styled to today's palette would be work thrown away twice.
+ * Styled no further than a nav has to be to work: a row, a gap, and a mark on the page being
+ * read. How this should *look* is #114's decision, and anything chosen here would be a choice
+ * made twice. The colour is the stylesheet's existing accent rather than a new one.
  */
 header nav {
   display: flex;
@@ -63,24 +64,13 @@ header nav {
 
 header nav a {
   color: var(--accent);
-  text-decoration: none;
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  padding-bottom: 0.15rem;
-  border-bottom: 2px solid transparent;
 }
 
-header nav a:hover,
-header nav a:focus-visible {
-  text-decoration: underline;
-}
-
-/* The page being read, marked off the same attribute a screen reader announces rather than
-   beside it, so what is seen and what is spoken cannot drift apart. */
+/* Hung off the attribute a screen reader announces rather than set beside it, so what is seen
+   and what is announced cannot drift apart. */
 header nav a[aria-current='page'] {
   color: var(--ink);
-  border-bottom-color: var(--accent);
+  font-weight: 600;
 }
 
 h2 {

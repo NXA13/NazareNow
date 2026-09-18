@@ -45,9 +45,11 @@
  * happen to be open is a property of `handlers.ts` that can change without this file being
  * touched.
  *
- * **Two components, one verdict.** `pageFor` draws the forecast range and `panelFor` draws the
- * whole app; both go through `holdToVerdict`, which is the only place in this file that decides
- * what a verdict costs. A second renderer must never mean a second standard.
+ * **Three components, one verdict.** `pageFor` draws the forecast range, `panelFor` draws the
+ * app at its root address — which since #113 is the shell and the home page, no longer the
+ * whole site — and `recordFor` draws the track record, which now has an address of its own.
+ * All three go through `holdToVerdict`, which is the only place in this file that decides what
+ * a verdict costs. A third renderer must never mean a third standard.
  *
  * **Read is not the same as printed, and the difference is the point.**
  * `RangeCoverage.widening_factor` appears nowhere on the page and is read all the same: it is

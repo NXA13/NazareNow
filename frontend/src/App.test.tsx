@@ -9,6 +9,14 @@
  * Two tests have already shipped here that asserted nothing: one matched the page's own
  * static subtitle, another matched the static word "Observed" while the date formatter
  * was broken. Every assertion below must fail if the API's value stops being rendered.
+ *
+ * **The one carve-out, and why it is not a hole.** The navigation tests below assert structure
+ * rather than values — an address, a link's target, which page is marked current — and no API
+ * value can make those fail. The rule above exists for a *figure* whose disappearance a test
+ * would sleep through, which is what both of the tests it names were. A test that a page is
+ * still reachable has no figure to sleep through, and the alternative to writing it is not
+ * writing it: that is how the track record once came to be removed from the page with the
+ * whole suite green.
  */
 
 import { render, screen, within } from '@testing-library/react';
@@ -322,9 +330,9 @@ describe('navigation', () => {
   });
 
   it('navigates with real links rather than with click handlers', async () => {
-    // The difference a reader can feel: a real link can be copied, opened in a new tab and
-    // read off the status bar before it is followed. An element that only responds to a click
-    // can do none of those, and looks identical in a screenshot.
+    // The argument for anchors is written where the anchors are, in App.tsx. This is the
+    // assertion that keeps it true — and it is worth one, because a click handler passes every
+    // other test in this block and looks identical in a screenshot.
     render(<App />);
 
     for (const [name, href] of [
