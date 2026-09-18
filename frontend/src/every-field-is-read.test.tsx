@@ -758,10 +758,15 @@ describe('ForecastDay', () => {
  * list would file the two stamps in the footer and the coordinates in the provenance line as
  * dropped.
  *
- * All three fetches are waited on. The current panel is `App`'s own, but the forecast and the
- * track record render inside it and settle on their own schedules — snapshotting before they
- * land would compare a half-built page against a built one, which differs for every field and
- * would call all sixteen read.
+ * Both of the home page's fetches are waited on. The conditions panel is `Home`'s own and the
+ * forecast renders inside it on its own schedule — snapshotting before it lands would compare a
+ * half-built page against a built one, which differs for every field and would call all sixteen
+ * read.
+ *
+ * **The track record is no longer one of them.** #113 moved it behind its own address, so this
+ * page no longer makes that fetch and must not wait on it. Nothing is lost here: the eleven
+ * track-record types are decided about further down this file, against `<TrackRecordPage />`
+ * rendered directly.
  */
 async function panelFor(conditions: CurrentConditions): Promise<string> {
   server.use(http.get('*/api/conditions/current', () => HttpResponse.json(conditions)));
@@ -769,7 +774,6 @@ async function panelFor(conditions: CurrentConditions): Promise<string> {
   const view = render(<App />);
   await screen.findByTestId('freshness');
   await screen.findByTestId('earliest-call');
-  await screen.findByTestId('gold-day-total');
 
   const html = view.container.innerHTML;
   view.unmount();

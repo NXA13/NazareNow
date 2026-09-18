@@ -12,8 +12,9 @@
  */
 
 import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { App } from './App';
 import { currentConditions } from './test/handlers';
@@ -215,20 +216,25 @@ describe('current conditions', () => {
     expect(times[0]).toHaveAttribute('datetime', currentConditions.observed_at);
   });
 
-  it('carries the track record on the page, not behind a link', async () => {
-    // The track record is tested thoroughly — by rendering `TrackRecordPage` directly. So
-    // the component was covered and its *presence* was not: removing it from `App` left
-    // every test green while the entire limitations section vanished from the product.
+  it('sends a reader to the track record from the forecast, in one link', async () => {
+    // This assertion used to read "carries the track record on the page, not behind a link",
+    // and the reasoning behind it was that a track record nobody navigates to is a limitation
+    // nobody reads. v2 moves it to its own page, so that reasoning now has to be carried by
+    // something else: the link itself, which is why its presence is asserted here rather than
+    // left to the nav's own test.
     //
-    // On the page rather than behind a link is a decision, stated in App.tsx: a track
-    // record nobody navigates to is a limitation nobody reads. That makes its being here
-    // the thing worth asserting, and this is the only place that can assert it.
+    // The guarantee this test makes is weaker than the one it replaces, and deliberately so
+    // for exactly one ticket. #119 restores the strong form — a line of track record on the
+    // home page, and every limit that qualifies a number kept beside that number — and the
+    // assertions that pin it belong with that work rather than here.
     render(<App />);
 
-    expect(await screen.findByRole('heading', { name: /track record/i })).toBeInTheDocument();
-    // The forecast too, for the same reason and by the same accident. Awaited separately:
-    // the three sections fetch independently, which is the point — a failure in one costs
-    // that section and not the others — so they do not arrive together.
+    const link = await screen.findByRole('link', { name: /how it works/i });
+    expect(link).toHaveAttribute('href', '#/how-it-works');
+
+    // The forecast is on this page and stays on it. Awaited separately: the sections fetch
+    // independently, which is the point — a failure in one costs that section and not the
+    // others — so they do not arrive together.
     expect(await screen.findByRole('heading', { name: /the next \d+ days/i })).toBeInTheDocument();
   });
 
@@ -241,5 +247,103 @@ describe('current conditions', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/could not load/i);
     expect(screen.queryByRole('group', { name: /swell height/i })).toBeNull();
+  });
+});
+
+/**
+ * Two pages, and the address bar that decides which one a reader is looking at.
+ *
+ * Driven the way a reader drives it — following a link, pressing Back, opening an address
+ * directly — rather than by calling the router. The router is an implementation detail and is
+ * free to be rewritten; what is asserted here is that both pages are reachable, that an
+ * address survives a reload, and that neither of those depends on JavaScript having decided to
+ * intercept a click.
+ */
+describe('navigation', () => {
+  /** Leave the address bar as the next test expects to find it. jsdom keeps one `window`
+   * across a file, so a hash left behind by one test is the next test's starting page. */
+  afterEach(() => {
+    window.location.hash = '';
+  });
+
+  it('opens on the forecast', async () => {
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: /the next \d+ days/i })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /track record/i })).toBeNull();
+  });
+
+  it('shows the track record at its own address, opened directly', async () => {
+    // What a bookmark, a shared link or a reload does. It must not depend on the click that
+    // would normally have got a reader here.
+    window.location.hash = '#/how-it-works';
+
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: /track record/i })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /the next \d+ days/i })).toBeNull();
+  });
+
+  it('shows the forecast at an address nobody recognises', async () => {
+    // A hash route has no server to answer with a 404, so the only choice is which page a
+    // wrong address lands on. A blank one is the failure this asserts against.
+    window.location.hash = '#/nowhere';
+
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: /the next \d+ days/i })).toBeInTheDocument();
+  });
+
+  it('follows a link to the track record and back again', async () => {
+    render(<App />);
+    await screen.findByRole('heading', { name: /the next \d+ days/i });
+
+    await userEvent.click(screen.getByRole('link', { name: /how it works/i }));
+    expect(await screen.findByRole('heading', { name: /track record/i })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('link', { name: /forecast/i }));
+    expect(await screen.findByRole('heading', { name: /the next \d+ days/i })).toBeInTheDocument();
+  });
+
+  it('goes back to the forecast when the reader presses Back', async () => {
+    // The whole reason this is a router and not two `useState` flags. A page swapped by state
+    // alone leaves the address bar behind, and the Back button then takes a reader out of the
+    // site altogether — to whatever they were reading before they arrived.
+    render(<App />);
+    await screen.findByRole('heading', { name: /the next \d+ days/i });
+
+    await userEvent.click(screen.getByRole('link', { name: /how it works/i }));
+    await screen.findByRole('heading', { name: /track record/i });
+
+    window.history.back();
+
+    expect(await screen.findByRole('heading', { name: /the next \d+ days/i })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /track record/i })).toBeNull();
+  });
+
+  it('navigates with real links rather than with click handlers', async () => {
+    // The difference a reader can feel: a real link can be copied, opened in a new tab and
+    // read off the status bar before it is followed. An element that only responds to a click
+    // can do none of those, and looks identical in a screenshot.
+    render(<App />);
+
+    for (const [name, href] of [
+      [/forecast/i, '#/'],
+      [/how it works/i, '#/how-it-works'],
+    ] as const) {
+      expect(await screen.findByRole('link', { name })).toHaveAttribute('href', href);
+    }
+  });
+
+  it('marks the page being read, for a reader who cannot see which link is lit', async () => {
+    window.location.hash = '#/how-it-works';
+
+    render(<App />);
+
+    expect(await screen.findByRole('link', { name: /how it works/i })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    expect(screen.getByRole('link', { name: /forecast/i })).not.toHaveAttribute('aria-current');
   });
 });

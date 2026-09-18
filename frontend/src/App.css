@@ -45,8 +45,42 @@ header h1 {
 }
 
 .tagline {
-  margin: 0.25rem 0 2rem;
+  margin: 0.25rem 0 0.75rem;
   color: var(--muted);
+}
+
+/*
+ * The two pages, offered before either of them is read.
+ *
+ * Restrained on purpose. The Ink system (#114) is what will make this look like anything,
+ * and a nav styled to today's palette would be work thrown away twice.
+ */
+header nav {
+  display: flex;
+  gap: 1.25rem;
+  margin: 0 0 2rem;
+}
+
+header nav a {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding-bottom: 0.15rem;
+  border-bottom: 2px solid transparent;
+}
+
+header nav a:hover,
+header nav a:focus-visible {
+  text-decoration: underline;
+}
+
+/* The page being read, marked off the same attribute a screen reader announces rather than
+   beside it, so what is seen and what is spoken cannot drift apart. */
+header nav a[aria-current='page'] {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
 }
 
 h2 {
