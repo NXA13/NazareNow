@@ -160,6 +160,11 @@ h2 {
 .bearing {
   margin-left: auto;
   font-family: var(--font-mono);
+  /* A bearing is one token — "326° NW" — and it broke across two lines inside the chip once the
+     mono face made it wider than the text face had at the same size. The chip is narrower than
+     the card, so it wraps rather than overflowing; this keeps it one line, which is what it was
+     before the re-skin. */
+  white-space: nowrap;
   background: var(--ink-border);
   color: var(--ink-text);
   border-radius: var(--radius-badge);
@@ -375,9 +380,10 @@ footer p {
   color: var(--ink-muted);
 }
 
-/* Banding by tone rather than by tint: on the graphite a row that lifts slightly towards the
-   panel's own colour separates the rows without introducing a colour that would then have to
-   mean something. */
+/* Banding by tone rather than by tint: alternate rows sink to the deeper ground instead of
+   taking a tint, which separates them without introducing a colour that would then have to
+   mean something. Sinking rather than lifting, because a table of figures on this ground
+   should read as rows cut into it rather than as rows stacked on it. */
 .hours-scroll tbody tr:nth-child(even) {
   background: var(--ink-deep);
 }
