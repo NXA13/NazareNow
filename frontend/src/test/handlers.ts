@@ -243,19 +243,26 @@ export const forecast: Forecast = {
  *
  * The days are ordinary — one call status, repeated. What varies here is how many rows there
  * are, which is the only thing this fixture exists to vary.
+ *
+ * **Except for where the measured archive ends**, which a sixteen-day response cannot avoid
+ * having: the forecast-error archive is seven days deep, so a real response this long carries
+ * days the backend marks extrapolated, and the page draws a divider and dims them (#117). A
+ * fixture with every day measured would hold the layout to a page shorter than the one a reader
+ * gets, which is the same mistake as measuring against three days.
  */
 export const longForecast: Forecast = {
   ...forecast,
-  days: Array.from({ length: 16 }, (_, index) =>
-    dayFrom(
+  days: Array.from({ length: 16 }, (_, index) => {
+    const day = dayFrom(
       `2026-02-${String(12 + index).padStart(2, '0')}`,
       2 + (index % 5),
       8 + (index % 4),
       250 + index,
       index === 1 ? 'go' : index === 2 ? 'watch' : 'none',
       index,
-    ),
-  ),
+    );
+    return { ...day, call: { ...day.call!, uncertainty_measured: index <= 7 } };
+  }),
 };
 
 /** The provenance a calibrated forecast carries (#12).

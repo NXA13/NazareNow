@@ -398,25 +398,43 @@ footer p {
   margin: var(--space-3) 0 0;
 }
 
+/* The days ahead, one per row (#117).
+ *
+ * A row rather than a grid cell, because a cell fits two of the four things a day has to carry
+ * — its date, its height, how it compares with the rest of the range, and the call. The grid
+ * this replaced fitted the first two and wrapped the rest onto further lines, which is also why
+ * it took three rows of cards to show a week.
+ *
+ * **Every row is one line at every count.** Nothing here grows with the number of days: sixteen
+ * rows are sixteen of exactly this, which is what lets the column's height be reasoned about
+ * against a response nobody has seen yet. */
 .days {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
-  gap: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
 }
 
 .day {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-hair);
+  /* Wrapping rather than a media query. At a phone width the fixed cells no longer fit beside
+     each other, and the choice is to wrap them or to drop one — and dropping the period and
+     direction is what a `display: none` would quietly do, to the one reading that separates a
+     groundswell worth travelling for from a big messy sea. */
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
   text-align: left;
   font: inherit;
   color: inherit;
   cursor: pointer;
   background: var(--ink-panel);
   border: var(--rule) solid var(--ink-border);
-  border-left: var(--edge) solid var(--ink-border);
-  border-radius: var(--radius);
-  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-badge);
+  padding: var(--space-1) var(--space-3);
+  /* Tight, and stated here rather than left to the body's leading: a row is one line of figures
+     and the leading meant for a paragraph adds four pixels to each of sixteen rows. */
+  line-height: var(--leading-tight);
 }
 
 .day:hover {
@@ -424,44 +442,159 @@ footer p {
 }
 
 .day-date {
+  width: 5rem;
+  flex-shrink: 0;
   font-size: var(--text-tiny);
   text-transform: uppercase;
   letter-spacing: var(--tracking-wide);
   color: var(--ink-muted);
 }
 
+/* Right-aligned at a fixed width, so sixteen heights read as a column of figures a reader can
+   run an eye down rather than sixteen numbers each starting wherever its date happened to end. */
+.day-swell {
+  width: 4.5rem;
+  flex-shrink: 0;
+  text-align: right;
+}
+
 .day-swell .value {
-  font-size: var(--text-figure);
+  font-size: var(--text-meta);
+}
+
+.day-swell .unit {
+  font-size: var(--text-tiny);
 }
 
 .day-detail {
   display: flex;
   align-items: baseline;
   gap: var(--space-1);
+  width: 8.5rem;
+  flex-shrink: 0;
   font-size: var(--text-small);
   color: var(--ink-muted);
 }
 
 .day-detail .value {
-  font-size: var(--text-meta);
+  font-size: var(--text-tiny);
   font-weight: var(--weight-semibold);
   color: var(--ink-text);
 }
 
-.day-detail .bearing {
-  margin-left: auto;
+.day-detail .unit {
+  font-size: var(--text-tiny);
 }
 
-/* How much was checked, not how much it moved. Deliberately the quietest thing on the card:
-   it qualifies the call above rather than competing with it, and it carries no number, so it
+/* The bearing chip's own rule pushes it to the end of a flex line; inside a fixed-width cell
+   that would strand it at the cell's edge rather than beside the period it belongs to. */
+.day-detail .bearing {
+  margin-left: 0;
+  font-size: var(--text-micro);
+  padding: 0 var(--space-1);
+}
+
+/* The comparison, drawn rather than stated: a track across whatever room the row has left,
+   filled to this day's share of the largest day on screen.
+ *
+ * **In the neutrals.** How a day compares with the week is not a judgement about travelling, and
+ * a bar in the status colours would make the two the same signal. `ink.test.ts` holds the rest of
+ * the sheet to that rule; this is the same rule kept by hand, because the fill's width is the one
+ * part of this a stylesheet never sees. */
+.day-bar {
+  flex: 1 1 4rem;
+  min-width: 2.5rem;
+  height: 0.3rem;
+  border-radius: var(--radius-badge);
+  background: var(--ink-border);
+  overflow: hidden;
+}
+
+.day-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--ink-muted);
+}
+
+/* How much was checked, not how much it moved. Deliberately the quietest thing on the row: it
+   qualifies the call beside it rather than competing with it, and it carries no number, so it
    cannot be scanned as a second height beside the peak. */
 .day-agreement {
+  flex-shrink: 0;
   font-size: var(--text-micro);
   text-transform: uppercase;
   letter-spacing: var(--tracking-wide);
   color: var(--ink-muted);
-  border-top: var(--rule) dotted var(--ink-border);
-  padding-top: var(--space-1);
+}
+
+/* The call, last and at a fixed width, so the badges line up down the right-hand edge and a
+   reader looking for a Go Call reads one column rather than sixteen row-ends. */
+.day .call {
+  width: 4.5rem;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+/* A Go or a Watch washes its whole row, which is what makes one day of sixteen visible at a
+   glance. The design spec puts day rows inside the status system for exactly this. The wash is
+   the only thing in the row that is not in the neutrals, and the badge it surrounds is what
+   names the verdict — the row says "look here", the badge says what it is. */
+.day-go {
+  background: var(--ink-go-dim);
+  border-color: var(--ink-go);
+}
+
+.day-confirmed {
+  background: var(--ink-go-dim);
+  border-color: var(--ink-go);
+}
+
+.day-watch {
+  background: var(--ink-watch-dim);
+  border-color: var(--ink-watch);
+}
+
+/* Where the measured forecast-error archive stops, and what that means for the rows under it.
+ *
+ * A stated boundary rather than a shorter list: trimming the range back to the days the archive
+ * covers would drop a day somebody could still book a flight for, to make the arithmetic neat. */
+.days-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 var(--space-2);
+  font-size: var(--text-tiny);
+  color: var(--ink-muted);
+}
+
+.days-divider::after {
+  content: '';
+  flex-grow: 1;
+  height: var(--rule);
+  background: var(--ink-border);
+}
+
+/* Dimmer, and hollow rather than filled: out here the plausible range is a line continued past
+   everything that was ever measured about it, and a row that looked like the ones above would
+   present an extrapolation as evidence.
+ *
+ * **Dimmed element by element rather than by fading the whole row.** An `opacity` on the row was
+ * the shorter way to write this and it takes the date, the period and the call down with the
+ * height — on days somebody can still book a flight for, which is the entire reason they are on
+ * the page rather than trimmed off the end of it. What is uncertain out here is the size, so that
+ * is what goes quiet. */
+.days.beyond .day {
+  background: transparent;
+  border-style: dashed;
+}
+
+.days.beyond .day-swell .value {
+  color: var(--ink-muted);
+  font-weight: var(--weight-regular);
+}
+
+.days.beyond .day-bar-fill {
+  opacity: 0.55;
 }
 
 .hint {
@@ -546,37 +679,8 @@ footer p {
   padding: 0 var(--space-1);
 }
 
-/* Prominence relative to the rest of the range, so the standout day is visible at a glance
- * whether the week peaks at 1.2m or 12m.
- *
- * **In the neutrals, not in a status colour.** Rank is how a day compares with the week on
- * screen; a Go Call is a judgement about travelling. The old sheet drew the leading day in the
- * same vermilion it drew a Go Call in, which made "biggest day this week" and "book a flight"
- * the same signal — on a page whose entire purpose is the difference between them.
- *
- * Selection is declared after these and with a higher-specificity selector, because the
- * earlier version let the size classes override it and clicking a big day changed almost
- * nothing. */
-.day.rank-ordinary .day-swell .value {
-  color: var(--ink-muted);
-  font-weight: var(--weight-medium);
-}
-
-.day.rank-notable {
-  border-left-color: var(--ink-muted);
-}
-
-.day.rank-leading {
-  border-left-color: var(--ink-text);
-}
-
-.day.rank-leading .day-swell .value {
-  font-size: var(--text-figure-lg);
-}
-
 .day.day.selected {
   border-color: var(--ink-text);
-  border-left-color: var(--ink-text);
   background: var(--ink-border);
   box-shadow: inset 0 0 0 var(--rule) var(--ink-text);
 }
@@ -781,7 +885,7 @@ footer p {
 }
 
 /* The bar. Scaled against the largest point in this series, so it needs no domain knowledge
-   and no calibrated threshold — the same relative treatment the day cards use. Deliberately
+   and no calibrated threshold — the same relative treatment the day rows use. Deliberately
    not the plausible range: it encodes the one height the row is about, and a track that also
    drew the range would put two lengths on one line that mean different things.
  *

@@ -13,6 +13,9 @@
 import { expect, test, type Page } from '@playwright/test';
 
 import { DESKTOP, NARROW } from '../playwright.config';
+// The same reader the contrast script and `ink.test.ts` use, so a hex in the sheet and the
+// `rgb()` the browser reports for it compare as the one colour they are.
+import { parseColour } from '../scripts/check-contrast.mjs';
 import { FIXTURE_BY_PATH, longForecast } from '../src/test/handlers';
 
 /**
@@ -41,6 +44,13 @@ test.beforeEach(async ({ page }) => {
 async function loadHome(page: Page) {
   await page.goto('/');
   await expect(page.getByRole('group', { name: 'Swell height' })).toBeVisible();
+  // And the forecast, which is a second request that lands a moment after the first. Waiting
+  // only for the conditions left the day list still saying "Loading forecast...", and since
+  // every measurement below is a separate round trip to the browser, the column could be
+  // measured before the days arrived and the map after — reporting two columns of different
+  // heights for a grid that had in fact stretched both. The heading rather than a row, so this
+  // still waits on a response carrying no days at all.
+  await expect(page.getByRole('heading', { name: /^The next \d+ days$/ })).toBeVisible();
   return {
     left: page.locator('.home-forecast'),
     right: page.locator('.home-map'),
@@ -157,6 +167,78 @@ test.describe(`the two columns, at ${DESKTOP.width}x${DESKTOP.height}`, () => {
   });
 });
 
+test.describe(`the day list, at ${DESKTOP.width}x${DESKTOP.height}`, () => {
+  test('gives every day a row of its own, the full width of the list', async ({ page }) => {
+    await loadHome(page);
+
+    const rows = page.locator('.day');
+    // Sixteen, because the fixture is the longest response the provider can send. jsdom already
+    // proves the count follows the response; what only a browser can say is that sixteen of them
+    // are sixteen rows rather than a grid that happens to hold sixteen cells.
+    await expect(rows).toHaveCount(longForecast.days.length);
+
+    const boxes = await rows.evaluateAll((elements) =>
+      elements.map((element) => {
+        const box = element.getBoundingClientRect();
+        return { x: Math.round(box.x), width: Math.round(box.width), y: box.y, height: box.height };
+      }),
+    );
+
+    const [first, ...rest] = boxes;
+    for (const box of rest) {
+      // Same left edge and same width: a row, not a cell in a track beside another cell. The
+      // grid this replaced put seven days across and three down, and every assertion about a
+      // day list that did not measure x passed against it.
+      expect(box.x).toBe(first!.x);
+      expect(box.width).toBe(first!.width);
+    }
+
+    // And each one below the last, with no two sharing a line.
+    for (let index = 1; index < boxes.length; index += 1) {
+      expect(boxes[index]!.y).toBeGreaterThanOrEqual(
+        boxes[index - 1]!.y + boxes[index - 1]!.height,
+      );
+    }
+
+    // One line each, so the column's height is the row count times a constant. A row that wrapped
+    // at this width would make sixteen days taller than sixteen times a row, which is exactly the
+    // arithmetic #118 and the no-scroll promise rest on.
+    const heights = boxes.map((box) => Math.round(box.height));
+    expect(Math.max(...heights)).toBe(Math.min(...heights));
+  });
+
+  test('dims the days past the measured archive, under their own heading', async ({ page }) => {
+    await loadHome(page);
+
+    // The fixture's archive runs out after its eighth day, as the real one does after seven.
+    const beyond = page.locator('.days.beyond .day');
+    await expect(beyond).toHaveCount(8);
+    await expect(page.getByText(/beyond the measured archive/i)).toBeVisible();
+
+    /** How a row actually renders: its edge, and the colour its height is set in. */
+    const inkOf = (rows: ReturnType<typeof page.locator>) =>
+      rows.first().evaluate((element) => ({
+        border: getComputedStyle(element).borderTopStyle,
+        height: getComputedStyle(element.querySelector('.day-swell .value')!).color,
+        // The muted token as the browser resolves it, so this compares against the sheet's own
+        // quiet colour rather than a hex value copied into a test and left to drift.
+        muted: getComputedStyle(document.documentElement).getPropertyValue('--ink-muted').trim(),
+      }));
+
+    const dim = await inkOf(beyond);
+    const measured = await inkOf(page.locator('.days:not(.beyond) .day'));
+
+    // The height is what is uncertain out here, so the height is what goes quiet.
+    expect(dim.height).not.toBe(measured.height);
+    expect(parseColour(dim.height)).toEqual(parseColour(dim.muted));
+    // And the row is hollow rather than filled, so the difference survives a reader who cannot
+    // see one step in a grey. A row that looked like the ones above would present an
+    // extrapolation as evidence.
+    expect(dim.border).toBe('dashed');
+    expect(measured.border).not.toBe('dashed');
+  });
+});
+
 test.describe('the map slot', () => {
   test('says it is a placeholder rather than resembling a map', async ({ page }) => {
     const { slot } = await loadHome(page);
@@ -220,17 +302,26 @@ test.describe(`narrow widths, at ${NARROW.width}x${NARROW.height}`, () => {
 });
 
 test.describe('how tall the page is, which is the promise not yet kept', () => {
-  test('does not fit yet, and #117 is where it has to', async ({ page }) => {
+  test('does not fit yet, and #119 is now the last ticket that can make it', async ({ page }) => {
     await loadHome(page);
 
     const { height: viewportHeight } = await viewport(page);
     const height = await page.evaluate(() => document.documentElement.scrollHeight);
 
     /**
-     * **#115 builds the shell; it does not make the page fit.** The left column still holds v1's
-     * contents — ten condition tiles in three groups, the windows panel, the day cards — and the
-     * tickets that shorten them are #116 (four gated tiles) and #117 (one row per day), whose own
-     * criteria already say the column must "still satisfy the no-scroll promise".
+     * **#115 builds the shell; it does not make the page fit**, and #117 has now been through
+     * here without making it fit either. The left column still holds v1's contents — ten
+     * condition tiles in three groups, the windows panel, the teaching material and the footer.
+     *
+     * **#117 made the page taller, which was worth knowing.** Sixteen days as a packed grid of
+     * cards were 422px; sixteen as rows are 554px including the divider, because the grid fitted
+     * seven days across and three down while a row is a row. The rows are the design and they are
+     * already at the height the mockup draws them at (about 30px), so the saving the no-scroll
+     * promise needs is not in here — it is in #116, which replaces about 410px of condition tiles
+     * with roughly 200px of verdict and four tiles, and in #119, which moves the windows panel,
+     * the hint, the calibration alert, the provenance and the footer off this page altogether.
+     * Measured at the sixteen days this fixture carries, those two together leave the page around
+     * a viewport, and at the eleven the provider actually sends today, under one.
      *
      * **This asserts the shortfall rather than a ceiling on it**, and the difference matters. A
      * ceiling — "under two viewports" — was the first thing written here, and it was measuring
@@ -240,7 +331,7 @@ test.describe('how tall the page is, which is the promise not yet kept', () => {
      *
      * What is true at any count is that the page does not fit yet, and more days only make it
      * more true. So that is what is asserted, and it makes the test retire itself: the day #116
-     * or #117 brings the page under a viewport this fails, and whoever is holding it then
+     * or #119 brings the page under a viewport this fails, and whoever is holding it then
      * replaces it with `toBeLessThanOrEqual(viewportHeight)` — which is the no-scroll promise,
      * and the whole of it. A note asking a later ticket to remember is a note nobody reads; a
      * failing test is not.

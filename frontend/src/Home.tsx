@@ -4,13 +4,17 @@
  * Lifted out of `App.tsx` whole when v2 put the site behind a router (#113), and given its two
  * columns by #115 — the forecast on the left, the map on the right, matching its height.
  *
- * **The contents of the left column are still v1's.** #115 built the shell and moved nothing
- * into it: the verdict and the four gated tiles are #116, the day rows are #117, the hours
- * taking the day list's slot are #118, and moving the teaching material off this page is #119.
- * So this page does not yet keep the no-scroll promise the shell is built for — it is about
- * twice a desktop viewport tall, and the tickets that shorten it are the ones above. What the
- * shell guarantees today is that neither column scrolls on its own and the two stay level; what
- * it cannot guarantee yet is that their content fits.
+ * **Most of the left column is still v1's.** #115 built the shell and moved nothing into it;
+ * #117 has since turned the day cards into one row per day. What is left is the verdict and the
+ * four gated tiles (#116), the hours taking the day list's slot (#118), and moving the teaching
+ * material off this page (#119).
+ *
+ * So this page does not yet keep the no-scroll promise the shell is built for, and #117 did not
+ * bring it closer: sixteen days as rows are taller than sixteen days packed into a grid, which
+ * is the cost of a row carrying four things instead of two. The saving is in #116 and #119, and
+ * `e2e/layout.spec.ts` carries the arithmetic. What the shell guarantees today is that neither
+ * column scrolls on its own and the two stay level; what it cannot guarantee yet is that their
+ * content fits.
  */
 
 import { useEffect, useState } from 'react';
