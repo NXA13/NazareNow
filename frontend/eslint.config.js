@@ -20,7 +20,15 @@ export default tseslint.config(
   {
     files: ['scripts/**/*.mjs'],
     languageOptions: {
-      globals: { console: 'readonly', process: 'readonly', URL: 'readonly' },
+      globals: {
+        console: 'readonly',
+        process: 'readonly',
+        URL: 'readonly',
+        // `fetch` and `Buffer` for `fetch-fonts.mjs`, which is the one script that reaches the
+        // network — once, by hand, to replace a committed font.
+        fetch: 'readonly',
+        Buffer: 'readonly',
+      },
     },
   },
 );

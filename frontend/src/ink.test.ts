@@ -1,0 +1,256 @@
+/**
+ * The Ink visual system, held to its own rules (#114).
+ *
+ * Every acceptance criterion that ticket carries about colour, type and payload is a rule a
+ * later change can break silently and invisibly: a component that reaches for a hex value
+ * because the token was one keystroke further away, a number that ends up in the text face
+ * because it was interpolated into a sentence, a font that goes back to a CDN because that is
+ * one line shorter than committing a file. None of those break a rendering test, and none of
+ * them look wrong in a screenshot taken by the person who made the change.
+ *
+ * So they are asserted here, against the stylesheets as text. This is the same shape as
+ * `every-field-is-read.test.tsx`: a rule about the whole surface, enforced once, rather than a
+ * habit each new component is trusted to keep.
+ *
+ * What is *not* here: whether the re-skin looks good. That is Nick's call on the running app,
+ * and no test can hold it.
+ */
+
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
+
+import { measure } from '../scripts/check-contrast.mjs';
+import { REPERTOIRE } from '../scripts/fetch-fonts.mjs';
+
+// Through `fileURLToPath` rather than the URL's own `pathname`, which on Windows hands back
+// `/C:/...` — the trap `check-payload.mjs` documents.
+const here = (relative: string) => fileURLToPath(new URL(relative, import.meta.url));
+
+const read = (relative: string) => readFileSync(here(relative), 'utf8');
+
+const TOKENS = read('./tokens.css');
+const APP = read('./App.css');
+const INDEX = read('../index.html');
+
+/** The sheets and components a rule about "no component names a value" applies to: everything
+ * the browser is served except the one file where the values are decided. */
+const SHIPPED_SOURCE = readdirSync(here('.'))
+  .filter((name) => /\.(css|tsx?)$/.test(name))
+  .filter((name) => !name.endsWith('.test.ts') && !name.endsWith('.test.tsx'))
+  .filter((name) => name !== 'tokens.css')
+  .map((name) => ({ name, text: read(`./${name}`) }));
+
+/** CSS comments and `//` comments carry prose about colours; the rules are what is asserted. */
+function withoutComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+}
+
+/** Each `selector { body }` pair in a sheet, comments already stripped. */
+function rules(css: string): { selector: string; body: string }[] {
+  return [...withoutComments(css).matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((match) => ({
+    selector: match[1]!.trim().replace(/\s+/g, ' '),
+    body: match[2]!.trim(),
+  }));
+}
+
+describe('every colour, font and size lives in one place', () => {
+  it('names no colour outside the tokens sheet', () => {
+    const offenders = SHIPPED_SOURCE.flatMap(({ name, text }) =>
+      [...withoutComments(text).matchAll(/#[0-9a-f]{3,8}\b|\brgba?\(/gi)].map(
+        (match) => `${name}: ${match[0]}`,
+      ),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it('names no face and no size outside the tokens sheet', () => {
+    // `font:` shorthand included, because `font: inherit` is legitimate and `font: 12px/1.4
+    // Helvetica` would smuggle both past a check that only looked for the longhands.
+    const declarations = [
+      ...withoutComments(APP).matchAll(/\bfont(-family|-size)?\s*:\s*([^;]+)/g),
+    ];
+
+    const offenders = declarations
+      .map((match) => ({ property: `font${match[1] ?? ''}`, value: match[2]!.trim() }))
+      .filter(({ value }) => !value.includes('var(--') && value !== 'inherit');
+
+    expect(offenders).toEqual([]);
+  });
+
+  it('defines the three colour systems as separate tokens', () => {
+    for (const token of ['--ink-go', '--ink-watch', '--ink-main', '--ink-wind']) {
+      expect(TOKENS).toContain(`${token}:`);
+    }
+  });
+});
+
+describe('the three colour systems stay apart', () => {
+  /** The whole of Ice's licence: the wordmark, the nav, and links. */
+  const ICE_BELONGS_TO = ['header h1', 'header nav a', 'a'];
+
+  it('puts Ice on the wordmark, the nav and links, and nowhere else', () => {
+    const misuse = rules(APP)
+      .filter((rule) => rule.body.includes('var(--ink-main)'))
+      .map((rule) => rule.selector)
+      .filter((selector) => !ICE_BELONGS_TO.includes(selector));
+
+    expect(misuse).toEqual([]);
+  });
+
+  it('gives every call badge a status colour and never the main colour', () => {
+    const badges = rules(APP).filter((rule) => /^\.call-(go|confirmed|watch)$/.test(rule.selector));
+
+    // All three, or a status was dropped and this test would otherwise pass on the rest.
+    expect(badges.map((rule) => rule.selector).sort()).toEqual([
+      '.call-confirmed',
+      '.call-go',
+      '.call-watch',
+    ]);
+
+    for (const badge of badges) {
+      expect(badge.body).toMatch(/var\(--ink-(go|watch)(-dim)?\)/);
+      expect(badge.body).not.toContain('var(--ink-main)');
+    }
+  });
+
+  it('keeps status colour off rank, selection and model performance', () => {
+    // A day's rank is how it compares with the week on screen; a Go Call is a judgement about
+    // travelling. The two sharing a colour is the confusion this page exists to prevent.
+    const notStatus = rules(APP).filter((rule) =>
+      /^\.day\.rank-|^\.day\.day\.selected$|^\.better$|^\.worse$|^:focus-visible$/.test(
+        rule.selector,
+      ),
+    );
+
+    expect(notStatus.length).toBeGreaterThan(0);
+    for (const rule of notStatus) {
+      expect(rule.body).not.toMatch(/var\(--ink-(go|watch)(-dim)?\)/);
+    }
+  });
+});
+
+describe('every number is set in IBM Plex Mono', () => {
+  it('serves digits from the mono face even inside a sentence', () => {
+    // The structural half of the criterion: `format.ts` returns strings that land in the middle
+    // of prose, so the text stack itself has to lead with a mono face scoped to digits.
+    const textStack = TOKENS.match(/--font-text:\s*([^;]+);/)?.[1] ?? '';
+    expect(textStack.trim().startsWith("'Plex Digits'")).toBe(true);
+
+    const digitFaces = [...TOKENS.matchAll(/@font-face\s*\{([^}]*'Plex Digits'[^}]*)\}/g)].map(
+      (match) => match[1]!,
+    );
+
+    // One for the regular weight and one for bold, so a number inside a `<strong>` is a bold
+    // mono number rather than a synthesised one.
+    expect(digitFaces).toHaveLength(2);
+    for (const face of digitFaces) {
+      expect(face).toContain('U+30-39');
+      expect(face).toMatch(/ibm-plex-mono-\d+\.woff2/);
+    }
+  });
+
+  it('sets the tables, the figures and the ladder in the full mono face', () => {
+    // Anything that is all figures asks for the face by name; these are the selectors where a
+    // number would otherwise be left in the text face at a size where it is read as data.
+    const mono = ['.value', '.unit', '.bearing', '.tier dd', '.history .range'];
+    for (const selector of mono) {
+      const rule = rules(APP).find((candidate) => candidate.selector === selector);
+      expect(rule?.body, `${selector} should set the mono face`).toContain(
+        'font-family: var(--font-mono)',
+      );
+    }
+
+    for (const table of ['.hours-scroll table', '.record-table table']) {
+      const rule = rules(APP).find((candidate) => candidate.selector === table);
+      expect(rule?.body, `${table} should set the mono face`).toContain(
+        'font-family: var(--font-mono)',
+      );
+    }
+  });
+});
+
+describe('both fonts are served from this origin', () => {
+  it('fetches no font from a third party', () => {
+    for (const [name, text] of [
+      ['tokens.css', TOKENS],
+      ['App.css', APP],
+      ['index.html', INDEX],
+    ] as const) {
+      expect(text, `${name} should not reach for a font CDN`).not.toMatch(
+        /fonts\.googleapis\.com|fonts\.gstatic\.com|use\.typekit|cdn\.jsdelivr|unpkg\.com/,
+      );
+    }
+
+    // Every `src` in the sheet is a relative path into this project.
+    const sources = [...TOKENS.matchAll(/src:\s*url\('([^']+)'\)/g)].map((match) => match[1]!);
+    expect(sources.length).toBeGreaterThan(0);
+    for (const source of sources) {
+      expect(source.startsWith('./fonts/')).toBe(true);
+    }
+  });
+
+  it('carries the subset files it names, and no others', () => {
+    const named = [...TOKENS.matchAll(/url\('\.\/fonts\/([^']+)'\)/g)].map((match) => match[1]!);
+    const present = readdirSync(here('./fonts'));
+
+    expect([...new Set(named)].sort()).toEqual(present.sort());
+
+    // A ceiling, not a target: a refetch that lost the `text=` parameter would come back with
+    // the whole family — about ten times this — and still work locally.
+    for (const file of present) {
+      const kb = statSync(here(`./fonts/${file}`)).size / 1024;
+      expect(kb, `${file} is ${kb.toFixed(1)} kB, which is not a subset`).toBeLessThan(30);
+    }
+  });
+
+  it('subsets to glyphs that cover everything either page renders', () => {
+    const uncovered = new Map<string, string[]>();
+
+    for (const { name, text } of [...SHIPPED_SOURCE, { name: 'index.html', text: INDEX }]) {
+      for (const character of new Set(withoutComments(text).replace(/\s/g, ''))) {
+        if (!REPERTOIRE.includes(character)) {
+          uncovered.set(character, [...(uncovered.get(character) ?? []), name]);
+        }
+      }
+    }
+
+    // A character the source renders and the subset does not carry falls back to a system face
+    // mid-sentence. `scripts/fetch-fonts.mjs` holds the repertoire and the one known gap.
+    expect(Object.fromEntries(uncovered)).toEqual({});
+  });
+});
+
+describe('contrast is measured against the ground, not assumed', () => {
+  const measured = measure(TOKENS);
+
+  it('measures every foreground the sheet puts on a ground', () => {
+    // The pairs are declared in the script; this is the guard against a token being added to
+    // the sheet and quietly never measured.
+    const colours = [...TOKENS.matchAll(/(--ink-[a-z-]+):/g)].map((match) => match[1]!);
+    const paired = new Set(measured.flatMap((row) => [row.fore, row.back]));
+
+    expect(colours.filter((token) => !paired.has(token))).toEqual([]);
+  });
+
+  it.each(measure(TOKENS).filter((row) => row.gate !== null))(
+    '$fore on $back clears $gate:1',
+    ({ fore, back, gate, ratio }) => {
+      expect(ratio, `${fore} on ${back} is ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(gate!);
+    },
+  );
+
+  it('reports the pastels as clearing AA on the graphite ground', () => {
+    // The claim the prototype's palette comment makes — "light enough to clear 4.5:1 on this
+    // ground at small sizes" — - now measured rather than believed.
+    const statuses = measured.filter(
+      (row) => /--ink-(go|watch)$/.test(row.fore) && row.back === '--ink-page',
+    );
+
+    expect(statuses).toHaveLength(2);
+    for (const status of statuses) {
+      expect(status.ratio).toBeGreaterThan(4.5);
+    }
+  });
+});

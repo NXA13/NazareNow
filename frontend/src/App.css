@@ -1,20 +1,32 @@
 /*
- * Deliberately restrained. This ticket asks only that the page be usable and readable
- * at mobile widths; visual identity is worth a dedicated pass once there is something
- * more interesting than current conditions to look at.
+ * Both pages in Ink (#114), and nothing moved.
  *
- * Sizing uses relative units and the grid is fluid, so nothing needs a breakpoint to
- * stay legible on a phone.
+ * The re-skin only: the ground, the two faces and the three colour systems, applied to the
+ * pages exactly as #113 left them, so the skin can be judged on its own before #115-#119 start
+ * moving layout. Every selector here is one that existed before.
+ *
+ * **No value is decided in this file.** Colour, face, size, space, radius and rule all come
+ * from `tokens.css`, which is where a re-skin is argued about; `src/ink.test.ts` fails if a hex
+ * value, a `font-family` or a `font-size` is named anywhere but there.
+ *
+ * Three rules this sheet is held to, all three enforced by that test:
+ *
+ * 1. **Status colour carries a state of the sea**, and nothing else. The call badges and the
+ *    verdict panel take it. Rank, selection, focus and model performance do not — they are
+ *    carried by the neutrals, by weight and by size, because a page where "this is the biggest
+ *    day of the week" and "this is a Go Call" share a colour has lost the distinction that
+ *    matters most on it.
+ * 2. **Ice — the main colour — appears on the wordmark, the nav and links.** Not on the verdict
+ *    panel, so the brand never competes with the call for attention.
+ * 3. **Every number is IBM Plex Mono.** Anything that is all figures asks for `--font-mono`
+ *    here; numbers inside sentences are covered by the digit-scoped face `tokens.css` puts at
+ *    the front of `--font-text`, so no component has to remember.
+ *
+ * Sizing is still relative and the grids are still fluid, so nothing needs a breakpoint to stay
+ * legible on a phone.
  */
 
-:root {
-  --ink: #10202b;
-  --muted: #5a6b78;
-  --line: #d8e0e6;
-  --surface: #ffffff;
-  --page: #f4f7f9;
-  --accent: #0b5d7a;
-}
+@import './tokens.css';
 
 * {
   box-sizing: border-box;
@@ -22,172 +34,206 @@
 
 body {
   margin: 0;
-  background: var(--page);
-  color: var(--ink);
-  font-family:
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    sans-serif;
-  line-height: 1.5;
+  /* The page sits on the graphite; the ground behind it is the deeper tone the map is drawn
+     on, so an overscroll on a phone reveals more of the same world rather than white. */
+  background: var(--ink-deep);
+  color: var(--ink-text);
+  font-family: var(--font-text);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  -webkit-font-smoothing: antialiased;
 }
 
 main {
-  max-width: 60rem;
+  max-width: var(--measure-page);
   margin: 0 auto;
-  padding: 1.5rem 1rem 3rem;
+  padding: var(--space-6) var(--space-5) var(--space-8);
+  background: var(--ink-page);
+  min-height: 100vh;
 }
 
+/* The wordmark, in Ice. One of the three places the main colour is allowed. */
 header h1 {
   margin: 0;
-  font-size: clamp(1.75rem, 5vw, 2.5rem);
-  letter-spacing: -0.02em;
+  color: var(--ink-main);
+  font-size: var(--text-display);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-tight);
+  line-height: var(--leading-tight);
 }
 
 .tagline {
-  margin: 0.25rem 0 2rem;
-  color: var(--muted);
+  margin: var(--space-1) 0 var(--space-7);
+  color: var(--ink-muted);
 }
 
 /*
  * The two pages, offered before either of them is read.
  *
- * Styled no further than a nav has to be to work: a row, a gap, and a mark on the page being
- * read. How this should *look* is #114's decision, and anything chosen here would be a choice
- * made twice. The colour is the stylesheet's existing accent rather than a new one.
+ * Still styled no further than a nav has to be to work: a row, a gap, and a mark on the page
+ * being read. #114 gave it the main colour it was waiting for — the nav was one of the three
+ * things Ice was always for — and changed nothing else about it. Where it sits is #115's
+ * decision, not this ticket's.
  */
 header nav {
   display: flex;
-  gap: 1.25rem;
-  margin: 0 0 2rem;
+  gap: var(--space-6);
+  margin: 0 0 var(--space-7);
 }
 
 header nav a {
-  color: var(--accent);
+  color: var(--ink-main);
 }
 
 /* Hung off the attribute a screen reader announces rather than set beside it, so what is seen
-   and what is announced cannot drift apart. */
+   and what is announced cannot drift apart. The page being read is the one in plain text: a
+   lit link would say "follow me", which is the opposite of what it means. */
 header nav a[aria-current='page'] {
-  color: var(--ink);
-  font-weight: 600;
+  color: var(--ink-text);
+  font-weight: var(--weight-semibold);
+}
+
+a {
+  color: var(--ink-main);
+}
+
+/* Bright rather than Ice, because a focus ring is not a link — it is the keyboard's cursor, and
+   giving it the brand colour would put Ice on every interactive element on the page. */
+:focus-visible {
+  outline: var(--edge) solid var(--ink-text);
+  outline-offset: 2px;
 }
 
 h2 {
-  font-size: 0.8rem;
+  font-size: var(--text-tiny);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-  margin: 2rem 0 0.75rem;
+  letter-spacing: var(--tracking-widest);
+  color: var(--ink-muted);
+  font-weight: var(--weight-semibold);
+  margin: var(--space-7) 0 var(--space-4);
 }
 
 /* Fluid: as many columns as fit, never narrower than a readable card. */
 .readings {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
-  gap: 0.75rem;
+  gap: var(--space-4);
   margin: 0;
 }
 
 .reading {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
-  padding: 0.75rem 0.9rem;
+  background: var(--ink-panel);
+  border: var(--rule) solid var(--ink-border);
+  border-radius: var(--radius);
+  padding: var(--space-4) var(--space-4);
 }
 
 .reading dt {
-  font-size: 0.75rem;
+  font-size: var(--text-tiny);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
+  letter-spacing: var(--tracking-wide);
+  color: var(--ink-muted);
 }
 
 .reading dd {
-  margin: 0.35rem 0 0;
+  margin: var(--space-2) 0 0;
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
-  gap: 0.3rem;
+  gap: var(--space-1);
 }
 
 .value {
-  font-size: clamp(1.5rem, 4vw, 1.9rem);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+  font-size: var(--text-figure-lg);
+  font-weight: var(--weight-semibold);
 }
 
 .unit {
-  color: var(--muted);
-  font-size: 0.9rem;
+  font-family: var(--font-mono);
+  color: var(--ink-muted);
+  font-size: var(--text-meta);
 }
 
+/* A bearing rides with its reading rather than standing on its own, so it is drawn as a quiet
+   chip in the neutrals: a direction is not a state of the sea and must not read as one. */
 .bearing {
   margin-left: auto;
-  background: var(--accent);
-  color: #fff;
-  border-radius: 0.25rem;
-  padding: 0.1rem 0.4rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-family: var(--font-mono);
+  background: var(--ink-border);
+  color: var(--ink-text);
+  border-radius: var(--radius-badge);
+  padding: var(--space-hair) var(--space-2);
+  font-size: var(--text-tiny);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-wide);
 }
 
+/*
+ * Something failed to load.
+ *
+ * **Deliberately not a colour.** A failure is not a state of the sea, so it cannot take a
+ * status colour, and it is not the brand, so it cannot take Ice — and inventing a fourth hue
+ * for it would undo the one thing #114 is for. It is loud by weight and by a bright edge
+ * instead, which is a signal the three systems do not use anywhere else.
+ */
 .alert {
-  background: #fff6e5;
-  border: 1px solid #e8c98a;
-  border-radius: 0.5rem;
-  padding: 0.75rem 1rem;
-  margin: 0 0 1rem;
+  background: var(--ink-panel);
+  border: var(--rule) solid var(--ink-border);
+  border-left: var(--edge-bold) solid var(--ink-text);
+  border-radius: var(--radius);
+  padding: var(--space-4) var(--space-5);
+  margin: 0 0 var(--space-5);
+  font-weight: var(--weight-medium);
 }
 
 footer {
-  margin-top: 2.5rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--line);
-  color: var(--muted);
-  font-size: 0.85rem;
+  margin-top: var(--space-8);
+  padding-top: var(--space-5);
+  border-top: var(--rule) solid var(--ink-border);
+  color: var(--ink-muted);
+  font-size: var(--text-small);
 }
 
 footer p {
-  margin: 0.25rem 0;
+  margin: var(--space-1) 0;
 }
 
 .provenance {
-  max-width: 40rem;
+  max-width: var(--measure-prose);
 }
 
 /* --- forecast range ------------------------------------------------------- */
 
 /* The one sentence a Traveller came for (#86).
  *
- * Larger than the copy under it, in the page's ordinary ink rather than `.alert`'s amber and
- * with no panel around it. Size is the whole emphasis, which is what a reader scanning for
- * the answer needs — but most weeks this sentence says "nothing to book yet", and a warning
- * panel saying that every week would train a reader to skip the week it changes. */
+ * Larger than the copy under it, in the page's ordinary ink and with no panel around it. Size
+ * is the whole emphasis, which is what a reader scanning for the answer needs — but most weeks
+ * this sentence says "nothing to book yet", and a panel saying that every week would train a
+ * reader to skip the week it changes. */
 .earliest {
-  margin: 0 0 1rem;
-  font-size: 1.05rem;
-  line-height: 1.5;
-  max-width: 40rem;
+  margin: 0 0 var(--space-5);
+  font-size: var(--text-lead);
+  line-height: var(--leading-body);
+  max-width: var(--measure-prose);
 }
 
 /* The multi-day windows, above the range (#85).
  *
  * A surface rather than an alert. It is the first answer a trip-planner wants and sits above
  * everything, so it needs to read as the summary of what follows — not as a warning, which is
- * what `.alert`'s amber would make of "there is a three-day swell here". */
+ * what the bright edge above would make of "there is a three-day swell here". */
 .windows {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
-  padding: 0.75rem 1rem;
-  margin: 0 0 1rem;
+  background: var(--ink-panel);
+  border: var(--rule) solid var(--ink-border);
+  border-radius: var(--radius);
+  padding: var(--space-4) var(--space-5);
+  margin: 0 0 var(--space-5);
 }
 
 .windows h3 {
-  margin: 0 0 0.5rem;
-  font-size: 1rem;
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-body);
 }
 
 .windows ul {
@@ -197,60 +243,61 @@ footer p {
 }
 
 .windows li + li {
-  margin-top: 0.4rem;
+  margin-top: var(--space-2);
 }
 
 .windows p {
-  margin: 0.5rem 0 0;
+  margin: var(--space-3) 0 0;
 }
 
 .days {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
-  gap: 0.5rem;
+  gap: var(--space-3);
 }
 
 .day {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: var(--space-hair);
   text-align: left;
   font: inherit;
+  color: inherit;
   cursor: pointer;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--line);
-  border-radius: 0.5rem;
-  padding: 0.6rem 0.7rem;
+  background: var(--ink-panel);
+  border: var(--rule) solid var(--ink-border);
+  border-left: var(--edge) solid var(--ink-border);
+  border-radius: var(--radius);
+  padding: var(--space-3) var(--space-4);
 }
 
 .day:hover {
-  border-color: var(--accent);
+  border-color: var(--ink-muted);
 }
 
 .day-date {
-  font-size: 0.75rem;
+  font-size: var(--text-tiny);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
+  letter-spacing: var(--tracking-wide);
+  color: var(--ink-muted);
 }
 
 .day-swell .value {
-  font-size: 1.4rem;
+  font-size: var(--text-figure);
 }
 
 .day-detail {
   display: flex;
   align-items: baseline;
-  gap: 0.3rem;
-  font-size: 0.85rem;
-  color: var(--muted);
+  gap: var(--space-1);
+  font-size: var(--text-small);
+  color: var(--ink-muted);
 }
 
 .day-detail .value {
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--ink);
+  font-size: var(--text-meta);
+  font-weight: var(--weight-semibold);
+  color: var(--ink-text);
 }
 
 .day-detail .bearing {
@@ -261,17 +308,17 @@ footer p {
    it qualifies the call above rather than competing with it, and it carries no number, so it
    cannot be scanned as a second height beside the peak. */
 .day-agreement {
-  font-size: 0.7rem;
+  font-size: var(--text-micro);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-  border-top: 1px dotted var(--rule, rgba(128, 128, 128, 0.35));
-  padding-top: 0.3rem;
+  letter-spacing: var(--tracking-wide);
+  color: var(--ink-muted);
+  border-top: var(--rule) dotted var(--ink-border);
+  padding-top: var(--space-1);
 }
 
 .hint {
-  color: var(--muted);
-  font-size: 0.9rem;
+  color: var(--ink-muted);
+  font-size: var(--text-meta);
 }
 
 /* The table is wider than a phone. It scrolls inside its own box so the page itself
@@ -279,31 +326,36 @@ footer p {
    broken on mobile. */
 .hours-scroll {
   overflow-x: auto;
-  margin-top: 1rem;
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
-  background: var(--surface);
+  margin-top: var(--space-5);
+  border: var(--rule) solid var(--ink-border);
+  border-radius: var(--radius);
+  background: var(--ink-panel);
 }
 
 .hours-scroll table {
   border-collapse: collapse;
   width: 100%;
   min-width: 22rem;
-  font-size: 0.9rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
 }
 
 .hours-scroll caption {
   text-align: left;
-  padding: 0.6rem 0.75rem;
-  font-size: 0.8rem;
+  padding: var(--space-3) var(--space-4);
+  font-family: var(--font-text);
+  font-size: var(--text-tiny);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
+  letter-spacing: var(--tracking-wide);
+  color: var(--ink-muted);
 }
 
+/* `tabular-nums` is redundant against a monospaced face and kept anyway, here and on the
+   record tables: it is one declaration, and it is what stops a column of figures going ragged
+   if a later change ever points these cells at the text face. */
 .hours-scroll th,
 .hours-scroll td {
-  padding: 0.35rem 0.75rem;
+  padding: var(--space-2) var(--space-4);
   text-align: right;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -312,24 +364,27 @@ footer p {
 .hours-scroll thead th,
 .hours-scroll tbody th {
   text-align: left;
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
 .hours-scroll thead th {
-  border-bottom: 1px solid var(--line);
-  font-size: 0.75rem;
+  border-bottom: var(--rule) solid var(--ink-border);
+  font-size: var(--text-tiny);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
+  letter-spacing: var(--tracking-wide);
+  color: var(--ink-muted);
 }
 
+/* Banding by tone rather than by tint: on the graphite a row that lifts slightly towards the
+   panel's own colour separates the rows without introducing a colour that would then have to
+   mean something. */
 .hours-scroll tbody tr:nth-child(even) {
-  background: #fafcfd;
+  background: var(--ink-deep);
 }
 
 .hours-scroll .unit {
-  font-size: 0.75rem;
-  margin-left: 0.15rem;
+  font-size: var(--text-tiny);
+  margin-left: var(--space-hair);
 }
 
 /* The wind's bearing sits in the wind cell rather than in a column of its own, because a
@@ -337,107 +392,136 @@ footer p {
    be readable apart (#98). `margin-left: auto` does nothing outside a flex container, so the
    gap is stated here rather than inherited from the badge's own rule. */
 .hours-scroll .bearing {
-  margin-left: 0.4rem;
-  font-size: 0.7rem;
-  padding: 0.05rem 0.3rem;
+  margin-left: var(--space-2);
+  font-size: var(--text-micro);
+  padding: 0 var(--space-1);
 }
 
-/* Prominence relative to the rest of the range, so the standout day is visible at a
-   glance whether the week peaks at 1.2m or 12m. Selection is declared after these and
-   with a higher-specificity selector, because the earlier version let the size classes
-   override it and clicking a big day changed almost nothing. */
+/* Prominence relative to the rest of the range, so the standout day is visible at a glance
+ * whether the week peaks at 1.2m or 12m.
+ *
+ * **In the neutrals, not in a status colour.** Rank is how a day compares with the week on
+ * screen; a Go Call is a judgement about travelling. The old sheet drew the leading day in the
+ * same vermilion it drew a Go Call in, which made "biggest day this week" and "book a flight"
+ * the same signal — on a page whose entire purpose is the difference between them.
+ *
+ * Selection is declared after these and with a higher-specificity selector, because the
+ * earlier version let the size classes override it and clicking a big day changed almost
+ * nothing. */
 .day.rank-ordinary .day-swell .value {
-  color: var(--muted);
-  font-weight: 500;
+  color: var(--ink-muted);
+  font-weight: var(--weight-medium);
 }
 
 .day.rank-notable {
-  border-left-color: #6aa9c0;
+  border-left-color: var(--ink-muted);
 }
 
 .day.rank-leading {
-  border-left-color: #b5471f;
-  background: #fdf3ee;
+  border-left-color: var(--ink-text);
 }
 
 .day.rank-leading .day-swell .value {
-  font-size: 1.7rem;
-  color: #8f3213;
+  font-size: var(--text-figure-lg);
 }
 
 .day.day.selected {
-  border-color: var(--accent);
-  border-left-color: var(--accent);
-  background: #e6f2f7;
-  box-shadow: inset 0 0 0 1px var(--accent);
+  border-color: var(--ink-text);
+  border-left-color: var(--ink-text);
+  background: var(--ink-border);
+  box-shadow: inset 0 0 0 var(--rule) var(--ink-text);
 }
 
 /* --- calls ---------------------------------------------------------------- */
 
+/*
+ * The verdict, in the status system — which is the one place the loudest colour on the page is
+ * allowed to be, and never Ice.
+ *
+ * Two hues, three treatments, and the treatment is what separates statuses that share a hue:
+ *
+ * - **Go is the only filled chip on either page.** Pastel green, graphite text, the brightest
+ *   area of colour anywhere here. It is the one status that asks a reader to spend money.
+ * - **Confirmed** is the same green, washed and outlined rather than filled. It is happening,
+ *   which matters enormously to somebody already in Portugal and is not an instruction to
+ *   anybody else.
+ * - **Watch** is pastel yellow, washed and outlined for the same reason.
+ *
+ * Pastel green is a quieter Go Call than the vermilion it replaces, and that was chosen
+ * knowingly. **If it ever reads as too relaxed the fix is more weight or size on the Go row,
+ * not more saturation** — saturating it collapses the distinction between the three colour
+ * systems.
+ */
 .call {
   align-self: flex-start;
-  border-radius: 0.25rem;
-  padding: 0.05rem 0.35rem;
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  border-radius: var(--radius-badge);
+  padding: 0 var(--space-2);
+  border: var(--rule) solid transparent;
+  font-size: var(--text-micro);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-wider);
   text-transform: uppercase;
 }
 
-/* Staleness is not an error: the data is real, it is simply old, and the page still works.
-   Distinguished from `.alert`'s failure styling so the two do not read as the same thing —
-   one says "we could not load this", the other says "this loaded, but do not act on it". */
-.stale {
-  border-left: 4px solid #b5471f;
-  background: #fdf0d5;
-  color: #7a5410;
+.call-go {
+  background: var(--ink-go);
+  color: var(--ink-deep);
+}
+
+.call-confirmed {
+  background: var(--ink-go-dim);
+  border-color: var(--ink-go);
+  color: var(--ink-go);
+}
+
+.call-watch {
+  background: var(--ink-watch-dim);
+  border-color: var(--ink-watch);
+  color: var(--ink-watch);
 }
 
 .call-none {
-  background: #eef2f4;
-  color: var(--muted);
+  background: var(--ink-border);
+  color: var(--ink-muted);
 }
 
 /* A day nothing has judged. Deliberately paler and outlined rather than filled: it is an
    absence of advice, and it must not read as a verdict of "not worth travelling for". */
 .call-unjudged {
   background: transparent;
-  border: 1px dashed #c3ccd2;
-  color: var(--muted);
+  border-color: var(--ink-border);
+  border-style: dashed;
+  color: var(--ink-muted);
 }
 
-.call-watch {
-  background: #fdf0d5;
-  color: #7a5410;
-}
-
-.call-go {
-  background: #b5471f;
-  color: #fff;
-}
-
-.call-confirmed {
-  background: #0b5d7a;
-  color: #fff;
+/* Staleness is not an error: the data is real, it is simply old, and the page still works.
+   Kept apart from the failure styling so the two do not read as the same thing — one says "we
+   could not load this", the other says "this loaded, but do not act on it". It is a state of
+   the *data*, not of the sea, so like `.alert` it stays out of the status colours and is
+   marked by an edge in the neutrals instead. */
+.stale {
+  border-left: var(--edge-bold) solid var(--ink-muted);
+  background: var(--ink-panel);
+  color: var(--ink-text);
 }
 
 .call-detail {
-  margin-top: 1rem;
-  padding: 0.9rem 1rem;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
+  margin-top: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  background: var(--ink-panel);
+  border: var(--rule) solid var(--ink-border);
+  border-radius: var(--radius);
 }
 
 .call-detail p {
-  margin: 0 0 0.5rem;
+  margin: 0 0 var(--space-3);
 }
 
 .call-detail ul {
-  margin: 0 0 0.5rem;
-  padding-left: 1.1rem;
-  color: var(--muted);
-  font-size: 0.9rem;
+  margin: 0 0 var(--space-3);
+  padding-left: var(--space-5);
+  color: var(--ink-muted);
+  font-size: var(--text-meta);
 }
 
 /* How sure the forecast is: the plausible range, and the chance of clearing the height bar.
@@ -448,11 +532,11 @@ footer p {
  * ticket #15 exists to end. The beyond-the-archive notice inside it keeps `.alert`, because
  * that one genuinely is a shortfall in what was measured. */
 .plausible-range {
-  margin: 0 0 0.5rem;
+  margin: 0 0 var(--space-3);
 }
 
 .plausible-range p {
-  margin: 0 0 0.5rem;
+  margin: 0 0 var(--space-3);
 }
 
 /* What the percentage above does not cover (#66).
@@ -461,8 +545,8 @@ footer p {
  * something is wrong. Loud styling here would compete with the beyond-the-archive notice,
  * which is a genuine shortfall and has to stay the louder of the two. */
 .plausible-range-scope {
-  color: var(--muted);
-  font-size: 0.9rem;
+  color: var(--ink-muted);
+  font-size: var(--text-meta);
 }
 
 /* How the prediction has moved since the run before.
@@ -470,8 +554,8 @@ footer p {
  * Quiet by design. It is context for the figures above rather than a finding of its own, and
  * a swell that grew half a metre between two runs is not news until it has kept doing it. */
 .shift {
-  color: var(--muted);
-  font-size: 0.9rem;
+  color: var(--ink-muted);
+  font-size: var(--text-meta);
 }
 
 /* That the verdict moved, not only the number under it (#84).
@@ -480,8 +564,9 @@ footer p {
  * on this panel that asks a reader to stop doing something they have been doing all week, and
  * styling it as quietly as the height change would bury it under the number it outranks. */
 .tier-change {
-  margin: 0.25rem 0 0;
-  font-size: 0.95rem;
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-meta);
+  color: var(--ink-text);
 }
 
 /* The shape of a prediction across runs (#99).
@@ -498,37 +583,37 @@ footer p {
  * reader scanning it is looking for where the series arrived, and every row at equal weight
  * makes the present indistinguishable from the superseded opinions above it. */
 .history {
-  margin: 0.5rem 0;
+  margin: var(--space-3) 0;
 }
 
 .history h4 {
-  margin: 0 0 0.35rem;
-  font-size: 0.8rem;
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-tiny);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-  font-weight: 600;
+  letter-spacing: var(--tracking-wide);
+  color: var(--ink-muted);
+  font-weight: var(--weight-semibold);
 }
 
 .history ol {
   margin: 0;
   padding: 0;
   list-style: none;
-  font-size: 0.9rem;
-  color: var(--muted);
+  font-size: var(--text-meta);
+  color: var(--ink-muted);
 }
 
 .history li {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.5rem;
-  padding: 0.25rem 0;
-  border-top: 1px solid var(--line);
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
+  border-top: var(--rule) solid var(--ink-border);
 }
 
 .history li.current {
-  color: inherit;
+  color: var(--ink-text);
 }
 
 /* Fixed widths so the columns line up down the ladder. A series read for its shape is read
@@ -538,49 +623,53 @@ footer p {
    `lead_time_days` is whole days, so two rows commonly say "6 days out". */
 .history .run {
   flex: 0 0 7rem;
-  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
 }
 
 .history .lead {
   flex: 0 0 5.5rem;
-  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
 }
 
 /* The bar. Scaled against the largest point in this series, so it needs no domain knowledge
    and no calibrated threshold — the same relative treatment the day cards use. Deliberately
    not the plausible range: it encodes the one height the row is about, and a track that also
-   drew the range would put two lengths on one line that mean different things. */
+   drew the range would put two lengths on one line that mean different things.
+ *
+ * In the neutrals for the reason rank is: this is one height against the tallest in its own
+ * series, not a judgement about the sea. */
 .history .track {
   flex: 1 1 4rem;
   min-width: 3rem;
-  height: 0.4rem;
-  border-radius: 0.2rem;
-  background: #eef2f4;
+  height: var(--space-2);
+  border-radius: var(--radius-badge);
+  background: var(--ink-border);
   overflow: hidden;
 }
 
 .history .fill {
   display: block;
   height: 100%;
-  background: var(--accent);
-  opacity: 0.45;
+  background: var(--ink-muted);
 }
 
 .history li.current .fill {
-  opacity: 1;
+  background: var(--ink-text);
 }
 
 .history .range {
-  font-size: 0.85rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
 }
 
 /* The present row's label sits where the superseded rows carry a timestamp, so the column
    stays a column. */
 .history li.current .run {
-  font-weight: 600;
+  font-family: var(--font-text);
+  font-weight: var(--weight-semibold);
   text-transform: uppercase;
-  font-size: 0.7rem;
-  letter-spacing: 0.04em;
+  font-size: var(--text-micro);
+  letter-spacing: var(--tracking-wide);
 }
 
 /* How much the forecasters agree.
@@ -590,25 +679,25 @@ footer p {
  * ordinary day look like something had gone wrong. The degraded notice inside it still uses
  * `.alert`, because that one genuinely is a shortfall. */
 .agreement {
-  margin-top: 0.6rem;
-  padding: 0.9rem 1rem;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--line);
-  border-radius: 0.5rem;
+  margin-top: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  background: var(--ink-panel);
+  border: var(--rule) solid var(--ink-border);
+  border-left: var(--edge) solid var(--ink-border);
+  border-radius: var(--radius);
 }
 
 .agreement h4 {
-  margin: 0 0 0.4rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--ink-muted);
 }
 
 .agreement p {
-  margin: 0 0 0.5rem;
+  margin: 0 0 var(--space-3);
 }
 
 .agreement p:last-child {
@@ -625,59 +714,61 @@ footer p {
  * ------------------------------------------------------------------------ */
 
 .track-record .lead {
-  font-size: 1.05rem;
-  margin-bottom: 0.75rem;
+  font-size: var(--text-lead);
+  margin-bottom: var(--space-4);
 }
 
 .track-record h3 {
-  font-size: 1.05rem;
-  margin: 2rem 0 0.5rem;
+  font-size: var(--text-lead);
+  margin: var(--space-7) 0 var(--space-3);
 }
 
 .track-record h4 {
-  margin: 0 0 0.15rem;
-  font-size: 1rem;
+  margin: 0 0 var(--space-hair);
+  font-size: var(--text-body);
 }
 
-/* Not muted, not small, and given a border that makes it a block rather than a
-   footnote. This is the sentence that stops every figure below being read as an
-   operating history. */
+/* Not muted, not small, and given an edge that makes it a block rather than a footnote. This
+   is the sentence that stops every figure below being read as an operating history.
+ *
+ * The edge is bright rather than Ice: a caveat is not the brand, and it is not a state of the
+ * sea either. It gets its weight from tone, the way `.alert` does. */
 .caveat {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-left: 4px solid var(--accent);
-  border-radius: 0.5rem;
-  padding: 0.75rem 1rem;
-  margin: 0 0 1rem;
+  background: var(--ink-panel);
+  border: var(--rule) solid var(--ink-border);
+  border-left: var(--edge-bold) solid var(--ink-text);
+  border-radius: var(--radius);
+  padding: var(--space-4) var(--space-5);
+  margin: 0 0 var(--space-5);
 }
 
 .panel {
-  margin: 1rem 0 1.5rem;
+  margin: var(--space-5) 0 var(--space-6);
 }
 
 .panel-caption {
-  color: var(--muted);
-  font-size: 0.9rem;
-  margin: 0 0 0.5rem;
+  color: var(--ink-muted);
+  font-size: var(--text-meta);
+  margin: 0 0 var(--space-3);
 }
 
 .tiers {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
-  gap: 0.75rem;
+  gap: var(--space-4);
 }
 
 .tier {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
-  padding: 0.75rem 1rem;
+  background: var(--ink-panel);
+  border: var(--rule) solid var(--ink-border);
+  border-radius: var(--radius);
+  padding: var(--space-4) var(--space-5);
 }
 
 .tier-meaning {
-  color: var(--muted);
-  font-size: 0.85rem;
-  margin: 0 0 0.6rem;
+  color: var(--ink-muted);
+  font-size: var(--text-small);
+  margin: 0 0 var(--space-3);
 }
 
 .tier dl {
@@ -688,25 +779,25 @@ footer p {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 0.75rem;
-  padding: 0.3rem 0;
-  border-top: 1px solid var(--line);
+  gap: var(--space-4);
+  padding: var(--space-1) 0;
+  border-top: var(--rule) solid var(--ink-border);
 }
 
 .tier dt {
-  color: var(--muted);
-  font-size: 0.85rem;
+  color: var(--ink-muted);
+  font-size: var(--text-small);
 }
 
 .tier dd {
   margin: 0;
   text-align: right;
-  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
 }
 
 .aside {
-  color: var(--muted);
-  font-size: 0.8rem;
+  color: var(--ink-muted);
+  font-size: var(--text-tiny);
   display: block;
 }
 
@@ -715,10 +806,10 @@ footer p {
    pushes every caveat below it off the end of the page. */
 .record-table {
   overflow-x: auto;
-  margin: 0.75rem 0 1rem;
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
-  background: var(--surface);
+  margin: var(--space-4) 0 var(--space-5);
+  border: var(--rule) solid var(--ink-border);
+  border-radius: var(--radius);
+  background: var(--ink-panel);
 }
 
 .record-table.days {
@@ -730,21 +821,23 @@ footer p {
   border-collapse: collapse;
   width: 100%;
   min-width: 24rem;
-  font-size: 0.9rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
 }
 
 .record-table caption {
   text-align: left;
-  padding: 0.6rem 0.75rem;
-  font-size: 0.8rem;
+  padding: var(--space-3) var(--space-4);
+  font-family: var(--font-text);
+  font-size: var(--text-tiny);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
+  letter-spacing: var(--tracking-wide);
+  color: var(--ink-muted);
 }
 
 .record-table th,
 .record-table td {
-  padding: 0.35rem 0.75rem;
+  padding: var(--space-2) var(--space-4);
   text-align: right;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -753,42 +846,57 @@ footer p {
 .record-table thead th,
 .record-table tbody th {
   text-align: left;
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
+/* Sticky, so it needs an opaque ground of its own: the rows scrolling under it are the panel
+   colour, and a transparent heading would let them through it. */
 .record-table thead th {
-  border-bottom: 1px solid var(--line);
+  border-bottom: var(--rule) solid var(--ink-border);
   position: sticky;
   top: 0;
-  background: var(--surface);
+  background: var(--ink-panel);
+  font-size: var(--text-tiny);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--ink-muted);
 }
 
 .record-table tbody tr + tr th,
 .record-table tbody tr + tr td {
-  border-top: 1px solid var(--line);
+  border-top: var(--rule) solid var(--ink-border);
 }
 
 .record-table tr.gold th {
-  font-weight: 700;
+  font-weight: var(--weight-bold);
+  color: var(--ink-text);
 }
 
-/* Colour is a second signal, never the only one — the sign is already in the text,
-   so a reader who cannot distinguish these loses nothing. */
+/* Whether the model beat the baseline in a band.
+ *
+ * **The colour came out of these on purpose.** They used to be green and red, and neither is
+ * available now: a green here would be the Go Call's green spent on model performance, which
+ * is not a state of the sea, and the page would then have two greens meaning two unrelated
+ * things. The old rule beside them — "colour is a second signal, never the only one — the sign
+ * is already in the text" — is what makes that safe to withdraw. What remains is weight, on
+ * the band that lost, because a band where the model failed to beat a rule of thumb is the row
+ * worth stopping on. */
 .better {
-  color: #1c6b3f;
+  color: var(--ink-text);
 }
 
 .worse {
-  color: #96431c;
+  color: var(--ink-text);
+  font-weight: var(--weight-semibold);
 }
 
 .limitations {
-  margin: 0.5rem 0 1rem;
-  padding-left: 1.1rem;
+  margin: var(--space-3) 0 var(--space-5);
+  padding-left: var(--space-5);
 }
 
 .limitations li {
-  margin-bottom: 0.6rem;
+  margin-bottom: var(--space-3);
 }
 
 /* A caveat the source insists on, under the table it qualifies. Not muted into a
@@ -796,11 +904,11 @@ footer p {
    is, and a note a reader skips is a note that has failed. */
 .band-caveats {
   margin: 0;
-  padding: 0.6rem 1rem 0.75rem 2rem;
-  border-top: 1px solid var(--line);
-  font-size: 0.85rem;
+  padding: var(--space-3) var(--space-5) var(--space-4) var(--space-7);
+  border-top: var(--rule) solid var(--ink-border);
+  font-size: var(--text-small);
 }
 
 .band-caveats li + li {
-  margin-top: 0.35rem;
+  margin-top: var(--space-2);
 }

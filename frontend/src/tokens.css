@@ -1,0 +1,204 @@
+/*
+ * Ink: the one place a colour, a face or a size is decided (#114).
+ *
+ * Everything below is a token and nothing below styles anything. `App.css` names these and
+ * never names a value, which is what makes a re-skin a change to this file rather than a
+ * search across 800 lines — and `src/ink.test.ts` fails if a hex value, a `font-family` or a
+ * `font-size` appears anywhere else.
+ *
+ * The direction, from the v2 design (docs/superpowers/specs/2026-09-17-nazarenow-v2-design.md
+ * §4): a near-black neutral graphite ground, Space Grotesk for text, IBM Plex Mono for every
+ * number, and three colour systems deliberately kept apart.
+ */
+
+/* ---------------------------------------------------------------------------
+ * The faces.
+ *
+ * Both served from this origin, both subset to the 117 glyphs this site renders. They were
+ * fetched by `scripts/fetch-fonts.mjs`, which documents why the subsetting is Google's job and
+ * what a subset cannot cover; the files are committed, so a build needs no network.
+ *
+ * `swap` on every face: the ground and the layout are the same either way, so showing the copy
+ * in the fallback for one frame beats showing nothing. A reader checking whether to book a
+ * flight should never wait on a font.
+ * ------------------------------------------------------------------------ */
+
+/* One file, every weight from 400 to 700 — Space Grotesk is published variable. */
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('./fonts/space-grotesk-variable.woff2') format('woff2');
+}
+
+/* IBM Plex Mono is published as static faces, so each weight is its own file. Two, not three:
+   a third would cost another download to buy a distinction neither page makes. */
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/ibm-plex-mono-400.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('./fonts/ibm-plex-mono-600.woff2') format('woff2');
+}
+
+/* ---------------------------------------------------------------------------
+ * "Every number on both pages is set in IBM Plex Mono; none is left in the text face."
+ *
+ * The tables, the tiles and the day cards ask for `--font-mono` by name and get it. The hard
+ * half of that criterion is the numbers inside sentences — "38 of them in the whole archive",
+ * "6.42m to 8.79m" — because `format.ts` returns strings that land in the middle of prose.
+ * Wrapping every one of those at its call site would mean touching every figure in 2,000
+ * lines of TSX and trusting that nobody ever interpolates a number without the wrapper.
+ *
+ * So the mechanism is structural instead: a family that serves *only* the codepoints that
+ * appear in numbers, listed first in `--font-text`. Every digit on either page comes out of
+ * IBM Plex Mono wherever it sits, including in prose, and no component has to remember.
+ *
+ * It points at the same two files as the faces above — same URL, same cache entry, no extra
+ * download — declared at both weights so a number inside a `<strong>` is a bold mono number
+ * rather than a synthesised one.
+ *
+ * **The range deliberately excludes `.` `,` `-` `+` and `/`.** Those appear in numbers *and*
+ * in prose, and a range that claimed them would set every full stop and every hyphenated word
+ * in the site's copy in the mono face. The cost of leaving them out is that the decimal point
+ * in a number inside a sentence comes from Space Grotesk while the digits around it come from
+ * Plex — a dot between two mono digits, at prose size, which is the smaller of the two
+ * blemishes by a wide margin. Inside a table or a tile the whole element is mono, so there the
+ * decimal point is mono too.
+ * ------------------------------------------------------------------------ */
+
+@font-face {
+  font-family: 'Plex Digits';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/ibm-plex-mono-400.woff2') format('woff2');
+  unicode-range: U+30-39, U+25, U+3A, U+B0, U+2212;
+}
+
+@font-face {
+  font-family: 'Plex Digits';
+  font-style: normal;
+  font-weight: 500 900;
+  font-display: swap;
+  src: url('./fonts/ibm-plex-mono-600.woff2') format('woff2');
+  unicode-range: U+30-39, U+25, U+3A, U+B0, U+2212;
+}
+
+:root {
+  /* -------------------------------------------------------------------------
+   * The ground, and the neutrals on it.
+   *
+   * The same graphite the map prototype is drawn on (`prototypes/v2-map/build_map.py`), so
+   * the map arriving in #121 lands on the page it was designed against rather than beside it.
+   * `--ink-deep` is the deepest water on that map and the ground behind the page itself.
+   * ---------------------------------------------------------------------- */
+  --ink-deep: #060606;
+  --ink-page: #0b0b0b;
+  --ink-panel: #151515;
+  --ink-border: #252525;
+  --ink-text: #eceae6;
+  --ink-muted: #9a9791;
+
+  /* -------------------------------------------------------------------------
+   * Three colour systems, deliberately kept apart.
+   *
+   * **Status** carries a state of the sea. It belongs to the verdict panel, the call badges
+   * and the day rows, and to nothing else.
+   *
+   * **Main** is Ice. It carries the wordmark, the nav and links — the brand — and the swell
+   * crests when the map arrives. The verdict panel takes a *status* colour and never this
+   * one, so the brand never competes with the call for attention. `src/ink.test.ts` enforces
+   * that: a rule outside the wordmark, the nav and links that names `--ink-main` fails.
+   *
+   * **Wind** is a neutral warm grey, quieter than the swell by design. Nothing uses it yet;
+   * the map's darts do in #123. It is defined here so the third system is visible as a system
+   * rather than being invented later beside the other two.
+   *
+   * On the pastels: a Go Call in pastel green is a calmer call than the vermilion it replaces,
+   * and that was chosen knowingly. **If it ever reads as too relaxed the fix is more weight or
+   * size on the Go row, not more saturation** — saturating it collapses the distinction
+   * between these three systems, which is the whole point of having them.
+   * ---------------------------------------------------------------------- */
+  --ink-go: #a6dfae;
+  --ink-go-dim: rgba(166, 223, 174, 0.14);
+  --ink-watch: #ecdc9a;
+  --ink-watch-dim: rgba(236, 220, 154, 0.1);
+  --ink-main: #8ecfe6;
+  --ink-wind: rgba(206, 202, 194, 0.85);
+
+  /* -------------------------------------------------------------------------
+   * The faces, as the stylesheet asks for them.
+   *
+   * `--font-text` leads with the digit family above, so prose numbers are mono without any
+   * component knowing. `--font-mono` is the full face, for anything that is all figures.
+   * ---------------------------------------------------------------------- */
+  --font-text: 'Plex Digits', 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', monospace;
+
+  /* -------------------------------------------------------------------------
+   * The type scale. Nine steps, each one earning its place on these two pages: four sizes of
+   * quiet label below the body, the body itself, a lead, and three sizes of figure.
+   *
+   * The two largest are fluid, because the wordmark and the headline readings are the two
+   * things that should fill a phone rather than sit politely in the middle of it.
+   * ---------------------------------------------------------------------- */
+  --text-micro: 0.7rem;
+  --text-tiny: 0.75rem;
+  --text-small: 0.85rem;
+  --text-meta: 0.9rem;
+  --text-body: 1rem;
+  --text-lead: 1.05rem;
+  --text-figure: 1.4rem;
+  --text-figure-lg: clamp(1.5rem, 4vw, 1.9rem);
+  --text-display: clamp(1.75rem, 5vw, 2.5rem);
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  --leading-body: 1.5;
+  --leading-tight: 1.25;
+
+  /* Tracking. Negative on the wordmark; the three positive steps are for the uppercase labels,
+     which need air at these sizes or they read as a block. */
+  --tracking-tight: -0.02em;
+  --tracking-wide: 0.04em;
+  --tracking-wider: 0.06em;
+  --tracking-widest: 0.08em;
+
+  /* -------------------------------------------------------------------------
+   * Space, radius and rule. An eight-step spacing scale, because the old sheet reached for
+   * twenty different rem values and the differences between most of them were not decisions.
+   * ---------------------------------------------------------------------- */
+  --space-hair: 0.15rem;
+  --space-1: 0.25rem;
+  --space-2: 0.4rem;
+  --space-3: 0.6rem;
+  --space-4: 0.75rem;
+  --space-5: 1rem;
+  --space-6: 1.5rem;
+  --space-7: 2rem;
+  --space-8: 3rem;
+
+  --radius-badge: 0.25rem;
+  --radius: 0.5rem;
+
+  --rule: 1px;
+  --edge: 3px;
+  --edge-bold: 4px;
+
+  /* The reading column, and the width prose stops at inside it. */
+  --measure-page: 60rem;
+  --measure-prose: 40rem;
+}
