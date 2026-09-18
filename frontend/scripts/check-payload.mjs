@@ -21,6 +21,23 @@
  * above what the site costs today, so pulling in a charting or date library — the usual way a
  * page of this size doubles — fails here rather than being discovered after v3 puts it on a
  * Raspberry Pi.
+ *
+ * **Raised once, from 95 kB to 125 kB, by #114.** The Ink visual system costs 42.75 kB gzipped
+ * in fonts: Space Grotesk as one variable file, and IBM Plex Mono at two weights because it is
+ * published as static faces. That is not a dependency that can come back out — it is the
+ * typography the design is, and the acceptance criteria required self-hosting rather than a
+ * CDN, so the bytes are ours to carry rather than somebody else's to serve.
+ *
+ * Three things were done before moving it rather than after:
+ *
+ * - **The faces are subset** to the 117 glyphs either page can render, which is what makes the
+ *   figure 42.75 kB instead of about 400 kB for the full families.
+ * - **The cheapest cut was measured and declined.** Dropping IBM Plex Mono 600 would save
+ *   12.68 kB and take the total to 104.63 kB — still over 95. It would also flatten every
+ *   figure on the page to one weight, and the day cards read by weight.
+ * - **The new ceiling is still tight.** 125 kB leaves about 7.7 kB of headroom over today's
+ *   117.31 kB, so a charting or date library still fails here, which was the whole point of
+ *   having a budget at all.
  */
 
 import { gzipSync } from 'node:zlib';
@@ -28,8 +45,9 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/** Compressed kilobytes the whole first load may cost. Today it is about 75. */
-const BUDGET_KB = 95;
+/** Compressed kilobytes the whole first load may cost. Today it is about 117, of which 43 is
+ * the two fonts. See the note above for why it moved. */
+const BUDGET_KB = 125;
 
 // Through `fileURLToPath` rather than the URL's own `pathname`, which on Windows hands back
 // `/C:/...` — a string `fs` cannot open, so the check reported "no dist/" on a tree that had one.
