@@ -22,7 +22,10 @@ export function App() {
   const route = useRoute();
 
   return (
-    <main>
+    /* Which width this page is read at. The home page is an instrument and takes the screen;
+       the second page is prose and is bounded by the line length an eye can follow. The router
+       already knows which is showing, so the frame asks it rather than keeping its own copy. */
+    <main className={route === 'how-it-works' ? 'page-reading' : 'page-forecast'}>
       <header>
         <h1>NazareNow</h1>
         <p className="tagline">When will Praia do Norte produce giant waves?</p>

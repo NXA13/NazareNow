@@ -12,6 +12,8 @@
     "fonts": "node scripts/fetch-fonts.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:layout": "playwright test",
+    "test:layout:install": "playwright install --with-deps chromium",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format:check": "prettier --check .",
@@ -23,6 +25,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
+    "@playwright/test": "^1.63.0",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.5.0",
     "@testing-library/react": "^16.0.0",
