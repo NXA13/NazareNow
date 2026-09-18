@@ -49,6 +49,30 @@ header h1 {
   color: var(--muted);
 }
 
+/*
+ * The two pages, offered before either of them is read.
+ *
+ * Styled no further than a nav has to be to work: a row, a gap, and a mark on the page being
+ * read. How this should *look* is #114's decision, and anything chosen here would be a choice
+ * made twice. The colour is the stylesheet's existing accent rather than a new one.
+ */
+header nav {
+  display: flex;
+  gap: 1.25rem;
+  margin: 0 0 2rem;
+}
+
+header nav a {
+  color: var(--accent);
+}
+
+/* Hung off the attribute a screen reader announces rather than set beside it, so what is seen
+   and what is announced cannot drift apart. */
+header nav a[aria-current='page'] {
+  color: var(--ink);
+  font-weight: 600;
+}
+
 h2 {
   font-size: 0.8rem;
   text-transform: uppercase;

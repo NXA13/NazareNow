@@ -45,9 +45,11 @@
  * happen to be open is a property of `handlers.ts` that can change without this file being
  * touched.
  *
- * **Two components, one verdict.** `pageFor` draws the forecast range and `panelFor` draws the
- * whole app; both go through `holdToVerdict`, which is the only place in this file that decides
- * what a verdict costs. A second renderer must never mean a second standard.
+ * **Three components, one verdict.** `pageFor` draws the forecast range, `panelFor` draws the
+ * app at its root address — which since #113 is the shell and the home page, no longer the
+ * whole site — and `recordFor` draws the track record, which now has an address of its own.
+ * All three go through `holdToVerdict`, which is the only place in this file that decides what
+ * a verdict costs. A third renderer must never mean a third standard.
  *
  * **Read is not the same as printed, and the difference is the point.**
  * `RangeCoverage.widening_factor` appears nowhere on the page and is read all the same: it is
@@ -758,10 +760,15 @@ describe('ForecastDay', () => {
  * list would file the two stamps in the footer and the coordinates in the provenance line as
  * dropped.
  *
- * All three fetches are waited on. The current panel is `App`'s own, but the forecast and the
- * track record render inside it and settle on their own schedules — snapshotting before they
- * land would compare a half-built page against a built one, which differs for every field and
- * would call all sixteen read.
+ * Both of the home page's fetches are waited on. The conditions panel is `Home`'s own and the
+ * forecast renders inside it on its own schedule — snapshotting before it lands would compare a
+ * half-built page against a built one, which differs for every field and would call all sixteen
+ * read.
+ *
+ * **The track record is no longer one of them.** #113 moved it behind its own address, so this
+ * page no longer makes that fetch and must not wait on it. Nothing is lost here: the eleven
+ * track-record types are decided about further down this file, against `<TrackRecordPage />`
+ * rendered directly.
  */
 async function panelFor(conditions: CurrentConditions): Promise<string> {
   server.use(http.get('*/api/conditions/current', () => HttpResponse.json(conditions)));
@@ -769,7 +776,6 @@ async function panelFor(conditions: CurrentConditions): Promise<string> {
   const view = render(<App />);
   await screen.findByTestId('freshness');
   await screen.findByTestId('earliest-call');
-  await screen.findByTestId('gold-day-total');
 
   const html = view.container.innerHTML;
   view.unmount();
