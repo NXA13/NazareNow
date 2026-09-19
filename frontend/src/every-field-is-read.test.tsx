@@ -775,7 +775,7 @@ async function panelFor(conditions: CurrentConditions): Promise<string> {
 
   const view = render(<App />);
   await screen.findByTestId('freshness');
-  await screen.findByTestId('earliest-call');
+  await screen.findByTestId('verdict');
 
   const html = view.container.innerHTML;
   view.unmount();

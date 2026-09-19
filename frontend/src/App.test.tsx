@@ -79,6 +79,126 @@ describe('current conditions', () => {
     expect(block.getByText(expected.unit)).toBeInTheDocument();
   });
 
+  /**
+   * The four tiles (#116).
+   *
+   * `/api/conditions/current` sends ten readings and the design shows four tiles, and the four
+   * are not an arbitrary selection: they are **exactly the quantities a Go Call is gated on**.
+   * That is the rule the spec settled, and it is what makes the row legible — the tile row is
+   * what the call is decided on, at the size of a headline.
+   *
+   * The other six are not dropped, because a pipeline that went on fetching and storing figures
+   * the site never shows would be worse than a short line. Each tile carries the rest of its own
+   * wave field, small, and the two temperatures gate nothing so they take one quiet line.
+   */
+  describe('the four tiles', () => {
+    /** The gated quantity each tile leads with, in the order the row shows them. */
+    const GATED: [string, string][] = [
+      ['significant-wave-height', 'Significant wave height'],
+      ['swell-period', 'Swell period'],
+      ['swell-direction', 'Swell direction'],
+      ['wind-speed', 'Wind speed'],
+    ];
+
+    it('gives a tile to each gated quantity, and to nothing else', async () => {
+      // Four, by name, rather than four by count. A row of the right length carrying the wrong
+      // quantity reads perfectly and is a different instrument.
+      render(<App />);
+      await screen.findByTestId('tiles');
+
+      const tiles = screen.getAllByTestId(/^tile-/);
+      expect(tiles.map((tile) => tile.dataset.testid ?? tile.getAttribute('data-testid'))).toEqual(
+        GATED.map(([slug]) => `tile-${slug}`),
+      );
+    });
+
+    it.each(GATED)('leads the %s tile with that reading', async (slug, label) => {
+      render(<App />);
+
+      const tile = await screen.findByTestId(`tile-${slug}`);
+      expect(within(tile).getByRole('group', { name: label })).toBeInTheDocument();
+    });
+
+    it('keeps the Combined Sea together on the height tile', async () => {
+      // CONTEXT.md: the Combined Sea is the whole wave field and is described by Significant
+      // Wave Height, so its period and direction belong to this tile and not to the Swell's.
+      // Putting them anywhere else would invite reading a combined figure as a swell one.
+      render(<App />);
+
+      const tile = await screen.findByTestId('tile-significant-wave-height');
+      expect(within(tile).getByRole('group', { name: 'Wave period' })).toBeInTheDocument();
+      expect(within(tile).getByRole('group', { name: 'Wave direction' })).toBeInTheDocument();
+    });
+
+    it("keeps the Swell's own height visibly apart from the combined figure", async () => {
+      // The one placement that carries a claim. Swell is only the travelled component and is
+      // what the canyon amplifies; the Combined Sea includes locally raised wind waves. A
+      // reader who takes the swell height for the significant wave height has misread the two
+      // quantities CONTEXT.md is most careful to keep apart.
+      render(<App />);
+
+      const swellPeriod = await screen.findByTestId('tile-swell-period');
+      const height = await screen.findByTestId('tile-significant-wave-height');
+
+      expect(within(swellPeriod).getByRole('group', { name: 'Swell height' })).toBeInTheDocument();
+      expect(within(height).queryByRole('group', { name: 'Swell height' })).toBeNull();
+    });
+
+    it('carries the wind bearing beside its speed', async () => {
+      render(<App />);
+
+      const tile = await screen.findByTestId('tile-wind-speed');
+      expect(within(tile).getByRole('group', { name: 'Wind direction' })).toBeInTheDocument();
+    });
+
+    it('puts the two temperatures on one line under the tiles, gating nothing', async () => {
+      // They were nearly declared unread and were not. One line, below the row, because a
+      // temperature decides nothing about whether to travel and a tile would say it does.
+      render(<App />);
+
+      const line = await screen.findByTestId('temperatures');
+      expect(within(line).getByRole('group', { name: 'Water temperature' })).toBeInTheDocument();
+      expect(within(line).getByRole('group', { name: 'Air temperature' })).toBeInTheDocument();
+
+      const tiles = await screen.findByTestId('tiles');
+      expect(tiles.compareDocumentPosition(line)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    });
+
+    it('states that the figures are modelled rather than measured, beside them', async () => {
+      // The spec's rule: limits that qualify a number stay beside that number, and teaching
+      // material moves. Nothing on this page is an observation — every figure is model output
+      // at a grid point, and no buoy reading reaches the live system at all.
+      render(<App />);
+
+      expect(await screen.findByTestId('provenance')).toHaveTextContent(/modelled/i);
+    });
+
+    it('keeps that provenance out of the footer, where it was fine print', async () => {
+      // #116: the provenance must be "no smaller, dimmer or later than the figures it
+      // qualifies". It was the last element on the page, inside a `footer` styled a step down
+      // the type scale and a step toward the muted tone — smaller, dimmer and later, all three
+      // at once, which is precisely how a disclaimer becomes elegant grey fine print without
+      // anybody deciding it should.
+      render(<App />);
+
+      const provenance = await screen.findByTestId('provenance');
+      expect(provenance.closest('footer')).toBeNull();
+    });
+
+    it('puts the provenance with the tiles rather than at the bottom of the page', async () => {
+      // "Later" is the half of that criterion a colour check cannot see. Beside the figures
+      // means before the day list, not after everything.
+      render(<App />);
+
+      const provenance = await screen.findByTestId('provenance');
+      const tiles = await screen.findByTestId('tiles');
+      const days = await screen.findByRole('heading', { name: /^The next \d+ days$/ });
+
+      expect(tiles.compareDocumentPosition(provenance)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      expect(provenance.compareDocumentPosition(days)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    });
+  });
+
   it('shows directions as a compass bearing as well as degrees', async () => {
     // 298 degrees is west-north-west; 115 is east-south-east. A reader should not have
     // to know the convention to understand where the swell is coming from.
@@ -126,7 +246,7 @@ describe('current conditions', () => {
     expect(warning.compareDocumentPosition(swell)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
-  it('keeps the staleness warning above the earliest date worth acting on', async () => {
+  it('keeps the staleness warning above the verdict', async () => {
     // #86's third caution, and the shape of the defect #25 was filed about. The forecast
     // section now opens with a confident sentence telling a reader what to book; rendered
     // above the banner it would be advice given before the disclosure that it is history.
@@ -140,8 +260,8 @@ describe('current conditions', () => {
     render(<App />);
 
     const warning = await screen.findByRole('alert');
-    const earliest = await screen.findByTestId('earliest-call');
-    expect(warning.compareDocumentPosition(earliest)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    const verdict = await screen.findByTestId('verdict');
+    expect(warning.compareDocumentPosition(verdict)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
   it('shows no staleness warning when the data is current', async () => {

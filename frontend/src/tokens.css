@@ -152,10 +152,11 @@
    * The two largest are fluid, because the headline readings are what should fill a phone
    * rather than sit politely in the middle of it.
    *
-   * `--text-display` was the wordmark's, and since #128 made the header a bar it has no
-   * consumer at all. Left in the scale rather than deleted: #116's verdict is a headline at
-   * exactly this size in the mockup, and it is the next ticket. If #116 lands without taking
-   * it, delete it — a step nothing sets is not a scale, it is a leftover.
+   * `--text-display` is gone. It was the wordmark's; #128 made the header a bar, which left it
+   * without a consumer, and recorded that it went if #116 did not take it. #116's verdict
+   * headline is the largest type on the page and sets `--text-figure-lg`, which is nearer what
+   * the mockup draws than the 2.5rem this clamped to — so it went. A step nothing sets is not
+   * a scale, it is a leftover.
    * ---------------------------------------------------------------------- */
   --text-micro: 0.7rem;
   --text-tiny: 0.75rem;
@@ -165,7 +166,6 @@
   --text-lead: 1.05rem;
   --text-figure: 1.4rem;
   --text-figure-lg: clamp(1.5rem, 4vw, 1.9rem);
-  --text-display: clamp(1.75rem, 5vw, 2.5rem);
 
   --weight-regular: 400;
   --weight-medium: 500;
@@ -178,12 +178,11 @@
   /* Tracking. The three middle steps are for the uppercase labels, which need air at these
      sizes or they read as a block.
 
-     The two ends are the wordmark's, at the two sizes it has been. `--tracking-tight` suited it
-     at 2.5rem and is wrong at 14.4px, so #128 left it without a consumer; it is kept beside its
-     size, `--text-display`, and the two should leave together or not at all. What replaced it is
-     more than twice `--tracking-widest`, which is why it is a step rather than a reuse: at this
-     size the mark has to be read as a mark rather than as a word, and once the scale has gone
-     the tracking is the only thing left doing that. */
+     `--tracking-tight` was the wordmark's at 2.5rem and is wrong at 14.4px, so #128 left it
+     without a consumer; #116's verdict headline took it, which is the same job at a similar
+     size — large type set tight. `--tracking-wordmark` is more than twice `--tracking-widest`,
+     which is why it is a step rather than a reuse: at 14.4px the mark has to be read as a mark
+     rather than as a word, and once the scale has gone the tracking is all that does it. */
   --tracking-tight: -0.02em;
   --tracking-wide: 0.04em;
   --tracking-wider: 0.06em;

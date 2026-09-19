@@ -386,7 +386,7 @@ test.describe(`the chrome at ${NARROW.width}x${NARROW.height}`, () => {
 });
 
 test.describe('how tall the page is, which is the promise not yet kept', () => {
-  test('does not fit yet, and #116 and #119 are not on their own enough', async ({ page }) => {
+  test('does not fit yet, and #119 will not close it either', async ({ page }) => {
     await loadHome(page);
 
     const { height: viewportHeight } = await viewport(page);
@@ -397,39 +397,38 @@ test.describe('how tall the page is, which is the promise not yet kept', () => {
      * here without making it fit either. The left column still holds v1's contents — ten
      * condition tiles in three groups, the windows panel, the teaching material and the footer.
      *
-     * **#117 made the page taller, which was worth knowing.** Sixteen days as a packed grid of
-     * cards were 422px; sixteen as rows are 554px including the divider, because the grid fitted
-     * seven days across and three down while a row is a row. The rows are the design and they are
-     * already at the height the mockup draws them at (about 30px), so the saving the no-scroll
-     * promise needs is not in here.
-     *
-     * **Where it is, measured in this browser at 1440x900 against this fixture** — measured,
-     * because the projection first written into this docstring was wrong, and so was the one in
-     * PR #127's body:
+     * **Measured here, at 1440x900 against this fixture, rather than projected.** Every
+     * estimate written into this docstring before #116 was wrong, and so were the ones in PR
+     * #127's body; the browser was two minutes away each time.
      *
      * ```
-     * page                     1945     viewport 900
-     *   header + nav + padding  238     -> .home has a budget of 662
-     *   .home / .home-forecast 1707
-     *     three reading sections 378    <- #116 replaces these
-     *     forecast section      1042
-     *       .earliest             50    <- #116, which makes it a duplicate of the verdict
-     *       .windows             171    <- #119
-     *       .days                268       (8 rows)
-     *       .days-divider         18
-     *       .days.beyond         268       (8 rows)
-     *       .hint                 22    <- #119
-     *       .alert (calibration)  74    <- #119
-     *       .provenance           48    <- #119
-     *     footer                 107    <- #119
+     *                      #117    #128    #116
+     * page                 1945    1715    1642     viewport 900
+     *   chrome              238      88      88     -> .home has a budget of 812
+     *   .home              1707    1627    1554
+     *     .verdict            -       -     217
+     *     .tiles              -       -     123
+     *     .provenance         -       -      96     <- out of the footer, where it was
+     *     ten condition cards 378     318       -       smaller, dimmer and later (#116)
+     *     .windows          171     171     171     <- #119
+     *     .days + divider   554     554     554
+     *     .hint              22      22      22     <- #119
+     *     .alert             74      74      74     <- #119
+     *     footer            107     107      59     <- #119
      * ```
      *
-     * Projecting #116's verdict and tiles and everything #119 moves against that leaves the page
-     * near 908 at the sixteen days measured here, and near 742 at the eleven the provider
-     * actually sends. **Against a budget of 662, the two tickets do not close it at either
-     * count.** The rest of the gap is in the page chrome that neither ticket names: a 134px
-     * header where the mockup draws about 50, and `h2` carrying `margin: var(--space-7) 0
-     * var(--space-4)`, which makes every gap between sections 32px where the mockup uses 12.
+     * **With everything #119 moves hidden in the browser, this page measures 1079 against a
+     * 900 viewport — 179 over.** So #119 does not close it either, and what is left is not an
+     * oversight: **480 of that 1079 is sixteen day rows at 30px**, which is the largest block on
+     * the page by a wide margin and the shape #117 chose deliberately. At the eleven days the
+     * provider sends today the same page fits; at sixteen it does not, and sixteen is the count
+     * this fixture carries on purpose.
+     *
+     * An earlier reading of this put the gap at 159 rather than 179. It hid the conditions
+     * provenance along with the footer it used to sit in — but that paragraph qualifies the tile
+     * figures, and the spec's rule is that limits qualifying a number stay beside that number
+     * while teaching material moves. #119 does not take it, so a measurement that assumed it
+     * would was flattering the result by exactly its height.
      *
      * **This asserts the shortfall rather than a ceiling on it**, and the difference matters. A
      * ceiling — "under two viewports" — was the first thing written here, and it was measuring

@@ -146,6 +146,74 @@ describe('the three colour systems stay apart', () => {
   });
 });
 
+describe('a limit is never set quieter than the figure it qualifies', () => {
+  /**
+   * #116's acceptance criterion, as a rule rather than a promise: "the modelled-not-measured
+   * provenance and the height-only caveat on the probability are no smaller, dimmer or later
+   * than the figures they qualify".
+   *
+   * This is the project's characteristic failure and it is a styling failure, not a copy one.
+   * The caveat can be present, accurate and well worded, and still be defeated by one step down
+   * the type scale and one step toward the muted tone — which is what a redesign does to a
+   * disclaimer without anyone deciding to. So it is checked in the sheet.
+   *
+   * **Every rule that reaches the selector, not the one rule that spells it.** The first version
+   * of this block looked up an exact selector string with `find`, which inspected one rule and
+   * ignored the cascade: a later `.verdict-go .verdict-scope { color: var(--ink-muted) }`, or a
+   * second `.verdict-scope` block further down the sheet, passed it untouched. It also said
+   * nothing about `opacity`, which dims text without naming a colour at all.
+   */
+  const LIMITS = ['.verdict-scope', '.conditions-provenance'];
+
+  /** Every rule in the sheet whose selector could apply to this class, including descendant and
+   * compound forms. A bare `includes` on purpose: it over-matches rather than under-matches, and
+   * a guard that errs toward catching too much is the right error for this one to make. */
+  const reaching = (klass: string) => rules(APP).filter((rule) => rule.selector.includes(klass));
+
+  it.each(LIMITS)('has %s in the sheet at all', (klass) => {
+    // Without this the two arms below pass vacuously against a class nobody styles, which is
+    // what they would do the day someone renames it.
+    expect(reaching(klass).length).toBeGreaterThan(0);
+  });
+
+  it.each(LIMITS)('never sets %s in the muted tone, in any rule that reaches it', (klass) => {
+    for (const rule of reaching(klass)) {
+      expect(rule.body, `${rule.selector} dims the limit`).not.toContain('var(--ink-muted)');
+    }
+  });
+
+  it.each(LIMITS)('never fades %s with opacity or a filter', (klass) => {
+    // The way a disclaimer gets quieter without anyone writing a colour down.
+    for (const rule of reaching(klass)) {
+      expect(rule.body, `${rule.selector} fades the limit`).not.toMatch(
+        /\bopacity\s*:|\bfilter\s*:/,
+      );
+    }
+  });
+
+  it('sets the caveat in the same bright tone as the figures it sits under', () => {
+    const scope = reaching('.verdict-scope')
+      .map((rule) => rule.body)
+      .join('\n');
+    expect(scope).toContain('var(--ink-text)');
+  });
+
+  it('keeps the caveat and the prose on one shared size, so neither can shrink alone', () => {
+    // `.verdict-detail` and `.verdict-scope` share a single `font-size` declaration, so there is
+    // no state in which the caveat is smaller than the sentence it follows. What this catches is
+    // that rule being split — after which the two can drift a step apart at any time.
+    const shared = rules(APP).find((rule) => rule.selector === '.verdict-detail, .verdict-scope');
+    expect(shared?.body, 'the shared size rule has been split').toMatch(
+      /font-size:\s*var\(--text-/,
+    );
+
+    for (const rule of [...reaching('.verdict-scope'), ...reaching('.verdict-detail')]) {
+      if (rule.selector === '.verdict-detail, .verdict-scope') continue;
+      expect(rule.body, `${rule.selector} sets its own size`).not.toContain('font-size');
+    }
+  });
+});
+
 describe('every number is set in IBM Plex Mono', () => {
   it('serves digits from the mono face even inside a sentence', () => {
     // The structural half of the criterion: `format.ts` returns strings that land in the middle

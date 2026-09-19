@@ -14,7 +14,7 @@
 
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { delay, http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { type CallStatus, type EarlierCall } from './api';
@@ -1600,11 +1600,81 @@ describe('swells spanning more than a day', () => {
   });
 });
 
-describe('the earliest date worth acting on', () => {
+describe('the slot the condition tiles sit in', () => {
   /**
-   * Story 23 of #1, finished. Every date already renders with its status, so the answer a
-   * Traveller actually wants — *is there anything worth booking, and when* — was reachable
-   * only by scanning a fourteen-day list and assembling it. Nothing stated it.
+   * The tiles are current conditions and come from a different request than anything else in
+   * this component, so they are passed in rather than fetched here. What that buys has to be
+   * asserted, because it is a promise about the *failure* states and nothing else exercises
+   * them: ADR 0005 says the site stays up and honest when a provider is unreachable, and a page
+   * answering "could not load the forecast" while silently also dropping ten readings it had
+   * would be neither.
+   */
+  const TILES = <p data-testid="stand-in-tiles">the tiles</p>;
+
+  it('renders them while the forecast is still on its way', async () => {
+    server.use(
+      http.get('*/api/conditions/forecast', async () => {
+        await delay(50);
+        return HttpResponse.json(forecast);
+      }),
+    );
+
+    render(<ForecastRange tiles={TILES} />);
+
+    // Before the forecast lands, beside the loading line rather than instead of it.
+    expect(screen.getByTestId('stand-in-tiles')).toBeVisible();
+    expect(screen.getByText(/loading forecast/i)).toBeVisible();
+
+    await screen.findByTestId('verdict');
+    expect(screen.getByTestId('stand-in-tiles')).toBeVisible();
+  });
+
+  it('keeps them when the forecast request fails outright', async () => {
+    server.use(
+      http.get('*/api/conditions/forecast', () => new HttpResponse(null, { status: 503 })),
+    );
+
+    render(<ForecastRange tiles={TILES} />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/could not load the forecast/i);
+    expect(screen.getByTestId('stand-in-tiles')).toBeVisible();
+  });
+
+  it('does not tear them down and rebuild them when the forecast arrives', async () => {
+    // The defect this shape was chosen to avoid. Rendered from separate early returns per load
+    // state, React replaced the subtree the moment the forecast landed: nothing looked wrong in
+    // a screenshot, but every handle on those nodes — a test's, a screen reader's cursor —
+    // pointed at elements no longer in the document.
+    server.use(
+      http.get('*/api/conditions/forecast', async () => {
+        await delay(50);
+        return HttpResponse.json(forecast);
+      }),
+    );
+
+    render(<ForecastRange tiles={TILES} />);
+    const before = screen.getByTestId('stand-in-tiles');
+
+    await screen.findByTestId('verdict');
+
+    expect(before).toBeInTheDocument();
+    expect(screen.getByTestId('stand-in-tiles')).toBe(before);
+  });
+});
+
+describe('the verdict', () => {
+  /**
+   * Story 23 of #1, finished, and #116's rebuild of it. Every date already renders with its
+   * status, so the answer a Traveller actually wants — *is there anything worth booking, and
+   * when* — was reachable only by scanning a fourteen-day list and assembling it. Nothing
+   * stated it.
+   *
+   * #116 turned that sentence into the verdict panel at the top of the left column and gave it
+   * three things it never said: the predicted Significant Wave Height, the plausible range
+   * around it, and whether the wave models agreed. Everything below this line that predates
+   * #116 is unchanged apart from the name it looks the panel up by — the behaviour was right,
+   * and a rebuild is exactly when a suite should be made to prove that again rather than
+   * rewritten to match whatever shipped.
    *
    * Dates are asserted through `dateTime` rather than rendered text, for the reason the
    * windows suite above gives: the suite pins the zone and not the locale.
@@ -1614,8 +1684,79 @@ describe('the earliest date worth acting on', () => {
       http.get('*/api/conditions/forecast', () => HttpResponse.json({ ...forecast, days })),
     );
     render(<ForecastRange />);
-    return screen.findByTestId('earliest-call');
+    return screen.findByTestId('verdict');
   }
+
+  /** A Go Call day whose three new figures are all distinct from each other and from the
+   * fixture's other days, so a panel rendering the wrong one is visible rather than lucky. */
+  const GO_DAY = () => dayFrom('2026-02-13', 7.2, 17, 300, 'go', 3);
+
+  it('states the predicted Significant Wave Height, named as such', async () => {
+    // CONTEXT.md is explicit that "wave height" is ambiguous and "swell height" is a different
+    // variable, and this panel carries the largest figure on the page. A verdict that says
+    // "7.6m waves" is the overclaim the whole project exists to avoid: Face Height is several
+    // times this number for the same sea and is what a reader has seen in the news.
+    const day = GO_DAY();
+    const statement = await statementFor([day]);
+
+    expect(statement).toHaveTextContent(
+      new RegExp(`${day.call!.predicted_significant_wave_height.value}`),
+    );
+    expect(statement).toHaveTextContent(/significant wave height/i);
+  });
+
+  it('states the plausible range, not the prediction alone', async () => {
+    // The point of the Predictive Distribution, in the spec's own words: "6.1 metres, 78%
+    // confident" is not something a person can act on, and "most likely 6.1 m, plausibly 5.2
+    // to 7.0" is. A verdict carrying the point estimate alone throws away the distribution.
+    const day = GO_DAY();
+    const range = day.call!.plausible_range!;
+    const statement = await statementFor([day]);
+
+    expect(statement).toHaveTextContent(new RegExp(`${range.low}`));
+    expect(statement).toHaveTextContent(new RegExp(`${range.high}`));
+  });
+
+  it('says the wave models agreed, and says it differently when they did not', async () => {
+    // Not derivable here, which is why the backend sends it: two Watch days that look
+    // identical from status alone are a swell the forecasters have not settled on and a swell
+    // that was never big enough. The verdict is where a reader decides to spend money.
+    const agreed = await statementFor([GO_DAY()]);
+    expect(agreed).toHaveTextContent(/models agree/i);
+
+    cleanup();
+
+    const base = GO_DAY();
+    const divided = await statementFor([
+      { ...base, call: { ...base.call!, model_agreement: 'divided' as const } },
+    ]);
+    expect(divided.textContent).not.toMatch(/models agree/i);
+    expect(divided).toHaveTextContent(/models/i);
+  });
+
+  it('takes the status colour, which §4 of the spec licenses it for', async () => {
+    // Status colour is a state of the sea, and this panel is the page's loudest statement
+    // about one. The class rather than the computed colour: `ink.test.ts` owns which token a
+    // class resolves to, and asserting the colour here would pin it in two places.
+    const go = await statementFor([GO_DAY()]);
+    expect(go.className).toContain('verdict-go');
+
+    cleanup();
+
+    const watch = await statementFor([dayFrom('2026-02-14', 4.0, 14, 300, 'watch', 9)]);
+    expect(watch.className).toContain('verdict-watch');
+  });
+
+  it('prices the height condition alone, and says so beside the range', async () => {
+    // #66 and ADR 0004. A giant day needs four quantities to hold and the distribution prices
+    // one; the other three have no archived forecast error to build a distribution from. The
+    // caveat rides in the same panel as the figure rather than below the fold, because the
+    // ticket's own line is that a redesign is what turns a disclaimer into grey fine print.
+    const statement = await statementFor([GO_DAY()]);
+
+    expect(statement).toHaveTextContent(/height only/i);
+    expect(statement).toHaveTextContent(/period|direction|wind/i);
+  });
 
   it('names the earliest Go Call and says to book it', async () => {
     const statement = await statementFor([
@@ -1689,6 +1830,30 @@ describe('the earliest date worth acting on', () => {
     const statement = await statementFor(days);
 
     expect(statement.textContent).toContain(`issued ${days[0]!.call!.lead_time_days} days ahead`);
+  });
+
+  it('counts one day as a day, not as 1 days', async () => {
+    // The shortest Lead Time is the one most worth reading correctly — a call issued a day out
+    // is the one a reader has least time to act on — and it is the case a fixture using three
+    // and nine never renders. It read "issued 1 days ahead" on the most prominent panel of the
+    // page for as long as this sentence has existed.
+    const statement = await statementFor([dayFrom('2026-02-13', 7.2, 17, 300, 'go', 1)]);
+
+    expect(statement.textContent).toContain('issued 1 day ahead');
+    expect(statement.textContent).not.toContain('1 days');
+  });
+
+  it('comes before the heading that names the list below it', async () => {
+    // The spec's order down the column is verdict, tiles, days. "The next 16 days" labelled the
+    // section as a whole and so rendered above the verdict, which put a heading about a list
+    // over the answer that list exists to produce.
+    const statement = await statementFor([
+      dayFrom('2026-02-12', 1.2, 7, 300, 'none', 3),
+      dayFrom('2026-02-13', 7.2, 17, 300, 'go', 2),
+    ]);
+
+    const heading = await screen.findByRole('heading', { name: /^The next \d+ days$/ });
+    expect(statement.compareDocumentPosition(heading)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
   it('says plainly when nothing in range carries either, as an answer and not a fault', async () => {
