@@ -12,6 +12,7 @@ import {
   type Reading,
 } from './api';
 import { Figure } from './Figure';
+import { ADDRESS } from './router';
 import { compassPoint, formatRange, formatReading, formatTimestamp, formatValue } from './format';
 
 type LoadState =
@@ -1552,11 +1553,23 @@ export function ForecastRange({ tiles }: { tiles?: ReactNode }) {
             <p className="hint">Select a day to see how it develops hour by hour.</p>
           )}
 
+          {/* **The limit stays; the explanation moved (#119).**
+
+              What these two sentences do is tell a reader what the calls above them rest on and
+              how far to trust them, which is a limit qualifying every call on the page. What
+              they used to also do is explain why the number of days is so small — that far more
+              giant days are on record than the swell measurements these calls are written in
+              reach back to cover. That is how it was computed rather than what it means, so it
+              is on the reading page now, under the same numbers.
+
+              All three counts stay here. They are what "how thin the basis is" is made of, and
+              a limit that said "fitted to a small number of days" without saying how small would
+              be the vaguer, more comfortable version of the same sentence. */}
           {!forecast.calibrated && (
             <p role="status" className="alert">
               These calls come from the surf community's rule of thumb, not from thresholds fitted
               to days Nazaré is known to have gone giant. Treat them as a starting point rather than
-              a forecast.
+              a forecast. <a href={ADDRESS['how-it-works']}>How the calls are made</a>.
             </p>
           )}
 
@@ -1564,10 +1577,9 @@ export function ForecastRange({ tiles }: { tiles?: ReactNode }) {
             <p role="status" className="alert">
               These thresholds were fitted to {forecast.calibration.gold_days_total} days Nazaré is
               known to have gone giant — {forecast.calibration.gold_days_fitted} to choose them and{' '}
-              {forecast.calibration.gold_days_validated} held back to check them. That is a very
-              small number of days: far more giant days are on record, but the swell measurements
-              these calls are written in do not reach back that far. Expect the calls to be roughly
-              right and individually uncertain.
+              {forecast.calibration.gold_days_validated} held back to check them. Expect the calls
+              to be roughly right and individually uncertain.{' '}
+              <a href={ADDRESS['how-it-works']}>How the thresholds were fitted</a>.
             </p>
           )}
 

@@ -596,6 +596,17 @@ export function TrackRecordPage() {
         number, and it is the entire basis of everything on this page.
       </p>
 
+      {/* Moved off the forecast page by #119. It sat under the call banner there, explaining why
+          the number of gold days is as small as it is — which is how the figure came to be
+          rather than what it means for a reader deciding whether to fly, so it belongs here,
+          directly under the counts it is about. The banner on the forecast page keeps the limit
+          and links to this. */}
+      <p data-testid="gold-day-scarcity">
+        That is a very small number of days, and not because the coast is quiet: far more giant days
+        are on record than these. The limit is the swell measurements the calls are written in,
+        which do not reach back far enough to cover the rest.
+      </p>
+
       <Panel
         panel={record.held_out}
         testId="panel-held-out"

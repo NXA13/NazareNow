@@ -263,7 +263,13 @@ describe('calls', () => {
     const note = await screen.findByRole('status');
     expect(note).toHaveTextContent(String(calibration.gold_days_total));
     expect(note).toHaveTextContent(String(calibration.gold_days_validated));
-    expect(note).toHaveTextContent(/very small number of days/i);
+    // The limit the counts are there to make, which is what a reader has to carry away from
+    // this page. **"That is a very small number of days" used to be asserted here too** and is
+    // now on the reading page, under the same counts: why the number is small is how the figure
+    // came to be rather than what it means for someone deciding whether to fly. #119 moved it,
+    // and `TrackRecord.test.tsx` asserts it where it landed rather than this dropping it.
+    expect(note).toHaveTextContent(/roughly right and individually uncertain/i);
+    expect(note).toHaveTextContent(/how the thresholds were fitted/i);
   });
 
   it('says which Gold Days chose the thresholds and which were held back to check them', async () => {

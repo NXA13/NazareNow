@@ -344,6 +344,25 @@ describe('what it refuses to leave out', () => {
     );
   });
 
+  it('says why so few days are confirmed, under the counts that prompt the question', async () => {
+    // Moved here from the forecast page by #119. It sat under the call banner there, which is
+    // where a reader learns how thin the basis is — but *why* the basis is thin is how the
+    // figure came to be rather than what it means for someone deciding whether to fly, and that
+    // is the split this ticket applies. The forecast page keeps the counts and the limit they
+    // make, and links here.
+    //
+    // Asserted rather than assumed, because a sentence moved between pages is a sentence that
+    // can be lost between them: nothing else on either page would have failed if it had simply
+    // been deleted along the way.
+    render(<TrackRecordPage />);
+
+    const scarcity = await screen.findByTestId('gold-day-scarcity');
+    expect(scarcity).toHaveTextContent(/far more giant days are on record/i);
+    // The reason, not just the fact — the record is short because the measurements are, not
+    // because the coast is quiet, and those are opposite things to conclude about Nazáre.
+    expect(scarcity).toHaveTextContent(/swell measurements/i);
+  });
+
   it('says which confirmed days chose the thresholds and which were held back', async () => {
     // Only the total was pinned, leaving the split free to reverse: a 25/13 record reading
     // "13 were used to choose the thresholds, which leaves 25 the system had never seen"
