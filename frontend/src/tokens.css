@@ -176,6 +176,10 @@
   --tracking-wide: 0.04em;
   --tracking-wider: 0.06em;
   --tracking-widest: 0.08em;
+  /* Wider than the label steps by a long way, and only ever on the wordmark. A mark set at
+     the size of body copy has to be read as a mark rather than as a word, and tracking is
+     what does that once the size has gone (#128). */
+  --tracking-wordmark: 0.17em;
 
   /* -------------------------------------------------------------------------
    * Space, radius and rule. An eight-step spacing scale, because the old sheet reached for
