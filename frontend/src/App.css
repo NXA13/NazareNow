@@ -68,7 +68,11 @@ body {
  * to hold or fail. */
 main {
   margin: 0 auto;
-  padding: var(--space-6) var(--space-5) var(--space-8);
+  /* Trimmed vertically by #128: the 48px that used to sit under the footer was the single
+     largest piece of empty page on the site. The sides are left alone deliberately — the
+     mockup's frame is 28px there, but a horizontal change buys no height, and the one viewport
+     it would change most is the 390px screen that has the least room to give. */
+  padding: var(--space-5) var(--space-5) var(--space-6);
   background: var(--ink-page);
   min-height: 100vh;
 }
@@ -81,19 +85,54 @@ main {
   max-width: var(--measure-page);
 }
 
-/* The wordmark, in Ice. One of the three places the main colour is allowed. */
+/*
+ * The chrome, as a bar rather than a block (#128).
+ *
+ * It was a stack: a 40px wordmark, the tagline under it, the nav under that, and two 32px gaps
+ * holding them apart — 190px above the first word of content, measured in Chromium at
+ * 1440x900. The mockup draws all three on one rule-bottomed line instead, and on a page whose
+ * whole height budget is a viewport that difference is worth more than #116 or #119 saves.
+ *
+ * Done in the sheet rather than in `App.tsx` deliberately. The markup is already three siblings
+ * in reading order, so a row is a `display: flex` and a `margin-left: auto`; delete this rule
+ * and the header still renders, in the same order, as the block it was. Nothing about the
+ * wordmark, the tagline or the nav had to move for the page to get its height back.
+ *
+ * It wraps, because the same bar has to survive 390px. No-scroll is a desktop promise, but the
+ * header is not allowed to run off a phone.
+ */
+header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-4);
+  padding-bottom: var(--space-4);
+  margin-bottom: var(--space-5);
+  border-bottom: var(--rule) solid var(--ink-border);
+}
+
+/* The wordmark, in Ice. One of the three places the main colour is allowed.
+ *
+ * At `--text-meta` now rather than `--text-display`, which clamped to 2.5rem and cost 50px of
+ * a 900px page. What carries it at 14.4px is the tracking, not the scale: letter-spaced capitals
+ * read as a mark, where the same word set tight at that size reads as a stray heading. The tight
+ * tracking that suited it at 40px is exactly wrong here and has gone with the size. */
 header h1 {
   margin: 0;
   color: var(--ink-main);
-  font-size: var(--text-display);
+  font-size: var(--text-meta);
   font-weight: var(--weight-bold);
-  letter-spacing: var(--tracking-tight);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wordmark);
   line-height: var(--leading-tight);
 }
 
+/* Beside the wordmark now rather than under it, and at the size a subtitle on a bar is: the
+   place it tells you is worth saying once, quietly, not worth a line of its own. */
 .tagline {
-  margin: var(--space-1) 0 var(--space-7);
+  margin: 0;
   color: var(--ink-muted);
+  font-size: var(--text-micro);
 }
 
 /*
@@ -101,13 +140,20 @@ header h1 {
  *
  * Still styled no further than a nav has to be to work: a row, a gap, and a mark on the page
  * being read. #114 gave it the main colour it was waiting for — the nav was one of the three
- * things Ice was always for — and changed nothing else about it. Where it sits is #115's
- * decision, not this ticket's.
+ * things Ice was always for — and changed nothing else about it.
+ *
+ * #128 did move it: it sits at the far end of the header bar rather than on a line below the
+ * tagline. That was a height decision rather than a navigation one, but the comment that used
+ * to say where it sits was "#115's decision, not this ticket's" and is no longer true, so it
+ * says this instead.
  */
 header nav {
   display: flex;
   gap: var(--space-6);
-  margin: 0 0 var(--space-7);
+  /* Pushed to the far end of the bar. The `auto` is the whole of the layout: without it the
+     three children sit together at the left and the header is a short row rather than a bar. */
+  margin: 0 0 0 auto;
+  font-size: var(--text-tiny);
 }
 
 header nav a {
@@ -139,7 +185,11 @@ h2 {
   letter-spacing: var(--tracking-widest);
   color: var(--ink-muted);
   font-weight: var(--weight-semibold);
-  margin: var(--space-7) 0 var(--space-4);
+  /* Was `var(--space-7)` above, so every boundary between sections cost 32px where the mockup
+     spends 12. On a page with four of them that was 80px of nothing, and the gap had never been
+     a decision — it was a near-top step of the scale, reached for once and inherited since
+     (#128). */
+  margin: var(--space-4) 0;
 }
 
 /* Fluid: as many columns as fit, never narrower than a readable card. */
