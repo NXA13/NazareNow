@@ -236,8 +236,8 @@ h2 {
   gap: var(--space-1);
 }
 
-/* The gated figure, one step down from `.value`'s default. `--text-figure-lg` is what a figure
-   standing alone takes; four of them in a row want to be read as a row. */
+/* Four figures in a row want to be read as a row, so this is a step below the size a figure
+   standing alone takes. */
 .tile-headline .value {
   font-size: var(--text-figure);
 }
@@ -307,9 +307,34 @@ h2 {
   justify-content: flex-start;
 }
 
+/*
+ * Where the tile figures came from, beside them rather than under the page (#116).
+ *
+ * It used to be the last element on the page, inside a `footer` set at `--text-small` in
+ * `--ink-muted`: smaller, dimmer and later than the figures it qualifies, which is exactly the
+ * three things the ticket forbids of it. Out of the footer it inherits body size and body
+ * colour, which makes it larger and brighter than the companion readings and the temperature
+ * line above it.
+ *
+ * `--ink-text` is set here rather than left to inherit, so that a future rule dimming a
+ * container cannot quietly take it back — and so `ink.test.ts` has something to assert.
+ *
+ * It is not literally as large as the 1.4rem figure on the tile, and no paragraph should be.
+ * The criterion the ticket is protecting is that the limit is not rendered as diminished fine
+ * print relative to what it qualifies, and a body-size, full-colour paragraph directly beneath
+ * the row is not that.
+ */
+.conditions-provenance {
+  margin: var(--space-3) 0 0;
+  color: var(--ink-text);
+}
+
+/* No `font-size` here. Every element that takes this class sets its own — the tile headline,
+   the companions, the day row and the day detail — so a size declared here was a default nothing
+   could reach, and a wrong one to inherit if some future `.value` ever did. The face and the
+   weight are the part that is genuinely shared, and `ink.test.ts` pins the face. */
 .value {
   font-family: var(--font-mono);
-  font-size: var(--text-figure-lg);
   font-weight: var(--weight-semibold);
 }
 

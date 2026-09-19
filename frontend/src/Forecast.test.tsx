@@ -14,7 +14,7 @@
 
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { delay, http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { type CallStatus, type EarlierCall } from './api';
@@ -1597,6 +1597,68 @@ describe('swells spanning more than a day', () => {
 
     expect(windows).toHaveLength(1);
     expect(dateOf(windows[0]!, 'window-end')).toBe('2026-03-01');
+  });
+});
+
+describe('the slot the condition tiles sit in', () => {
+  /**
+   * The tiles are current conditions and come from a different request than anything else in
+   * this component, so they are passed in rather than fetched here. What that buys has to be
+   * asserted, because it is a promise about the *failure* states and nothing else exercises
+   * them: ADR 0005 says the site stays up and honest when a provider is unreachable, and a page
+   * answering "could not load the forecast" while silently also dropping ten readings it had
+   * would be neither.
+   */
+  const TILES = <p data-testid="stand-in-tiles">the tiles</p>;
+
+  it('renders them while the forecast is still on its way', async () => {
+    server.use(
+      http.get('*/api/conditions/forecast', async () => {
+        await delay(50);
+        return HttpResponse.json(forecast);
+      }),
+    );
+
+    render(<ForecastRange tiles={TILES} />);
+
+    // Before the forecast lands, beside the loading line rather than instead of it.
+    expect(screen.getByTestId('stand-in-tiles')).toBeVisible();
+    expect(screen.getByText(/loading forecast/i)).toBeVisible();
+
+    await screen.findByTestId('verdict');
+    expect(screen.getByTestId('stand-in-tiles')).toBeVisible();
+  });
+
+  it('keeps them when the forecast request fails outright', async () => {
+    server.use(
+      http.get('*/api/conditions/forecast', () => new HttpResponse(null, { status: 503 })),
+    );
+
+    render(<ForecastRange tiles={TILES} />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/could not load the forecast/i);
+    expect(screen.getByTestId('stand-in-tiles')).toBeVisible();
+  });
+
+  it('does not tear them down and rebuild them when the forecast arrives', async () => {
+    // The defect this shape was chosen to avoid. Rendered from separate early returns per load
+    // state, React replaced the subtree the moment the forecast landed: nothing looked wrong in
+    // a screenshot, but every handle on those nodes — a test's, a screen reader's cursor —
+    // pointed at elements no longer in the document.
+    server.use(
+      http.get('*/api/conditions/forecast', async () => {
+        await delay(50);
+        return HttpResponse.json(forecast);
+      }),
+    );
+
+    render(<ForecastRange tiles={TILES} />);
+    const before = screen.getByTestId('stand-in-tiles');
+
+    await screen.findByTestId('verdict');
+
+    expect(before).toBeInTheDocument();
+    expect(screen.getByTestId('stand-in-tiles')).toBe(before);
   });
 });
 

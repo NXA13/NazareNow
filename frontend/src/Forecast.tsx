@@ -1202,12 +1202,17 @@ function WindowSpan({ window }: { window: SwellWindow }) {
  * all is not a call the models agreed with, and silence reads as agreement.
  */
 function ModelVerdict({ agreement }: { agreement: ModelAgreement | null }) {
-  if (agreement === 'agreed') return <> The independent wave models agree.</>;
-  if (agreement === 'divided') return <> The independent wave models are divided about this day.</>;
+  // No leading space in these fragments, and the separator is emitted at the call site as an
+  // explicit `{' '}` instead. A space that is only there because the string happens to fit on
+  // one line is a space Prettier can reflow away, and nothing would catch it: `toHaveTextContent`
+  // normalises whitespace, so "models agree.The independent" reads as a pass. `WindowSpan` below
+  // already does it this way.
+  if (agreement === 'agreed') return <>The independent wave models agree.</>;
+  if (agreement === 'divided') return <>The independent wave models are divided about this day.</>;
   if (agreement === 'unmeasured') {
-    return <> Whether the wave models are divided could not be measured for this day.</>;
+    return <>Whether the wave models are divided could not be measured for this day.</>;
   }
-  return <> This call was issued before the wave models were consulted.</>;
+  return <>This call was issued before the wave models were consulted.</>;
 }
 
 /**
@@ -1224,10 +1229,12 @@ function ModelVerdict({ agreement }: { agreement: ModelAgreement | null }) {
  * whether the wave models agreed.
  *
  * **Significant Wave Height, named in full.** *New.* CONTEXT.md lists "wave height" as
- * ambiguous and "swell height" as a different variable, and this is now the largest figure on
- * the page. Face Height — the number a reader has seen in news coverage — is several times
- * this for the same sea and is not convertible to it by any fixed ratio, so a verdict that said
- * "7.6m waves" would be the exact overclaim this project exists to avoid.
+ * ambiguous and "swell height" as a different variable, and this figure sits in the panel a
+ * reader reads first. Face Height — the number a reader has seen in news coverage — is several
+ * times this for the same sea and is not convertible to it by any fixed ratio, so a verdict
+ * that said "7.6m waves" would be the exact overclaim this project exists to avoid. (It is not
+ * the largest figure on the page: that is the Significant Wave Height on the tile below, at
+ * `--text-figure`. This one sits in a sentence at `--text-small`.)
  *
  * **The range travels with the prediction, and the caveat travels with the range.** *New.* A
  * point estimate alone throws away the Predictive Distribution that is the point of the whole
@@ -1295,8 +1302,13 @@ function Verdict({ days }: { days: ForecastDay[] }) {
         </>
       ) : (
         <>
+          {/* Not `{CALL_LABELS[status]} Call`, which renders the Watch branch as "Watch Call".
+              CONTEXT.md keeps Watch and Go Call as separate entries on purpose — one says start
+              paying attention, the other says spend money — and "Watch Call" is a coined term
+              that appears nowhere else in the repo. It reads as a weaker Go Call, which is the
+              one thing a Watch must never be mistaken for. */}
           <p className="verdict-status">
-            {CALL_LABELS[call.status]} Call · issued {call.lead_time_days}{' '}
+            {go ? 'Go Call' : 'Watch'} · issued {call.lead_time_days}{' '}
             {call.lead_time_days === 1 ? 'day' : 'days'} ahead
           </p>
 
@@ -1334,22 +1346,43 @@ function Verdict({ days }: { days: ForecastDay[] }) {
                 </strong>
               </>
             )}
-            .
-            <ModelVerdict agreement={call.model_agreement} />
+            {call.height_bar_probability !== null && (
+              <>
+                {' '}
+                — about{' '}
+                <strong>
+                  <Figure>{Math.round(call.height_bar_probability * 100)}%</Figure>
+                </strong>{' '}
+                likely to clear the minimum significant wave height a giant day needs
+              </>
+            )}
+            . <ModelVerdict agreement={call.model_agreement} />
             {watch && ' Start watching flights; do not book on it.'}
             {containing && <WindowSpan window={containing} />}
           </p>
 
           {/* #66 and ADR 0004. A giant day needs four quantities to hold — height, swell
               period, swell direction and wind — and the distribution prices one; the other
-              three have no archived forecast error to build a distribution from. Rendered from
-              the same guard as the range above, so the caveat cannot outlive what it caveats,
-              and in the same panel at the same weight rather than below the fold: a redesign is
-              exactly the change that turns a disclaimer into elegant grey fine print. */}
-          {call.plausible_range && (
+              three have no archived forecast error to build a distribution from.
+
+              **It names both figures, because both price height alone.** #116 asks for "the
+              height-only caveat on the probability" and the first draft attached it to the
+              plausible range, which is true of the range and quietly silent about the
+              percentage — the figure a reader is most likely to read as the chance of a giant
+              day. Rendered from the same guard as the figures above, so the caveat cannot
+              outlive what it caveats, and in the same panel at the same size rather than below
+              the fold: a redesign is exactly the change that turns a disclaimer into elegant
+              grey fine print. */}
+          {(call.plausible_range || call.height_bar_probability !== null) && (
             <p className="verdict-scope">
               Height only — the swell period, swell direction and wind a giant day also needs are
-              not priced in that range.
+              priced in{' '}
+              {call.plausible_range && call.height_bar_probability !== null
+                ? 'neither that range nor that figure'
+                : call.plausible_range
+                  ? 'no part of that range'
+                  : 'no part of that figure'}
+              .
             </p>
           )}
 
@@ -1378,8 +1411,8 @@ function Verdict({ days }: { days: ForecastDay[] }) {
  * `/api/conditions/current`. Something has to sit between two things this component owns.
  *
  * A slot rather than lifting the fetch into `Home`: this component is rendered bare, as
- * `<ForecastRange />`, at around forty places across three suites, with msw at the network
- * boundary. That is the seam this repo tests at, and turning it into a presentational component
+ * `<ForecastRange />`, at 74 places across two suites (72 in `Forecast.test.tsx`, 2 in
+ * `every-field-is-read.test.tsx`), with msw at the network boundary. That is the seam this repo tests at, and turning it into a presentational component
  * fed fixtures directly would trade a tested boundary for a prop. The slot is optional, so every
  * one of those call sites still renders what it always did.
  */

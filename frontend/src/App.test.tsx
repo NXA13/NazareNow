@@ -172,6 +172,31 @@ describe('current conditions', () => {
 
       expect(await screen.findByTestId('provenance')).toHaveTextContent(/modelled/i);
     });
+
+    it('keeps that provenance out of the footer, where it was fine print', async () => {
+      // #116: the provenance must be "no smaller, dimmer or later than the figures it
+      // qualifies". It was the last element on the page, inside a `footer` styled a step down
+      // the type scale and a step toward the muted tone — smaller, dimmer and later, all three
+      // at once, which is precisely how a disclaimer becomes elegant grey fine print without
+      // anybody deciding it should.
+      render(<App />);
+
+      const provenance = await screen.findByTestId('provenance');
+      expect(provenance.closest('footer')).toBeNull();
+    });
+
+    it('puts the provenance with the tiles rather than at the bottom of the page', async () => {
+      // "Later" is the half of that criterion a colour check cannot see. Beside the figures
+      // means before the day list, not after everything.
+      render(<App />);
+
+      const provenance = await screen.findByTestId('provenance');
+      const tiles = await screen.findByTestId('tiles');
+      const days = await screen.findByRole('heading', { name: /^The next \d+ days$/ });
+
+      expect(tiles.compareDocumentPosition(provenance)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      expect(provenance.compareDocumentPosition(days)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    });
   });
 
   it('shows directions as a compass bearing as well as degrees', async () => {

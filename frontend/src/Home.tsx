@@ -29,12 +29,30 @@ type LoadState =
   | { status: 'loaded'; conditions: CurrentConditions }
   | { status: 'failed' };
 
+/** A reading's value, its unit, and its compass point where it has one.
+ *
+ * One definition, used by both the headline reading on a tile and the companions under it.
+ * `Tile` and `Companion` held a character-for-character copy of this each, which is two places
+ * for one decision about how a reading is written — and the classes it emits are the ones
+ * `ink.test.ts` pins the mono face to, so a divergence between them would be a number quietly
+ * set in the text face.
+ */
+function ValueLine({ reading, bearing }: { reading: Reading; bearing: boolean }) {
+  return (
+    <dd>
+      <span className="value">{formatValue(reading.value)}</span>
+      <span className="unit">{reading.unit}</span>
+      {bearing && <span className="bearing">{compassPoint(reading.value)}</span>}
+    </dd>
+  );
+}
+
 /** One companion reading, riding small on the tile whose wave field it belongs to.
  *
  * Its own `group` with its own name, like the headline reading above it, so a screen reader
  * hears "wave period, 11.4 seconds" rather than four bare numbers under one label — and so a
- * test can assert that the Combined Sea's period is on the Combined Sea's tile rather than
- * that the figure appears on the page somewhere.
+ * test can assert that the Combined Sea's period is on the Combined Sea's tile rather than that
+ * the figure appears on the page somewhere.
  */
 function Companion({
   label,
@@ -48,41 +66,36 @@ function Companion({
   return (
     <div className="companion" role="group" aria-label={label}>
       <dt>{label}</dt>
-      <dd>
-        <span className="value">{formatValue(reading.value)}</span>
-        <span className="unit">{reading.unit}</span>
-        {bearing && <span className="bearing">{compassPoint(reading.value)}</span>}
-      </dd>
+      <ValueLine reading={reading} bearing={bearing} />
     </div>
   );
 }
 
-/** One tile: a gated quantity at the size of a headline, and the rest of its wave field small. */
+/** One tile: a gated quantity at the size of a headline, and the rest of its wave field small.
+ *
+ * The test id is derived from the label rather than passed beside it. They were two props, which
+ * is two sources for one name and exactly the pair that drifts: a tile relabelled without its
+ * slug being changed keeps passing a test that names the old quantity.
+ */
 function Tile({
-  slug,
   label,
   reading,
   bearing = false,
   children,
 }: {
-  slug: string;
   label: string;
   reading: Reading;
   bearing?: boolean;
   children?: ReactNode;
 }) {
   return (
-    <div className="tile" data-testid={`tile-${slug}`}>
+    <div className="tile" data-testid={`tile-${label.toLowerCase().replace(/\s+/g, '-')}`}>
       {/* The gated reading is its own group rather than the tile being one. A tile that was the
           group would contain its companions' values too, so "the swell period block shows 13.75"
           would be satisfied by a tile showing 13.75 anywhere inside it. */}
       <dl className="tile-headline" role="group" aria-label={label}>
         <dt>{label}</dt>
-        <dd>
-          <span className="value">{formatValue(reading.value)}</span>
-          <span className="unit">{reading.unit}</span>
-          {bearing && <span className="bearing">{compassPoint(reading.value)}</span>}
-        </dd>
+        <ValueLine reading={reading} bearing={bearing} />
       </dl>
       {children && <dl className="companions">{children}</dl>}
     </div>
@@ -114,29 +127,20 @@ function ConditionTiles({ conditions }: { conditions: CurrentConditions }) {
   return (
     <>
       <div className="tiles" data-testid="tiles">
-        <Tile
-          slug="significant-wave-height"
-          label="Significant wave height"
-          reading={conditions.significant_wave_height}
-        >
+        <Tile label="Significant wave height" reading={conditions.significant_wave_height}>
           {/* This tile *is* the Combined Sea, so the Combined Sea's period and direction ride
               on it rather than on the Swell's tiles. */}
           <Companion label="Wave period" reading={conditions.wave_period} />
           <Companion label="Wave direction" reading={conditions.wave_direction} bearing />
         </Tile>
 
-        <Tile slug="swell-period" label="Swell period" reading={conditions.swell_period}>
+        <Tile label="Swell period" reading={conditions.swell_period}>
           <Companion label="Swell height" reading={conditions.swell_height} />
         </Tile>
 
-        <Tile
-          slug="swell-direction"
-          label="Swell direction"
-          reading={conditions.swell_direction}
-          bearing
-        />
+        <Tile label="Swell direction" reading={conditions.swell_direction} bearing />
 
-        <Tile slug="wind-speed" label="Wind speed" reading={conditions.wind_speed}>
+        <Tile label="Wind speed" reading={conditions.wind_speed}>
           <Companion label="Wind direction" reading={conditions.wind_direction} bearing />
         </Tile>
       </div>
@@ -147,6 +151,26 @@ function ConditionTiles({ conditions }: { conditions: CurrentConditions }) {
         <Companion label="Water temperature" reading={conditions.water_temperature} />
         <Companion label="Air temperature" reading={conditions.air_temperature} />
       </dl>
+
+      {/* **Beside the figures, not under the page.** It was the last element on the page, inside
+          a `footer` set at `--text-small` in `--ink-muted` — smaller, dimmer and later than the
+          tile figures it qualifies, which is precisely the three things #116's acceptance
+          criteria forbid of it. Moved up here it inherits body size and body colour, so it is
+          larger and brighter than the companion readings above it rather than quieter.
+
+          "Measured" was a lie, and a flattering one. Nothing on this page is an observation:
+          every figure is Open-Meteo model output at a grid point, and no buoy reading reaches
+          the live system at all — Monican02's record exists only in the analysis directory, for
+          training a model that does not exist yet. A modelled figure described as measured
+          invites a reader to trust it more than it deserves, which is the whole failure this
+          project is built to avoid. */}
+      <p className="provenance conditions-provenance" data-testid="provenance">
+        Swell and sea are <strong>modelled</strong>, not measured — Open-Meteo's forecast for{' '}
+        {conditions.latitude.toFixed(2)}°N, {Math.abs(conditions.longitude).toFixed(2)}
+        °W, roughly 15km offshore near the head of the Nazaré Canyon. No buoy reading reaches this
+        page. Wind and air temperature come from the nearest land forecast cell, which is not the
+        same point.
+      </p>
     </>
   );
 }
@@ -206,20 +230,6 @@ export function Home() {
                   {formatTimestamp(state.conditions.fetched_at)}
                 </time>
                 .
-              </p>
-              {/* "Measured" was a lie, and a flattering one. Nothing on this page is an
-                observation: every figure is Open-Meteo model output at a grid point, and no
-                buoy reading reaches the live system at all — Monican02's record exists only
-                in the analysis directory, for training a model that does not exist yet. A
-                modelled figure described as measured invites a reader to trust it more than
-                it deserves, which is the whole failure this project is built to avoid. */}
-              <p className="provenance" data-testid="provenance">
-                Swell and sea are <strong>modelled</strong>, not measured — Open-Meteo's forecast
-                for {state.conditions.latitude.toFixed(2)}°N,{' '}
-                {Math.abs(state.conditions.longitude).toFixed(2)}
-                °W, roughly 15km offshore near the head of the Nazaré Canyon. No buoy reading
-                reaches this page. Wind and air temperature come from the nearest land forecast
-                cell, which is not the same point.
               </p>
             </footer>
           </>
