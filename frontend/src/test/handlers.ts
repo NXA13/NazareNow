@@ -243,19 +243,28 @@ export const forecast: Forecast = {
  *
  * The days are ordinary — one call status, repeated. What varies here is how many rows there
  * are, which is the only thing this fixture exists to vary.
+ *
+ * **Except for where the measured archive ends**, which a sixteen-day response cannot avoid
+ * having: the archive is measured *through a lead time of seven days*, so eight of these rows are
+ * measured — the first day and the seven after it, which is `beyond = max(0, lead_time_days -
+ * measured_through_lead_days)` in `distribution.py` — and the rest carry the flag that says their
+ * width was extrapolated. The page draws a divider and dims those (#117). A fixture with every
+ * day measured would hold the layout to a page shorter than the one a reader gets, which is the
+ * same mistake as measuring against three days.
  */
 export const longForecast: Forecast = {
   ...forecast,
-  days: Array.from({ length: 16 }, (_, index) =>
-    dayFrom(
+  days: Array.from({ length: 16 }, (_, index) => {
+    const day = dayFrom(
       `2026-02-${String(12 + index).padStart(2, '0')}`,
       2 + (index % 5),
       8 + (index % 4),
       250 + index,
       index === 1 ? 'go' : index === 2 ? 'watch' : 'none',
       index,
-    ),
-  ),
+    );
+    return { ...day, call: { ...day.call!, uncertainty_measured: index <= 7 } };
+  }),
 };
 
 /** The provenance a calibrated forecast carries (#12).

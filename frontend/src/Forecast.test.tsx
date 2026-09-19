@@ -536,7 +536,7 @@ describe('how much the forecasters agree', () => {
   });
 });
 
-describe('the day card says how much was checked', () => {
+describe('the day row says how much was checked', () => {
   // The panel only exists once a day is selected, so a reader scanning the range sees a call
   // with nothing to say how much stood behind it. What can honestly go on a card is whether
   // the check happened, not how wide it came out: a width needs a threshold nobody has
@@ -711,42 +711,40 @@ describe('the day card says how much was checked', () => {
 });
 
 describe('the forecast range', () => {
-  it('marks the standout day so the overview can be scanned, not read', async () => {
-    // Asserted through the rendered class, not by calling the helper: the agreed seam
-    // is what a user sees. The scale is relative to the range on screen, so it works on
-    // a flat summer week as well as on a winter one.
+  it('draws each day against the largest one on screen, so the range can be scanned', async () => {
+    // The comparison bar, which is the third of the four things a row carries. Asserted on
+    // the rendered width rather than by calling the helper: the agreed seam is what a user
+    // sees. The three tiers of class this replaced could say which band a day fell in and
+    // never which of two ordinary days was the bigger one.
+    //
+    // Heights chosen so the shares are arithmetic a reader can check without doing any:
+    // against a peak of 8m, 4m is half the bar and 2m a quarter of it.
+    serveDays([
+      dayFrom('2026-02-12', 2, 9, 250, 'none', 1),
+      dayFrom('2026-02-13', 4, 12, 250, 'watch', 2),
+      dayFrom('2026-02-14', 8, 16, 250, 'go', 3),
+    ]);
+
     render(<ForecastRange />);
 
-    const quiet = await screen.findByRole('button', { name: new RegExp(QUIET.date) });
-    const big = await screen.findByRole('button', { name: new RegExp(BIG.date) });
-
-    expect(big.className).toContain('rank-leading');
-    expect(quiet.className).toContain('rank-ordinary');
-    // The middle tier is a real band, not decoration: a day at 70% of the peak must be
-    // neither leading nor ordinary. Without this, widening either threshold to swallow
-    // the tier passed every test.
-    const easing = await screen.findByRole('button', { name: new RegExp(forecast.days[2]!.date) });
-    expect(easing.className).toContain('rank-notable');
+    expect(await screen.findByTestId('day-bar-2026-02-14')).toHaveStyle({ width: '100%' });
+    expect(screen.getByTestId('day-bar-2026-02-13')).toHaveStyle({ width: '50%' });
+    expect(screen.getByTestId('day-bar-2026-02-12')).toHaveStyle({ width: '25%' });
   });
 
-  it('still marks a standout day when the whole range is small', async () => {
-    // The real database is a flat summer week where every day is 0.6-1.2m. Absolute
-    // thresholds put all nine in one bucket and distinguished nothing.
-    const flat = {
-      ...forecast,
-      days: forecast.days.map((day, index) => ({
-        ...day,
-        peak_swell_height: { value: index === 1 ? 1.2 : 0.7, unit: 'm' },
-      })),
-    };
-    server.use(http.get('*/api/conditions/forecast', () => HttpResponse.json(flat)));
+  it('still separates the days when the whole range is small', async () => {
+    // The real database is a flat summer week where every day is 0.6-1.2m. A bar on an
+    // absolute scale draws all seven as slivers and distinguishes nothing, which is the same
+    // failure the fixed thresholds before it had.
+    serveDays([
+      dayFrom('2026-02-12', 0.7, 9, 250, 'none', 1),
+      dayFrom('2026-02-13', 1.4, 10, 250, 'none', 2),
+    ]);
 
     render(<ForecastRange />);
 
-    const big = await screen.findByRole('button', { name: new RegExp(BIG.date) });
-    const quiet = await screen.findByRole('button', { name: new RegExp(QUIET.date) });
-    expect(big.className).toContain('rank-leading');
-    expect(quiet.className).toContain('rank-ordinary');
+    expect(await screen.findByTestId('day-bar-2026-02-13')).toHaveStyle({ width: '100%' });
+    expect(screen.getByTestId('day-bar-2026-02-12')).toHaveStyle({ width: '50%' });
   });
 
   it('names every summarised figure for a screen reader', async () => {
@@ -887,6 +885,31 @@ describe('the forecast range', () => {
     expect(days).toHaveLength(forecast.days.length);
   });
 
+  it('renders as many rows as the response has days, whether eight or sixteen', async () => {
+    // Nothing in the code chooses a count. `open_meteo.py` asks for sixteen days and the page
+    // renders whatever the merged marine and weather forecasts actually cover — about eleven
+    // today, eight if the provider shortens its horizon. A layout that assumes a count is a
+    // layout that breaks silently, which is this project's characteristic failure mode, so
+    // both ends of the range are rendered rather than the one this week happens to send.
+    for (const count of [8, 16]) {
+      serveDays(
+        Array.from({ length: count }, (_, index) =>
+          dayFrom(`2026-02-${String(12 + index).padStart(2, '0')}`, 2 + (index % 5), 9, 250),
+        ),
+      );
+      cleanup();
+
+      render(<ForecastRange />);
+
+      await screen.findByRole('heading', { name: `The next ${count} days` });
+      expect(screen.getAllByTestId(/^day-label-/)).toHaveLength(count);
+      // Every row complete, not merely present: a count is satisfied by sixteen empty boxes.
+      expect(screen.getAllByTestId(/^day-peak-/)).toHaveLength(count);
+      expect(screen.getAllByTestId(/^day-bar-/)).toHaveLength(count);
+      expect(screen.getAllByTestId(/^call-/)).toHaveLength(count);
+    }
+  });
+
   it('shows a quiet day rather than hiding it', async () => {
     // Omitting flat days would leave gaps a reader cannot tell from missing data, and
     // "nothing is coming" is a real answer to "when should I go".
@@ -963,7 +986,7 @@ describe('the forecast range', () => {
   it('prints the degrees beside every bearing, not only the sector name', async () => {
     // #106. `compassPoint` has documented itself since it was written as "shown alongside the
     // number rather than instead of it … a surfer checking the swell direction should not have
-    // to trust our rounding" — and the forecast rendered the name alone on the day card and in
+    // to trust our rounding" — and the forecast rendered the name alone on the day row and in
     // both direction columns here.
     render(<ForecastRange />);
 
@@ -1004,7 +1027,7 @@ describe('the forecast range', () => {
     expect(next.textContent).not.toEqual(previous.textContent);
   });
 
-  it('gives the day card the peak swell direction in degrees as well as its sector', async () => {
+  it('gives the day row the peak swell direction in degrees as well as its sector', async () => {
     // The same fix on the summary above the table, where the figure is what a reader compares
     // one day against another on. `aria-label` carries it too, since that overrides the card's
     // content for exactly the readers who cannot go looking for the number elsewhere (#25).
@@ -1136,6 +1159,121 @@ describe('the forecast range', () => {
     render(<ForecastRange />);
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/forecast/i);
+  });
+});
+
+describe('where the measured archive ends', () => {
+  /** The same day, with the flag that says its width was extrapolated rather than measured. */
+  const beyondArchive = (day: (typeof forecast)['days'][number]) => ({
+    ...day,
+    call: { ...day.call!, uncertainty_measured: false },
+  });
+
+  /** Four days across the boundary: two the archive covers, two past it. */
+  const across = (): (typeof forecast)['days'] => [
+    dayFrom('2026-02-12', 2.0, 9, 250, 'none', 1),
+    dayFrom('2026-02-13', 2.4, 9, 250, 'none', 7),
+    beyondArchive(dayFrom('2026-02-14', 2.2, 9, 250, 'none', 8)),
+    beyondArchive(dayFrom('2026-02-15', 2.6, 9, 250, 'none', 9)),
+  ];
+
+  it('gathers the days past it under a heading of their own', async () => {
+    // Past the archive the plausible range is extrapolated rather than measured, and the
+    // design uses the boundary rather than hiding it: trimming the list to a round number
+    // would drop a day somebody could still book a flight for, to make the arithmetic neat.
+    const days = across();
+    serveDays(days);
+
+    render(<ForecastRange />);
+
+    const beyond = await screen.findByRole('group', { name: /beyond the measured archive/i });
+    expect(within(beyond).getByTestId(`day-label-${days[2]!.date}`)).toBeInTheDocument();
+    expect(within(beyond).getByTestId(`day-label-${days[3]!.date}`)).toBeInTheDocument();
+    // And the measured days are not swept in with them. A group containing everything would
+    // satisfy the assertions above and say the opposite of what the heading promises.
+    expect(within(beyond).queryByTestId(`day-label-${days[0]!.date}`)).not.toBeInTheDocument();
+    expect(within(beyond).queryByTestId(`day-label-${days[1]!.date}`)).not.toBeInTheDocument();
+  });
+
+  it('reads the boundary off each day rather than counting to seven', async () => {
+    // The archive grows every season. A page holding a copy of how deep it currently is goes
+    // on drawing the divider in last season's place, and nothing fails when it does.
+    const days = [
+      dayFrom('2026-02-12', 2.0, 9, 250, 'none', 1),
+      beyondArchive(dayFrom('2026-02-13', 2.4, 9, 250, 'none', 2)),
+      beyondArchive(dayFrom('2026-02-14', 2.2, 9, 250, 'none', 3)),
+    ];
+    serveDays(days);
+
+    render(<ForecastRange />);
+
+    const beyond = await screen.findByRole('group', { name: /beyond the measured archive/i });
+    // A two-day archive, which no count to seven can produce.
+    expect(within(beyond).getByTestId(`day-label-${days[1]!.date}`)).toBeInTheDocument();
+    expect(within(beyond).queryByTestId(`day-label-${days[0]!.date}`)).not.toBeInTheDocument();
+  });
+
+  it('draws no divider at all when every day the forecast covers was measured', async () => {
+    // Eleven measured days out of a sixteen-day request is a real response, and a heading
+    // over an empty list would announce a limit that does not apply.
+    serveDays(
+      Array.from({ length: 11 }, (_, index) =>
+        dayFrom(`2026-02-${String(12 + index).padStart(2, '0')}`, 2, 9, 250, 'none', index),
+      ),
+    );
+
+    render(<ForecastRange />);
+
+    await screen.findByRole('heading', { name: 'The next 11 days' });
+    expect(
+      screen.queryByRole('group', { name: /beyond the measured archive/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('keeps a day whose call predates the flag above the divider, not below it', async () => {
+    // Null is "this call was issued before the backend measured any of this", not "this day
+    // is past the archive". Reading it as beyond would file a day the archive may well cover
+    // under a heading saying it does not.
+    const days = across();
+    days[1] = { ...days[1]!, call: { ...days[1]!.call!, uncertainty_measured: null } };
+    serveDays(days);
+
+    render(<ForecastRange />);
+
+    const beyond = await screen.findByRole('group', { name: /beyond the measured archive/i });
+    expect(within(beyond).queryByTestId(`day-label-${days[1]!.date}`)).not.toBeInTheDocument();
+  });
+
+  it('keeps a day past the boundary below it even when that day claims nothing', async () => {
+    // The other side of the case above, and the one that says the boundary is a position rather
+    // than a per-day filter. A day whose call predates the flag says nothing about the archive —
+    // so the day before it, which has just said the archive does not reach that far, is the
+    // better evidence. Lifting it back above the divider on the strength of its own silence
+    // would claim a measurement reaches a lead time the row above it denies.
+    const days = across();
+    days[3] = { ...days[3]!, call: { ...days[3]!.call!, uncertainty_measured: null } };
+    serveDays(days);
+
+    render(<ForecastRange />);
+
+    const beyond = await screen.findByRole('group', { name: /beyond the measured archive/i });
+    expect(within(beyond).getByTestId(`day-label-${days[3]!.date}`)).toBeInTheDocument();
+  });
+
+  it('keeps a day carrying no call at all on the side its date puts it', async () => {
+    // A gap in the call record is not a verdict about the archive either, and it arrives as an
+    // absent call rather than an absent flag — the branch `day.call?.uncertainty_measured` has
+    // to survive.
+    const days = across();
+    days[0] = { ...days[0]!, call: null };
+    days[3] = { ...days[3]!, call: null };
+    serveDays(days);
+
+    render(<ForecastRange />);
+
+    const beyond = await screen.findByRole('group', { name: /beyond the measured archive/i });
+    expect(within(beyond).getByTestId(`day-label-${days[3]!.date}`)).toBeInTheDocument();
+    expect(within(beyond).queryByTestId(`day-label-${days[0]!.date}`)).not.toBeInTheDocument();
   });
 });
 
@@ -1612,7 +1750,7 @@ describe('the earliest date worth acting on', () => {
   });
 
   it('sits above the range it summarises', async () => {
-    // Story 28: the answer should not need navigating to. Below fourteen day cards it is not
+    // Story 28: the answer should not need navigating to. Below fourteen day rows it is not
     // an answer, it is a footnote to the scan it exists to replace.
     const statement = await statementFor([
       dayFrom('2026-02-12', 1.2, 7, 300, 'none', 3),

@@ -22,11 +22,11 @@
  *
  * **A mutated fixture is deliberately incoherent, and that is the mechanism rather than a
  * lapse.** The *baseline* is a response the backend could produce, and has to be. What is
- * mutated off it is one field, alone: hours whose swell no longer matches the day card derived
+ * mutated off it is one field, alone: hours whose swell no longer matches the day row derived
  * from them, a Lead Time that no longer agrees with the stamp beside it, an hour dated past the
  * day `days.py` grouped it under. Propagating a change into the fields that echo it is
  * precisely what would make this file pass for the wrong reason — the page would differ
- * because the *day card* moved, and the hour would go on being unread. So the plausibility bar
+ * because the *day row* moved, and the hour would go on being unread. So the plausibility bar
  * here is on the baseline and on the shape of each value, never on agreement between fields.
  *
  * **The registries are exhaustive by type, not by diligence.** `Registry<T>` maps over every
@@ -601,7 +601,7 @@ describe('DayCall', () => {
     },
     go_call_withheld: {
       read: true,
-      note: 'the marker on the day card, and the same fact spelled out in its aria-label',
+      note: 'the marker on the day row, and the same fact spelled out in its aria-label',
       // Nothing withheld, which drops the marker back to whatever the Model Spread says — here,
       // nothing at all. Null would render the same page and prove less: this asks for the flag
       // to be read as a fact rather than merely for its presence.
@@ -629,7 +629,7 @@ describe('DayCall', () => {
     },
     uncertainty_measured: {
       read: true,
-      note: 'the alert saying the width out here is extrapolated rather than measured',
+      note: 'the divider the day list draws, and the alert saying the width out here is extrapolated',
       // False specifically, and not null. The alert turns on `=== false`, so a call issued
       // before the flag existed renders exactly as a measured one — mutating to null would
       // certify a rendered field as unread, which is the branch problem this block is about.
@@ -1136,7 +1136,7 @@ describe('DaySpread', () => {
     },
     degraded: {
       read: true,
-      note: 'the alert under the paragraph, and the marker the day card carries',
+      note: 'the alert under the paragraph, and the marker the day row carries',
       // Not degraded, which takes the alert away. It stops agreeing with the two names beside
       // it — the backend derives one from the other — and that is the usual cost of moving one
       // field of a pair.

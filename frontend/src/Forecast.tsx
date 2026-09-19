@@ -40,20 +40,6 @@ const CALL_MEANINGS: Record<CallStatus | typeof UNJUDGED, string> = {
   [UNJUDGED]: 'No pipeline run has assessed this day. Its hours below are still real.',
 };
 
-/** How a day compares with the rest of the range on screen.
- *
- * Relative, not absolute. An earlier version used fixed thresholds lifted from the surf
- * community's rule of thumb — which reimplemented ADR 0006's Heuristic Baseline in the
- * presentation layer, on swell height rather than the Significant Wave Height the
- * baseline is actually defined on, in a layer ADR 0005 says only reads. It also did
- * nothing useful: every day of a real summer week fell in the same bucket, so nine
- * tiles looked identical.
- *
- * Comparing each day with the largest day shown needs no domain knowledge and always
- * distinguishes the standout day, whether the week peaks at 1.2m or at 12m.
- */
-export type Prominence = 'leading' | 'notable' | 'ordinary';
-
 /**
  * A direction as its own number and the sector that number falls in.
  *
@@ -67,7 +53,7 @@ export type Prominence = 'leading' | 'notable' | 'ordinary';
  * `format.ts` has said since it was written that the name is "shown alongside the number rather
  * than instead of it: a reader should not need to know that 298° is west-north-west, and a surfer
  * checking the swell direction should not have to trust our rounding." The current panel and the
- * Model Spread arcs did that; the day card and both direction columns of this table rendered the
+ * Model Spread arcs did that; the day row and both direction columns of this table rendered the
  * name *instead of* the number, so one module stated a principle its main consumer declined.
  *
  * One component rather than the same three lines in three places, so the rule stays uniform — a
@@ -83,19 +69,33 @@ function Bearing({ reading }: { reading: Reading }) {
   );
 }
 
-function prominence(value: number, largest: number): Prominence {
-  if (largest <= 0) return 'ordinary';
-  const share = value / largest;
-  if (share >= 0.95) return 'leading';
-  if (share >= 0.6) return 'notable';
-  return 'ordinary';
+/** How much of a day row's comparison bar is filled, as a percentage.
+ *
+ * Measured against the largest day on screen rather than an absolute scale. The absolute
+ * version of this was three buckets with thresholds lifted from the surf community's rule of
+ * thumb — which reimplemented ADR 0006's Heuristic Baseline in the presentation layer, on swell
+ * height rather than the Significant Wave Height the baseline is actually defined on, in a layer
+ * ADR 0005 says only reads. It also did nothing useful: every day of a real summer week landed in
+ * the same bucket, so every row looked the same.
+ *
+ * Comparing each day with the largest day shown needs no domain knowledge and always
+ * distinguishes the standout day, whether the week peaks at 1.2m or at 12m. The bar carries that
+ * comparison continuously, so it says which of two ordinary days is the bigger one — which the
+ * buckets it replaced could not.
+ *
+ * Rounded to a tenth of a percent: the difference between two days is what this shows, and no
+ * bar is wide enough for the digits past that to be a difference anyone can see.
+ */
+function percentOfLargest(value: number, largest: number): number {
+  if (largest <= 0) return 0;
+  return Number(((value / largest) * 100).toFixed(1));
 }
 
 /** The day, as a weekday and date a reader can place without doing arithmetic.
  *
  * Built from the date's own parts as a *local* calendar day, not from an instant. Anchoring
  * at `T12:00:00Z` and converting was correct for most of the world and wrong past UTC+12: a
- * reader in Auckland saw noon UTC land at 01:00 the following day, so the card, its
+ * reader in Auckland saw noon UTC land at 01:00 the following day, so the row, its
  * `aria-label` and the hourly table caption named three-quarters of a different date than
  * the one the backend had grouped (#25).
  *
@@ -126,12 +126,12 @@ function dayLabel(date: string): string {
   return parsed.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
-/** What a day card says about the agreement behind it, or null when there is nothing to flag.
+/** What a day row says about the agreement behind it, or null when there is nothing to flag.
  *
  * **A marker, never a measurement.** The panel below carries the range, the contributing
- * organisations and the hour they belong to; none of that can come up here. A width on a card
+ * organisations and the hour they belong to; none of that can come up here. A width on a row
  * needs a narrow/wide threshold nobody has calibrated, and printing the range itself would put
- * a *median-hour* pair beside the card's *peak-hour* height — two numbers a reader would
+ * a *median-hour* pair beside the row's *peak-hour* height — two numbers a reader would
  * reasonably expect to match, which never will.
  *
  * What does belong here is the thing a reader who never clicks would otherwise miss: that the
@@ -144,7 +144,7 @@ function dayLabel(date: string): string {
  * about a measurement that was never attempted.
  *
  * A **refused Go Call outranks both**, because it is the only one of these that changed what
- * the card says. Read from `go_call_withheld` rather than from `model_agreement`, which cannot
+ * the row says. Read from `go_call_withheld` rather than from `model_agreement`, which cannot
  * carry it — `DayCall` in `api.ts` says why.
  */
 function agreementFlag(day: ForecastDay): string | null {
@@ -161,9 +161,9 @@ function agreementFlag(day: ForecastDay): string | null {
   return height.degraded ? 'partly checked' : null;
 }
 
-/** The same fact spelled out, for the label a screen reader hears instead of the card.
+/** The same fact spelled out, for the label a screen reader hears instead of the row.
  *
- * `aria-label` overrides the card's content, so a marker that lived only in the markup would
+ * `aria-label` overrides the row's content, so a marker that lived only in the markup would
  * be silently dropped for exactly the readers least able to go looking for the panel (#25). */
 const FLAG_MEANINGS: Record<string, string> = {
   unchecked: 'no second opinion — nothing was available to check this day against',
@@ -171,7 +171,21 @@ const FLAG_MEANINGS: Record<string, string> = {
   'models divided': 'the forecasters have not settled on this day, so no Go Call was issued',
 };
 
-function DaySummary({
+/**
+ * One day of the range, as a row (#117).
+ *
+ * **Four things, in one line, at any count.** The date, the height, how the height compares with
+ * the rest of the range, and the call. A grid cell fitted two of them and wrapped the rest, which
+ * is what made a week take three rows of cards; a row fits all four and stays one line, so the
+ * column's height is the number of days times a constant rather than something that has to be
+ * measured after the response arrives.
+ *
+ * Period and direction ride along in the middle, small. They are not among the four, and the
+ * design's row does without them — but an 8m short-period sea and an 8m groundswell are entirely
+ * different days, and the difference is the whole reason someone would get on a plane. They cost
+ * no height here, because the row is as tall as its tallest cell and they are not it.
+ */
+function DayRow({
   day,
   largest,
   selected,
@@ -183,20 +197,21 @@ function DaySummary({
   onSelect: () => void;
 }) {
   const flag = agreementFlag(day);
+  const status = day.call?.status ?? UNJUDGED;
 
   return (
     <button
       type="button"
-      className={`day rank-${prominence(day.peak_swell_height.value, largest)}${selected ? ' selected' : ''}`}
+      className={`day day-${status}${selected ? ' selected' : ''}`}
       aria-pressed={selected}
       // The label carries every summarised figure. An earlier version named only the
-      // height, which overrode the card's content for screen readers and lost the
+      // height, which overrode the row's content for screen readers and lost the
       // period and direction entirely — the two values that separate a groundswell
       // worth travelling for from a big messy sea.
       //
-      // Every figure goes through `formatReading`, the same function the visible card uses.
+      // Every figure goes through `formatReading`, the same function the visible row uses.
       // Reading the raw values here meant a source carrying more than two decimals was
-      // announced as "4.23456m" while the card showed "4.23" — and because aria-label
+      // announced as "4.23456m" while the row showed "4.23" — and because aria-label
       // overrides the content, that reader had no way to reach the shorter one (#25).
       // Sharing the function is what stops the two drifting again.
       aria-label={
@@ -212,12 +227,6 @@ function DaySummary({
       <span className="day-date" data-testid={`day-label-${day.date}`}>
         {dayLabel(day.date)}
       </span>
-      <span
-        className={`call call-${day.call?.status ?? UNJUDGED}`}
-        data-testid={`call-${day.date}`}
-      >
-        {CALL_LABELS[day.call?.status ?? UNJUDGED]}
-      </span>
       <span className="day-swell" data-testid={`day-peak-${day.date}`}>
         <span className="value">{formatValue(day.peak_swell_height.value)}</span>
         <span className="unit">{day.peak_swell_height.unit}</span>
@@ -230,12 +239,112 @@ function DaySummary({
         <span className="unit">{day.swell_period_at_peak.unit}</span>
         <Bearing reading={day.swell_direction_at_peak} />
       </span>
+      {/* How this day compares with the largest day on screen, which is the one thing a list
+          of sixteen numbers does not give a reader at a glance. Relative to the range shown
+          rather than to a fixed scale, so it distinguishes the standout day whether the week
+          peaks at 1.2m or at 12m.
+
+          **In the neutrals.** A bar drawn in the status colours would make "biggest day this
+          week" and "book a flight" the same signal, on a page whose entire purpose is the
+          difference between them — the rule `ink.test.ts` holds the sheet to.
+
+          Hidden from the accessible tree because it states nothing the label does not: the
+          heights are all in it, and a screen reader comparing two of them does not need a
+          picture of the comparison. */}
+      <span className="track" aria-hidden="true">
+        <span
+          className="fill"
+          data-testid={`day-bar-${day.date}`}
+          style={{ width: `${percentOfLargest(day.peak_swell_height.value, largest)}%` }}
+        />
+      </span>
       {flag && (
         <span className="day-agreement" data-testid={`day-agreement-${day.date}`}>
           {flag}
         </span>
       )}
+      <span className={`call call-${status}`} data-testid={`call-${day.date}`}>
+        {CALL_LABELS[status]}
+      </span>
     </button>
+  );
+}
+
+/**
+ * Where the measured forecast-error archive stops covering this forecast, as an index into its
+ * days — or null when it covers every day the forecast has.
+ *
+ * **Read off each day's own flag, never by counting to seven.** The archive is seven days deep
+ * today and grows every season, so a page holding a copy of that number goes on drawing the
+ * boundary in last season's place, and nothing fails when it does.
+ *
+ * A *boundary* rather than a per-day filter, because the days arrive in date order and the
+ * archive covers a prefix of them: the first day the backend marks extrapolated is where its
+ * record ran out, and every later day is further out still.
+ *
+ * **So a day's own flag is not the last word on which side it lands** — its position is, and that
+ * is deliberate. Two days say nothing about the archive: one carrying no call at all, and one
+ * whose call was issued before the flag existed. Filtering on the flag alone would lift either of
+ * them back above a divider they sit below by date, claiming a measurement reaches a lead time
+ * the day before it has just said it does not. A prefix cannot do that. What it costs is that
+ * such a day below the line is described by a heading nobody measured it against — the quieter
+ * of the two errors, because it is the cautious one.
+ */
+function archiveBoundary(days: ForecastDay[]): number | null {
+  const first = days.findIndex((day) => day.call?.uncertainty_measured === false);
+  return first === -1 ? null : first;
+}
+
+/**
+ * Every day the forecast covers, one per row, split where the measured archive ends.
+ *
+ * The split is drawn rather than hidden. Trimming the list back to the days the archive covers
+ * was the alternative, and it would have dropped a day somebody could still book a flight for
+ * in order to make the arithmetic neat.
+ */
+function DayList({
+  days,
+  largest,
+  openDate,
+  onSelect,
+}: {
+  days: ForecastDay[];
+  largest: number;
+  openDate: string | null;
+  onSelect: (date: string) => void;
+}) {
+  const boundary = archiveBoundary(days);
+  const measured = boundary === null ? days : days.slice(0, boundary);
+  const beyond = boundary === null ? [] : days.slice(boundary);
+
+  const row = (day: ForecastDay) => (
+    <DayRow
+      key={day.date}
+      day={day}
+      largest={largest}
+      selected={day.date === openDate}
+      onSelect={() => onSelect(day.date)}
+    />
+  );
+
+  return (
+    <>
+      <div className="days">{measured.map(row)}</div>
+      {beyond.length > 0 && (
+        <>
+          {/* The heading and the reason in one element, so the group below cannot end up
+              labelled by a boundary it no longer describes. What it says is the whole of why
+              these days are dimmer: out here the plausible range is a line continued past
+              everything that was ever measured about it. */}
+          <p className="days-divider" id="beyond-the-archive">
+            Beyond the measured archive — the plausible range out here is extrapolated, not measured
+          </p>
+          <div className="days beyond" role="group" aria-labelledby="beyond-the-archive">
+            {beyond.map(row)}
+          </div>
+        </>
+      )}
+    </>
   );
 }
 
@@ -715,7 +824,7 @@ function spreadRange(spread: DaySpread): string {
  * typographic stroke, which is the overclaim this project keeps having to undo.
  *
  * The numbers are the day's *middle* hour, and the copy says so. They are not the peak hour
- * the card above summarises, so presenting them without that word would leave two swell
+ * the row above summarises, so presenting them without that word would leave two swell
  * heights on screen that a reader would reasonably expect to match and which never will. */
 function Agreement({ day }: { day: ForecastDay }) {
   const height = day.model_spread?.swell_height;
@@ -928,7 +1037,7 @@ function isCalled(day: ForecastDay): boolean {
  * failure this guards against is somebody booking five nights against a three-night event, so
  * where the two readings differ this takes the shorter one.
  *
- * **A window of one is not a window.** A single called day is already a card in the range, and
+ * **A window of one is not a window.** A single called day is already a row in the range, and
  * announcing it as a swell spanning one day is a sentence about nothing.
  *
  * **It invents no status.** The days inside keep their own calls, which is why this returns the
@@ -969,7 +1078,7 @@ function swellWindows(days: ForecastDay[]): SwellWindow[] {
     const previous = run.at(-1);
     const here = dayNumber(day.date);
     const before = previous ? dayNumber(previous.date) : null;
-    // A date this cannot place is not adjacent to anything. It still renders as its own card
+    // A date this cannot place is not adjacent to anything. It still renders as its own row
     // below; it simply cannot be grouped, which is the safe direction.
     if (here === null) {
       close();
@@ -1083,7 +1192,7 @@ function WindowSpan({ window }: { window: SwellWindow }) {
  * The one sentence a Traveller came for: is there anything worth booking, and when.
  *
  * Story 23 of #1, which the range delivered only in the sense that a reader could assemble
- * the answer themselves by scanning fourteen dated cards. Story 28 asks for the current
+ * the answer themselves by scanning fourteen dated rows. Story 28 asks for the current
  * status without navigating, and a scan is navigation.
  *
  * **The earliest, not the largest.** The largest day is where the eye lands in the range
@@ -1207,17 +1316,12 @@ export function ForecastRange() {
 
       <SwellWindows days={state.forecast.days} />
 
-      <div className="days">
-        {state.forecast.days.map((day) => (
-          <DaySummary
-            key={day.date}
-            day={day}
-            largest={largest}
-            selected={day.date === openDate}
-            onSelect={() => setOpenDate(day.date === openDate ? null : day.date)}
-          />
-        ))}
-      </div>
+      <DayList
+        days={state.forecast.days}
+        largest={largest}
+        openDate={openDate}
+        onSelect={(date) => setOpenDate(date === openDate ? null : date)}
+      />
 
       {open ? (
         <>

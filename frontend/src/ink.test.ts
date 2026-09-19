@@ -115,16 +115,31 @@ describe('the three colour systems stay apart', () => {
     }
   });
 
-  it('keeps status colour off rank, selection and model performance', () => {
-    // A day's rank is how it compares with the week on screen; a Go Call is a judgement about
-    // travelling. The two sharing a colour is the confusion this page exists to prevent.
+  it('keeps status colour off the comparison bars, selection and model performance', () => {
+    // How one height compares with the tallest beside it is not a judgement about travelling.
+    // The two sharing a colour is the confusion this page exists to prevent.
+    //
+    // **`.track` and `.fill` are named here because they replaced what was.** This arm used to
+    // read `^\.day\.rank-`, for the three classes that ranked a day against its week. #117 drew
+    // that comparison as a bar instead and deleted them — and because four other selectors still
+    // matched, the arm went on passing while guarding nothing. A rule that was a test would have
+    // become a comment in `App.css` asking to be kept by hand.
     const notStatus = rules(APP).filter((rule) =>
-      /^\.day\.rank-|^\.day\.day\.selected$|^\.better$|^\.worse$|^:focus-visible$/.test(
+      /^\.track$|^\.fill$|^\.day\.day\.selected$|^\.better$|^\.worse$|^:focus-visible$/.test(
         rule.selector,
       ),
     );
 
-    expect(notStatus.length).toBeGreaterThan(0);
+    // Every one of them, by name. `toBeGreaterThan(0)` is what let the rank arm empty out
+    // unnoticed, because the other selectors kept the count above zero on their own.
+    expect(notStatus.map((rule) => rule.selector).sort()).toEqual([
+      '.better',
+      '.day.day.selected',
+      '.fill',
+      '.track',
+      '.worse',
+      ':focus-visible',
+    ]);
     for (const rule of notStatus) {
       expect(rule.body).not.toMatch(/var\(--ink-(go|watch)(-dim)?\)/);
     }
