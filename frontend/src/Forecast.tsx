@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 import {
   fetchForecast,
@@ -1368,7 +1368,21 @@ function Verdict({ days }: { days: ForecastDay[] }) {
   );
 }
 
-export function ForecastRange() {
+/**
+ * The forecast section: the verdict, the windows, the days, and what a selected day opens into.
+ *
+ * **`tiles` is a slot, and it exists because the page interleaves two fetches.** The spec's
+ * order down the left column is verdict, then the four condition tiles, then the day list — and
+ * the verdict and the day list come from `/api/conditions/forecast` while the tiles come from
+ * `/api/conditions/current`. Something has to sit between two things this component owns.
+ *
+ * A slot rather than lifting the fetch into `Home`: this component is rendered bare, as
+ * `<ForecastRange />`, at around forty places across three suites, with msw at the network
+ * boundary. That is the seam this repo tests at, and turning it into a presentational component
+ * fed fixtures directly would trade a tested boundary for a prop. The slot is optional, so every
+ * one of those call sites still renders what it always did.
+ */
+export function ForecastRange({ tiles }: { tiles?: ReactNode }) {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const [openDate, setOpenDate] = useState<string | null>(null);
 
@@ -1382,73 +1396,108 @@ export function ForecastRange() {
     };
   }, []);
 
-  if (state.status === 'loading') {
-    return <p>Loading forecast...</p>;
-  }
+  // The slot renders in every state, including the two where this component has no forecast.
+  // The tiles are current conditions and come from a different request: a forecast that is slow,
+  // or a forecast endpoint that is down, must not take the sea's present state off the page with
+  // it. ADR 0005's promise is that the site stays up and honest when a provider is unreachable,
+  // and a page that answered "could not load the forecast" while silently also dropping ten
+  // readings it *had* would be neither.
+  const forecast = state.status === 'loaded' ? state.forecast : null;
+  const open = forecast?.days.find((day) => day.date === openDate) ?? null;
+  const largest = forecast
+    ? Math.max(...forecast.days.map((day) => day.peak_swell_height.value))
+    : 0;
 
-  if (state.status === 'failed') {
-    return (
-      <p role="alert" className="alert">
-        Could not load the forecast. The service may be unavailable, or no pipeline run has stored
-        one yet.
-      </p>
-    );
-  }
-
-  const open = state.forecast.days.find((day) => day.date === openDate) ?? null;
-  const largest = Math.max(...state.forecast.days.map((day) => day.peak_swell_height.value));
-
+  /*
+   * One tree in every state, rather than an early return per state.
+   *
+   * **`tiles` has to keep the same position in the tree across all three.** It is the four
+   * condition tiles, which come from a different request than everything else here, and when it
+   * was rendered from three separate `return`s React tore the subtree down and rebuilt it the
+   * moment the forecast landed. Nothing looked wrong in a screenshot; what it cost was that the
+   * tiles a reader was already looking at were replaced by identical new ones, and any handle on
+   * them — a test's, a screen reader's cursor — pointed at detached nodes.
+   *
+   * **It renders even when this component has no forecast at all.** ADR 0005's promise is that
+   * the site stays up and honest when a provider is unreachable. A forecast endpoint that is
+   * slow or down must not take the sea's present state off the page with it, and a page saying
+   * "could not load the forecast" while silently also dropping ten readings it *had* would be
+   * neither up nor honest.
+   */
   return (
-    <section aria-labelledby="forecast-heading">
-      <h2 id="forecast-heading">The next {state.forecast.days.length} days</h2>
+    <section
+      className="forecast"
+      aria-labelledby={forecast ? 'forecast-heading' : undefined}
+      aria-label={forecast ? undefined : 'Forecast'}
+    >
+      {state.status === 'loading' && <p>Loading forecast...</p>}
 
-      {/* First, and above the windows: a reader who takes one sentence from this page should
-          take this one. The windows below give it its shape and the range below that gives
-          every day its own verdict, in that order of how much reading each costs. */}
-      <Verdict days={state.forecast.days} />
+      {state.status === 'failed' && (
+        <p role="alert" className="alert">
+          Could not load the forecast. The service may be unavailable, or no pipeline run has stored
+          one yet.
+        </p>
+      )}
 
-      <SwellWindows days={state.forecast.days} />
-
-      <DayList
-        days={state.forecast.days}
-        largest={largest}
-        openDate={openDate}
-        onSelect={(date) => setOpenDate(date === openDate ? null : date)}
-      />
-
-      {open ? (
+      {forecast && (
         <>
-          <CallDetail day={open} model={state.forecast.amplification_model} />
-          <Agreement day={open} />
-          <HourTable day={open} />
+          <h2 id="forecast-heading">The next {forecast.days.length} days</h2>
+
+          {/* First, and above the windows: a reader who takes one sentence from this page should
+              take this one. The windows below give it its shape and the range below that gives
+              every day its own verdict, in that order of how much reading each costs. */}
+          <Verdict days={forecast.days} />
         </>
-      ) : (
-        <p className="hint">Select a day to see how it develops hour by hour.</p>
       )}
 
-      {!state.forecast.calibrated && (
-        <p role="status" className="alert">
-          These calls come from the surf community's rule of thumb, not from thresholds fitted to
-          days Nazaré is known to have gone giant. Treat them as a starting point rather than a
-          forecast.
-        </p>
-      )}
+      {tiles}
 
-      {state.forecast.calibrated && state.forecast.calibration && (
-        <p role="status" className="alert">
-          These thresholds were fitted to {state.forecast.calibration.gold_days_total} days Nazaré
-          is known to have gone giant — {state.forecast.calibration.gold_days_fitted} to choose them
-          and {state.forecast.calibration.gold_days_validated} held back to check them. That is a
-          very small number of days: far more giant days are on record, but the swell measurements
-          these calls are written in do not reach back that far. Expect the calls to be roughly
-          right and individually uncertain.
-        </p>
-      )}
+      {forecast && (
+        <>
+          <SwellWindows days={forecast.days} />
 
-      <p className="provenance">
-        Forecast fetched {formatTimestamp(state.forecast.fetched_at)}. The range ends where the
-        provider stops modelling swell, which is sooner than its wind forecast.
-      </p>
+          <DayList
+            days={forecast.days}
+            largest={largest}
+            openDate={openDate}
+            onSelect={(date) => setOpenDate(date === openDate ? null : date)}
+          />
+
+          {open ? (
+            <>
+              <CallDetail day={open} model={forecast.amplification_model} />
+              <Agreement day={open} />
+              <HourTable day={open} />
+            </>
+          ) : (
+            <p className="hint">Select a day to see how it develops hour by hour.</p>
+          )}
+
+          {!forecast.calibrated && (
+            <p role="status" className="alert">
+              These calls come from the surf community's rule of thumb, not from thresholds fitted
+              to days Nazaré is known to have gone giant. Treat them as a starting point rather than
+              a forecast.
+            </p>
+          )}
+
+          {forecast.calibrated && forecast.calibration && (
+            <p role="status" className="alert">
+              These thresholds were fitted to {forecast.calibration.gold_days_total} days Nazaré is
+              known to have gone giant — {forecast.calibration.gold_days_fitted} to choose them and{' '}
+              {forecast.calibration.gold_days_validated} held back to check them. That is a very
+              small number of days: far more giant days are on record, but the swell measurements
+              these calls are written in do not reach back that far. Expect the calls to be roughly
+              right and individually uncertain.
+            </p>
+          )}
+
+          <p className="provenance">
+            Forecast fetched {formatTimestamp(forecast.fetched_at)}. The range ends where the
+            provider stops modelling swell, which is sooner than its wind forecast.
+          </p>
+        </>
+      )}
     </section>
   );
 }

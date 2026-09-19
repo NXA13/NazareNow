@@ -17,7 +17,7 @@
  * content fits.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 import { fetchCurrentConditions, type CurrentConditions, type Reading } from './api';
 import { ForecastRange } from './Forecast';
@@ -29,14 +29,14 @@ type LoadState =
   | { status: 'loaded'; conditions: CurrentConditions }
   | { status: 'failed' };
 
-/**
- * One reading, labelled and carrying its unit.
+/** One companion reading, riding small on the tile whose wave field it belongs to.
  *
- * Rendered as a `group` with an accessible name so the label and its value are bound
- * together — for screen readers, and so tests can assert "the swell height block shows
- * 8.1" rather than "8.1 appears somewhere on the page".
+ * Its own `group` with its own name, like the headline reading above it, so a screen reader
+ * hears "wave period, 11.4 seconds" rather than four bare numbers under one label — and so a
+ * test can assert that the Combined Sea's period is on the Combined Sea's tile rather than
+ * that the figure appears on the page somewhere.
  */
-function ReadingBlock({
+function Companion({
   label,
   reading,
   bearing = false,
@@ -46,7 +46,7 @@ function ReadingBlock({
   bearing?: boolean;
 }) {
   return (
-    <div className="reading" role="group" aria-label={label}>
+    <div className="companion" role="group" aria-label={label}>
       <dt>{label}</dt>
       <dd>
         <span className="value">{formatValue(reading.value)}</span>
@@ -54,6 +54,100 @@ function ReadingBlock({
         {bearing && <span className="bearing">{compassPoint(reading.value)}</span>}
       </dd>
     </div>
+  );
+}
+
+/** One tile: a gated quantity at the size of a headline, and the rest of its wave field small. */
+function Tile({
+  slug,
+  label,
+  reading,
+  bearing = false,
+  children,
+}: {
+  slug: string;
+  label: string;
+  reading: Reading;
+  bearing?: boolean;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="tile" data-testid={`tile-${slug}`}>
+      {/* The gated reading is its own group rather than the tile being one. A tile that was the
+          group would contain its companions' values too, so "the swell period block shows 13.75"
+          would be satisfied by a tile showing 13.75 anywhere inside it. */}
+      <dl className="tile-headline" role="group" aria-label={label}>
+        <dt>{label}</dt>
+        <dd>
+          <span className="value">{formatValue(reading.value)}</span>
+          <span className="unit">{reading.unit}</span>
+          {bearing && <span className="bearing">{compassPoint(reading.value)}</span>}
+        </dd>
+      </dl>
+      {children && <dl className="companions">{children}</dl>}
+    </div>
+  );
+}
+
+/**
+ * The four tiles, and the six readings that are not on them (#116).
+ *
+ * `/api/conditions/current` sends ten readings and the design shows four tiles. **The four are
+ * not an arbitrary selection: they are exactly the quantities a Go Call is gated on**, which is
+ * the rule that makes the row legible rather than decorative — the tile row is what the call is
+ * decided on, at the size of a headline.
+ *
+ * **The other six are not dropped.** Each tile carries the rest of its own wave field, small,
+ * and the two temperatures gate nothing so they take one quiet line underneath. They were nearly
+ * declared unread, and were not, because the pipeline would then go on fetching and storing two
+ * numbers the site never shows — which is worse than one short line. All sixteen fields of
+ * `CurrentConditions` stay in `every-field-is-read.test.tsx`'s read arm; none was argued onto
+ * the unread list to make this ticket pass.
+ *
+ * **The one placement that carries a claim** is the Swell's own height, which sits under the
+ * swell period rather than beside the Significant Wave Height. CONTEXT.md keeps the two apart:
+ * Swell is only the travelled component and is what the canyon amplifies, while the Combined Sea
+ * — which Significant Wave Height describes — also includes locally raised wind waves. A reader
+ * who takes one for the other has misread the two quantities the domain is most careful about.
+ */
+function ConditionTiles({ conditions }: { conditions: CurrentConditions }) {
+  return (
+    <>
+      <div className="tiles" data-testid="tiles">
+        <Tile
+          slug="significant-wave-height"
+          label="Significant wave height"
+          reading={conditions.significant_wave_height}
+        >
+          {/* This tile *is* the Combined Sea, so the Combined Sea's period and direction ride
+              on it rather than on the Swell's tiles. */}
+          <Companion label="Wave period" reading={conditions.wave_period} />
+          <Companion label="Wave direction" reading={conditions.wave_direction} bearing />
+        </Tile>
+
+        <Tile slug="swell-period" label="Swell period" reading={conditions.swell_period}>
+          <Companion label="Swell height" reading={conditions.swell_height} />
+        </Tile>
+
+        <Tile
+          slug="swell-direction"
+          label="Swell direction"
+          reading={conditions.swell_direction}
+          bearing
+        />
+
+        <Tile slug="wind-speed" label="Wind speed" reading={conditions.wind_speed}>
+          <Companion label="Wind direction" reading={conditions.wind_direction} bearing />
+        </Tile>
+      </div>
+
+      {/* Neither temperature gates anything, so neither gets a tile: a tile is the page saying
+          "the call turns on this", and a sea temperature decides nothing about whether to fly. */}
+      <dl className="temperatures" data-testid="temperatures">
+        <Companion label="Water temperature" reading={conditions.water_temperature} />
+        <Companion label="Air temperature" reading={conditions.air_temperature} />
+      </dl>
+    </>
   );
 }
 
@@ -99,55 +193,7 @@ export function Home() {
               </p>
             )}
 
-            <section aria-labelledby="swell-heading">
-              <h2 id="swell-heading">Swell</h2>
-              <dl className="readings">
-                <ReadingBlock label="Swell height" reading={state.conditions.swell_height} />
-                <ReadingBlock label="Swell period" reading={state.conditions.swell_period} />
-                <ReadingBlock
-                  label="Swell direction"
-                  reading={state.conditions.swell_direction}
-                  bearing
-                />
-              </dl>
-            </section>
-
-            {/* Swell is the travelled component the canyon amplifies; the combined sea also
-              includes locally raised wind waves. CONTEXT.md keeps the two apart. */}
-            <section aria-labelledby="combined-heading">
-              <h2 id="combined-heading">Combined sea</h2>
-              <dl className="readings">
-                <ReadingBlock
-                  label="Significant wave height"
-                  reading={state.conditions.significant_wave_height}
-                />
-                <ReadingBlock label="Wave period" reading={state.conditions.wave_period} />
-                <ReadingBlock
-                  label="Wave direction"
-                  reading={state.conditions.wave_direction}
-                  bearing
-                />
-              </dl>
-            </section>
-
-            <section aria-labelledby="wind-heading">
-              <h2 id="wind-heading">Wind and temperature</h2>
-              <dl className="readings">
-                <ReadingBlock label="Wind speed" reading={state.conditions.wind_speed} />
-                <ReadingBlock
-                  label="Wind direction"
-                  reading={state.conditions.wind_direction}
-                  bearing
-                />
-                <ReadingBlock label="Air temperature" reading={state.conditions.air_temperature} />
-                <ReadingBlock
-                  label="Water temperature"
-                  reading={state.conditions.water_temperature}
-                />
-              </dl>
-            </section>
-
-            <ForecastRange />
+            <ForecastRange tiles={<ConditionTiles conditions={state.conditions} />} />
 
             <footer>
               <p data-testid="freshness">
