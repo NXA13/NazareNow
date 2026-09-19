@@ -302,7 +302,7 @@ test.describe(`narrow widths, at ${NARROW.width}x${NARROW.height}`, () => {
 });
 
 test.describe('how tall the page is, which is the promise not yet kept', () => {
-  test('does not fit yet, and #119 is now the last ticket that can make it', async ({ page }) => {
+  test('does not fit yet, and #116 and #119 are not on their own enough', async ({ page }) => {
     await loadHome(page);
 
     const { height: viewportHeight } = await viewport(page);
@@ -317,11 +317,35 @@ test.describe('how tall the page is, which is the promise not yet kept', () => {
      * cards were 422px; sixteen as rows are 554px including the divider, because the grid fitted
      * seven days across and three down while a row is a row. The rows are the design and they are
      * already at the height the mockup draws them at (about 30px), so the saving the no-scroll
-     * promise needs is not in here — it is in #116, which replaces about 410px of condition tiles
-     * with roughly 200px of verdict and four tiles, and in #119, which moves the windows panel,
-     * the hint, the calibration alert, the provenance and the footer off this page altogether.
-     * Measured at the sixteen days this fixture carries, those two together leave the page around
-     * a viewport, and at the eleven the provider actually sends today, under one.
+     * promise needs is not in here.
+     *
+     * **Where it is, measured in this browser at 1440x900 against this fixture** — measured,
+     * because the projection first written into this docstring was wrong, and so was the one in
+     * PR #127's body:
+     *
+     * ```
+     * page                     1945     viewport 900
+     *   header + nav + padding  238     -> .home has a budget of 662
+     *   .home / .home-forecast 1707
+     *     three reading sections 378    <- #116 replaces these
+     *     forecast section      1042
+     *       .earliest             50    <- #116, which makes it a duplicate of the verdict
+     *       .windows             171    <- #119
+     *       .days                268       (8 rows)
+     *       .days-divider         18
+     *       .days.beyond         268       (8 rows)
+     *       .hint                 22    <- #119
+     *       .alert (calibration)  74    <- #119
+     *       .provenance           48    <- #119
+     *     footer                 107    <- #119
+     * ```
+     *
+     * Projecting #116's verdict and tiles and everything #119 moves against that leaves the page
+     * near 908 at the sixteen days measured here, and near 742 at the eleven the provider
+     * actually sends. **Against a budget of 662, the two tickets do not close it at either
+     * count.** The rest of the gap is in the page chrome that neither ticket names: a 134px
+     * header where the mockup draws about 50, and `h2` carrying `margin: var(--space-7) 0
+     * var(--space-4)`, which makes every gap between sections 32px where the mockup uses 12.
      *
      * **This asserts the shortfall rather than a ceiling on it**, and the difference matters. A
      * ceiling — "under two viewports" — was the first thing written here, and it was measuring
@@ -330,11 +354,12 @@ test.describe('how tall the page is, which is the promise not yet kept', () => {
      * the page must never assume is exactly what the design spec warns against assuming.
      *
      * What is true at any count is that the page does not fit yet, and more days only make it
-     * more true. So that is what is asserted, and it makes the test retire itself: the day #116
-     * or #119 brings the page under a viewport this fails, and whoever is holding it then
+     * more true. So that is what is asserted, and it makes the test retire itself: the day any
+     * ticket brings the page under a viewport this fails, and whoever is holding it then
      * replaces it with `toBeLessThanOrEqual(viewportHeight)` — which is the no-scroll promise,
-     * and the whole of it. A note asking a later ticket to remember is a note nobody reads; a
-     * failing test is not.
+     * and the whole of it. **The promise is made at the count this fixture carries**, not at the
+     * shorter one the provider happens to send today. A note asking a later ticket to remember is
+     * a note nobody reads; a failing test is not.
      */
     expect(height).toBeGreaterThan(viewportHeight);
   });
