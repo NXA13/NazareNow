@@ -8,6 +8,7 @@ import {
   type Forecast,
   type ForecastDay,
   type HeightRange,
+  type ModelAgreement,
   type Reading,
 } from './api';
 import { Figure } from './Figure';
@@ -1188,40 +1189,71 @@ function WindowSpan({ window }: { window: SwellWindow }) {
   );
 }
 
+/** What the wave models said, in a clause a reader can act on.
+ *
+ * Not derivable from anything else on the page, which is why the backend sends it. A day whose
+ * own swell period sits below the Go Call bar has every forecaster below it too, so it reports
+ * `divided` while the models decided nothing — and two Watch days that look identical from
+ * status alone are a swell the forecasters have not settled on and a swell that was never big
+ * enough. The verdict is where a reader decides to spend money, so it is said here rather than
+ * only inside a panel they have to open.
+ *
+ * `null` is said rather than skipped. A call issued before the backend consulted the models at
+ * all is not a call the models agreed with, and silence reads as agreement.
+ */
+function ModelVerdict({ agreement }: { agreement: ModelAgreement | null }) {
+  if (agreement === 'agreed') return <> The independent wave models agree.</>;
+  if (agreement === 'divided') return <> The independent wave models are divided about this day.</>;
+  if (agreement === 'unmeasured') {
+    return <> Whether the wave models are divided could not be measured for this day.</>;
+  }
+  return <> This call was issued before the wave models were consulted.</>;
+}
+
 /**
- * The one sentence a Traveller came for: is there anything worth booking, and when.
+ * The verdict: the one thing on this page a Traveller came for.
  *
- * Story 23 of #1, which the range delivered only in the sense that a reader could assemble
- * the answer themselves by scanning fourteen dated rows. Story 28 asks for the current
- * status without navigating, and a scan is navigation.
+ * Story 23 of #1, rebuilt by #116 as the panel at the top of the left column. It replaces
+ * `EarliestWorthActingOn`, which said the date and the Lead Time and stopped there — most of
+ * what this says, which is why #116 rather than #119 removed it: shipping both would have left
+ * the page telling a reader to book the same day twice, in two voices. Everything below that
+ * is not marked as new came with it, because it was right.
  *
- * **The earliest, not the largest.** The largest day is where the eye lands in the range
- * below and it answers a different question. What makes a date actionable is that its flights
- * are still bookable, which is a fact about how soon it is.
+ * **Five parts, and the last three are #116's.** The date worth booking, the Lead Time the call
+ * was issued at, the predicted Significant Wave Height, the plausible range around it, and
+ * whether the wave models agreed.
  *
- * **A Watch is a fallback, never a substitute.** CONTEXT.md is explicit that a Watch tells a
- * reader to pay attention and a Go Call tells them to spend money, so an earlier Watch must
- * not outrank a Go Call behind it. Both branches say which they are.
+ * **Significant Wave Height, named in full.** *New.* CONTEXT.md lists "wave height" as
+ * ambiguous and "swell height" as a different variable, and this is now the largest figure on
+ * the page. Face Height — the number a reader has seen in news coverage — is several times
+ * this for the same sea and is not convertible to it by any fixed ratio, so a verdict that said
+ * "7.6m waves" would be the exact overclaim this project exists to avoid.
+ *
+ * **The range travels with the prediction, and the caveat travels with the range.** *New.* A
+ * point estimate alone throws away the Predictive Distribution that is the point of the whole
+ * system, and a range presented without saying it prices the height condition alone invites a
+ * reader to take it for the chance of a giant day. The spec's rule is that limits qualifying a
+ * number stay beside that number; here they stay inside the same panel, at the same weight.
  *
  * **Confirmed is not on this ladder.** It is a short-range statement to somebody already
  * travelling and carries no booking recommendation, so it is not something to act on — and
  * #84 settled that the four statuses have no ordering that could promote it. That is why the
  * quiet sentence says *no Go Call and no Watch* rather than "the range is quiet": a Confirmed
- * day in range would make the second one false, and this sentence sits above the range that
- * would contradict it.
+ * day in range would make the second one false, and this sits above the range that would
+ * contradict it.
  *
- * **The date leads and the window follows, which is the arguable half of #86.** The ticket
- * says the earliest thing worth acting on is a window rather than a date, and a window is
- * indeed what somebody books — but only the Go Call day is a recommendation to spend money.
- * A sentence opening "book the three-day swell" would be recommending nights against days
- * that carry a Watch, which is the over-claim #85 took the shorter reading to avoid. So the
- * Go Call is the commitment, the window is the shape around it, and the two compose in that
- * order rather than competing.
+ * **The date leads and the window follows, which is the arguable half of #86.** The ticket says
+ * the earliest thing worth acting on is a window rather than a date, and a window is indeed
+ * what somebody books — but only the Go Call day is a recommendation to spend money. A
+ * sentence opening "book the three-day swell" would be recommending nights against days that
+ * carry a Watch, which is the over-claim #85 took the shorter reading to avoid. So the Go Call
+ * is the commitment, the window is the shape around it, and the two compose in that order
+ * rather than competing.
  *
  * **The Lead Time is `lead_time_days` and is not a countdown.** `DayCall` fixes it when the
- * call is issued rather than recomputing it against the clock, so it is stated as *issued
- * three days ahead* and never as "in three days" — which would be a claim about today that
- * this number does not make.
+ * call is issued rather than recomputing it against the clock, so it is stated as *issued three
+ * days ahead* and never as "in three days" — which would be a claim about today that this
+ * number does not make.
  *
  * **It does not restate staleness.** If the store is old the top of the page already says so
  * (story 10), and this renders below that banner. Nothing but document order holds that; the
@@ -1230,7 +1262,7 @@ function WindowSpan({ window }: { window: SwellWindow }) {
  * **Earliest means first in the range**, which arrives in date order from
  * `/api/conditions/forecast` — the same assumption `swellWindows` rests on.
  */
-function EarliestWorthActingOn({ days }: { days: ForecastDay[] }) {
+function Verdict({ days }: { days: ForecastDay[] }) {
   const first = (status: CallStatus) => days.find((day) => day.call?.status === status) ?? null;
 
   const go = first('go');
@@ -1239,39 +1271,100 @@ function EarliestWorthActingOn({ days }: { days: ForecastDay[] }) {
   // Named for what it is rather than `window`, which would shadow the browser global in a
   // component whose other reads are all of the DOM's.
   const containing = day ? (swellWindows(days).find((w) => w.days.includes(day)) ?? null) : null;
+  const call = day?.call ?? null;
 
   return (
-    <p className="earliest" data-testid="earliest-call">
-      {day === null ? (
+    <section
+      className={`verdict verdict-${call?.status ?? 'none'}`}
+      data-testid="verdict"
+      aria-labelledby="verdict-heading"
+    >
+      {day === null || call === null ? (
         <>
-          <strong>Nothing to book yet.</strong> No day in the next {days.length} days carries a Go
-          Call or a Watch. That is the ordinary state of this coast rather than a gap in the
-          forecast — most weeks of the year say exactly this.
-        </>
-      ) : go ? (
-        <>
-          <strong>
-            Book for{' '}
-            <time dateTime={go.date} data-testid="earliest-date">
-              {dayLabel(go.date)}
-            </time>
-            .
-          </strong>{' '}
-          The earliest Go Call in this range, issued {go.call!.lead_time_days} days ahead.
-          {containing && <WindowSpan window={containing} />}
+          <h2 id="verdict-heading" className="verdict-headline">
+            Nothing to book yet.
+          </h2>
+          {/* An answer, not a warning. Given `role="alert"` it would read as the system failing
+              to forecast rather than the ocean being ordinary, and this is the truthful answer
+              most weeks of the year. */}
+          <p className="verdict-detail">
+            No day in the next {days.length} days carries a Go Call or a Watch. That is the ordinary
+            state of this coast rather than a gap in the forecast — most weeks of the year say
+            exactly this.
+          </p>
         </>
       ) : (
         <>
-          <strong>Nothing to book yet.</strong> The earliest day worth attention is{' '}
-          <time dateTime={day.date} data-testid="earliest-date">
-            {dayLabel(day.date)}
-          </time>
-          , a Watch issued {day.call!.lead_time_days} days ahead. Start watching flights; do not
-          book on it.
-          {containing && <WindowSpan window={containing} />}
+          <p className="verdict-status">
+            {CALL_LABELS[call.status]} Call · issued {call.lead_time_days} days ahead
+          </p>
+
+          <h2 id="verdict-heading" className="verdict-headline">
+            {go ? (
+              <>
+                Book for{' '}
+                <time dateTime={go.date} data-testid="earliest-date">
+                  {dayLabel(go.date)}
+                </time>
+                .
+              </>
+            ) : (
+              <>
+                Nothing to book yet — the earliest day worth attention is{' '}
+                <time dateTime={day.date} data-testid="earliest-date">
+                  {dayLabel(day.date)}
+                </time>
+                .
+              </>
+            )}
+          </h2>
+
+          <p className="verdict-detail">
+            Predicted{' '}
+            <strong>
+              <Figure>{formatReading(call.predicted_significant_wave_height)}</Figure>
+            </strong>{' '}
+            significant wave height
+            {call.plausible_range && (
+              <>
+                , plausibly{' '}
+                <strong>
+                  <Figure>{formatRange(call.plausible_range)}</Figure>
+                </strong>
+              </>
+            )}
+            .
+            <ModelVerdict agreement={call.model_agreement} />
+            {watch && ' Start watching flights; do not book on it.'}
+            {containing && <WindowSpan window={containing} />}
+          </p>
+
+          {/* #66 and ADR 0004. A giant day needs four quantities to hold — height, swell
+              period, swell direction and wind — and the distribution prices one; the other
+              three have no archived forecast error to build a distribution from. Rendered from
+              the same guard as the range above, so the caveat cannot outlive what it caveats,
+              and in the same panel at the same weight rather than below the fold: a redesign is
+              exactly the change that turns a disclaimer into elegant grey fine print. */}
+          {call.plausible_range && (
+            <p className="verdict-scope">
+              Height only — the swell period, swell direction and wind a giant day also needs are
+              not priced in that range.
+            </p>
+          )}
+
+          {/* Past the archive's seven days the width is an extrapolation, and an extrapolation
+              rendered identically to a measurement is the failure the flag exists to prevent.
+              It arrives as a flag rather than being inferred from the Lead Time, because
+              inferring it means keeping a copy here of how deep the archive currently is. */}
+          {call.uncertainty_measured === false && (
+            <p className="verdict-scope">
+              Nothing has been measured about how wrong a forecast this far ahead tends to be, so
+              that range is extrapolated rather than observed.
+            </p>
+          )}
         </>
       )}
-    </p>
+    </section>
   );
 }
 
@@ -1312,7 +1405,7 @@ export function ForecastRange() {
       {/* First, and above the windows: a reader who takes one sentence from this page should
           take this one. The windows below give it its shape and the range below that gives
           every day its own verdict, in that order of how much reading each costs. */}
-      <EarliestWorthActingOn days={state.forecast.days} />
+      <Verdict days={state.forecast.days} />
 
       <SwellWindows days={state.forecast.days} />
 

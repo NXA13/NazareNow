@@ -146,6 +146,43 @@ describe('the three colour systems stay apart', () => {
   });
 });
 
+describe('a limit is never set quieter than the figure it qualifies', () => {
+  /**
+   * #116's acceptance criterion, as a rule rather than a promise: "the modelled-not-measured
+   * provenance and the height-only caveat on the probability are no smaller, dimmer or later
+   * than the figures they qualify".
+   *
+   * This is the project's characteristic failure and it is a styling failure, not a copy one.
+   * The caveat can be present, accurate and well worded, and still be defeated by one step down
+   * the type scale and one step toward the muted tone — which is what a redesign does to a
+   * disclaimer without anyone deciding to. So it is checked in the sheet.
+   *
+   * **Size is not checked here, because it cannot differ.** `.verdict-detail` and
+   * `.verdict-scope` share one rule for `font-size`, so there is no state in which the caveat is
+   * smaller. Splitting that rule is what this test would have to catch, and the arm below
+   * catches it: a `font-size` appearing in `.verdict-scope`'s own body means the two have come
+   * apart, whatever value it was given.
+   */
+  const bodyOf = (selector: string) => {
+    const rule = rules(APP).find((candidate) => candidate.selector === selector);
+    expect(rule, `${selector} is missing from the sheet`).toBeDefined();
+    return rule!.body;
+  };
+
+  it('sets the caveat no dimmer than the figures it sits under', () => {
+    // `--ink-text` is the bright tone the figures in the sentence above are lifted to. The
+    // caveat takes the same one, so it is not the grey fine print the ticket warns about.
+    expect(bodyOf('.verdict-scope')).toContain('var(--ink-text)');
+    expect(bodyOf('.verdict-scope')).not.toContain('var(--ink-muted)');
+  });
+
+  it('keeps the caveat and the prose on one shared size, so neither can shrink alone', () => {
+    expect(bodyOf('.verdict-detail, .verdict-scope')).toMatch(/font-size:\s*var\(--text-/);
+    expect(bodyOf('.verdict-scope')).not.toContain('font-size');
+    expect(bodyOf('.verdict-detail')).not.toContain('font-size');
+  });
+});
+
 describe('every number is set in IBM Plex Mono', () => {
   it('serves digits from the mono face even inside a sentence', () => {
     // The structural half of the criterion: `format.ts` returns strings that land in the middle

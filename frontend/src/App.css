@@ -409,11 +409,97 @@ footer p {
  * is the whole emphasis, which is what a reader scanning for the answer needs — but most weeks
  * this sentence says "nothing to book yet", and a panel saying that every week would train a
  * reader to skip the week it changes. */
-.earliest {
+/*
+ * The verdict (#116): the one panel on this page a Traveller came for.
+ *
+ * A surface in the status colour, which §4 of the spec licenses explicitly — status colour is
+ * a state of the sea, and this is the page's loudest statement about one. It replaces
+ * `.earliest`, which was a paragraph of lead-sized prose saying most of the same thing.
+ */
+.verdict {
   margin: 0 0 var(--space-5);
-  font-size: var(--text-lead);
+  padding: var(--space-5);
+  border: var(--rule) solid var(--ink-border);
+  border-radius: var(--radius);
+  background: var(--ink-panel);
+}
+
+/* The tier and the Lead Time, in the status colour and in mono. Mono by selector rather than
+   through `Figure`, because the whole line is a machine's statement about a date and the number
+   in it is not a figure landing in prose — it is the notice a reader has to act inside. */
+.verdict-status {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-widest);
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+/* The largest type on the page, and an h2 that deliberately does not look like the other h2s —
+   those are quiet uppercase labels above sections, and this is the answer. */
+.verdict-headline {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-figure-lg);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-tight);
+  text-transform: none;
+  color: var(--ink-text);
+}
+
+/*
+ * The figures, and the limits that qualify them, at the same size.
+ *
+ * One rule for both on purpose. #116's acceptance criteria require that the height-only caveat
+ * and the extrapolation caution are "no smaller, dimmer or later than the figures they
+ * qualify", and the surest way to keep a caveat the same size as what it caveats is for the two
+ * to be unable to differ. `ink.test.ts` holds the colour half, which cannot be shared because
+ * the caveat is brighter than the prose around it rather than dimmer.
+ */
+.verdict-detail,
+.verdict-scope {
+  font-size: var(--text-small);
   line-height: var(--leading-body);
   max-width: var(--measure-prose);
+}
+
+.verdict-detail {
+  margin: var(--space-3) 0 0;
+  color: var(--ink-muted);
+}
+
+/* Full text colour, not the muted tone of the prose it follows. A redesign is exactly the
+   change that turns a disclaimer into elegant grey fine print, and this project exists to avoid
+   overclaiming — so the limit is set brighter than the sentence around it, not dimmer. */
+.verdict-scope {
+  margin: var(--space-3) 0 0;
+  color: var(--ink-text);
+}
+
+/* The figures inside the sentence, lifted out of the muted prose. */
+.verdict-detail strong {
+  color: var(--ink-text);
+  font-weight: var(--weight-semibold);
+}
+
+.verdict-go {
+  border-color: var(--ink-go);
+  background: var(--ink-go-dim);
+}
+
+.verdict-go .verdict-status {
+  color: var(--ink-go);
+}
+
+.verdict-watch {
+  border-color: var(--ink-watch);
+  background: var(--ink-watch-dim);
+}
+
+.verdict-watch .verdict-status {
+  color: var(--ink-watch);
 }
 
 /* The multi-day windows, above the range (#85).
