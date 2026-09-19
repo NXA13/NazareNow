@@ -11,6 +11,7 @@ import {
   type TrackRecord,
 } from './api';
 import { Figure } from './Figure';
+import { ADDRESS } from './router';
 
 type LoadState =
   { status: 'loading' } | { status: 'loaded'; record: TrackRecord } | { status: 'failed' };
@@ -494,6 +495,69 @@ function RangeCalibrationSection({ calibration }: { calibration: RangeCalibratio
         offshore — not the height of a wave face, and not convertible to one by any fixed ratio.
       </p>
     </section>
+  );
+}
+
+/**
+ * One line of track record, on the forecast page (#119).
+ *
+ * **This is a debt #113 took on knowingly and #119 repays.** `App.test.tsx` used to assert that
+ * the track record was *on* the page rather than behind a link, and the reasoning was that a
+ * track record nobody navigates to is a limitation nobody reads. v2 moved it to its own page and
+ * left a link in its place, which is a weaker guarantee; the spec's answer is a line of it here,
+ * linking out.
+ *
+ * **What it states, and why those two numbers.** How often a Go Call landed on a day now known
+ * to have gone giant, and how often acting on one would have been wasted. A line carrying only
+ * the first is the flattering half of a pair, and this project exists to avoid that.
+ *
+ * **It names where the counterweight is rather than pretending it has one.** `TierRecord` says
+ * `wasted_upper_bound` and `delivered` must always be rendered together: waste is scored against
+ * ratified giant days, a bar so high that a rule flagging nothing but excellent days still reads
+ * as mostly wasted, and `delivered` is what the sea actually did on those same days. One line
+ * cannot carry both without becoming a paragraph, so this one says the counterweight exists and
+ * where to find it. Silently printing the waste figure alone would be the misreading that rule
+ * was written to prevent.
+ *
+ * **The held-out panel, not the whole record.** It is measured only on seasons the thresholds
+ * never saw, which is the one of the two that answers "would this have helped me".
+ */
+export function TrackRecordLine() {
+  const [state, setState] = useState<LoadState>({ status: 'loading' });
+
+  useEffect(() => {
+    let active = true;
+    fetchTrackRecord()
+      .then((record) => active && setState({ status: 'loaded', record }))
+      .catch(() => active && setState({ status: 'failed' }));
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Silence rather than an error. The calls above this line do not depend on the track record,
+  // and an alert here would read as the forecast having failed. The link still goes out.
+  if (state.status !== 'loaded') {
+    return (
+      <p className="track-record-line" data-testid="track-record-line">
+        <a href={ADDRESS['how-it-works']}>How well these calls have done</a>.
+      </p>
+    );
+  }
+
+  const panel = state.record.held_out;
+  const tier = panel.go_call;
+
+  return (
+    <p className="track-record-line" data-testid="track-record-line">
+      Across <Figure>{panel.big_wave_seasons}</Figure> big-wave seasons the thresholds never saw, a
+      Go Call landed on <Figure>{tier.gold_days_called}</Figure> of the{' '}
+      <Figure>{tier.gold_days_in_panel}</Figure> days now confirmed giant, and at worst{' '}
+      <Figure>{percent(tier.wasted_upper_bound)}</Figure> of Go Calls would have been wasted —
+      measured against ratified days only, so what the sea actually did on them, and the whole
+      record beside it, is on{' '}
+      <a href={ADDRESS['how-it-works']}>the page that explains how this works</a>.
+    </p>
   );
 }
 
