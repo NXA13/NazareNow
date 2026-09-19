@@ -245,10 +245,12 @@ export const forecast: Forecast = {
  * are, which is the only thing this fixture exists to vary.
  *
  * **Except for where the measured archive ends**, which a sixteen-day response cannot avoid
- * having: the forecast-error archive is seven days deep, so a real response this long carries
- * days the backend marks extrapolated, and the page draws a divider and dims them (#117). A
- * fixture with every day measured would hold the layout to a page shorter than the one a reader
- * gets, which is the same mistake as measuring against three days.
+ * having: the archive is measured *through a lead time of seven days*, so eight of these rows are
+ * measured — the first day and the seven after it, which is `beyond = max(0, lead_time_days -
+ * measured_through_lead_days)` in `distribution.py` — and the rest carry the flag that says their
+ * width was extrapolated. The page draws a divider and dims those (#117). A fixture with every
+ * day measured would hold the layout to a page shorter than the one a reader gets, which is the
+ * same mistake as measuring against three days.
  */
 export const longForecast: Forecast = {
   ...forecast,

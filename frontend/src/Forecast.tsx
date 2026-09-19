@@ -86,7 +86,7 @@ function Bearing({ reading }: { reading: Reading }) {
  * Rounded to a tenth of a percent: the difference between two days is what this shows, and no
  * bar is wide enough for the digits past that to be a difference anyone can see.
  */
-function share(value: number, largest: number): number {
+function percentOfLargest(value: number, largest: number): number {
   if (largest <= 0) return 0;
   return Number(((value / largest) * 100).toFixed(1));
 }
@@ -251,11 +251,11 @@ function DayRow({
           Hidden from the accessible tree because it states nothing the label does not: the
           heights are all in it, and a screen reader comparing two of them does not need a
           picture of the comparison. */}
-      <span className="day-bar" aria-hidden="true">
+      <span className="track" aria-hidden="true">
         <span
-          className="day-bar-fill"
+          className="fill"
           data-testid={`day-bar-${day.date}`}
-          style={{ width: `${share(day.peak_swell_height.value, largest)}%` }}
+          style={{ width: `${percentOfLargest(day.peak_swell_height.value, largest)}%` }}
         />
       </span>
       {flag && (
@@ -280,10 +280,15 @@ function DayRow({
  *
  * A *boundary* rather than a per-day filter, because the days arrive in date order and the
  * archive covers a prefix of them: the first day the backend marks extrapolated is where its
- * record ran out, and every later day is further out still. That is also what settles the two
- * days a per-day filter answers badly — one carrying no call at all, and one whose call was
- * issued before the flag existed. Neither says anything about the archive, and both sit where
- * their date puts them rather than being filed under a heading about a measurement nobody made.
+ * record ran out, and every later day is further out still.
+ *
+ * **So a day's own flag is not the last word on which side it lands** — its position is, and that
+ * is deliberate. Two days say nothing about the archive: one carrying no call at all, and one
+ * whose call was issued before the flag existed. Filtering on the flag alone would lift either of
+ * them back above a divider they sit below by date, claiming a measurement reaches a lead time
+ * the day before it has just said it does not. A prefix cannot do that. What it costs is that
+ * such a day below the line is described by a heading nobody measured it against — the quieter
+ * of the two errors, because it is the cautious one.
  */
 function archiveBoundary(days: ForecastDay[]): number | null {
   const first = days.findIndex((day) => day.call?.uncertainty_measured === false);

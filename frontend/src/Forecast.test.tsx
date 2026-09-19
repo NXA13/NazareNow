@@ -1243,6 +1243,38 @@ describe('where the measured archive ends', () => {
     const beyond = await screen.findByRole('group', { name: /beyond the measured archive/i });
     expect(within(beyond).queryByTestId(`day-label-${days[1]!.date}`)).not.toBeInTheDocument();
   });
+
+  it('keeps a day past the boundary below it even when that day claims nothing', async () => {
+    // The other side of the case above, and the one that says the boundary is a position rather
+    // than a per-day filter. A day whose call predates the flag says nothing about the archive —
+    // so the day before it, which has just said the archive does not reach that far, is the
+    // better evidence. Lifting it back above the divider on the strength of its own silence
+    // would claim a measurement reaches a lead time the row above it denies.
+    const days = across();
+    days[3] = { ...days[3]!, call: { ...days[3]!.call!, uncertainty_measured: null } };
+    serveDays(days);
+
+    render(<ForecastRange />);
+
+    const beyond = await screen.findByRole('group', { name: /beyond the measured archive/i });
+    expect(within(beyond).getByTestId(`day-label-${days[3]!.date}`)).toBeInTheDocument();
+  });
+
+  it('keeps a day carrying no call at all on the side its date puts it', async () => {
+    // A gap in the call record is not a verdict about the archive either, and it arrives as an
+    // absent call rather than an absent flag — the branch `day.call?.uncertainty_measured` has
+    // to survive.
+    const days = across();
+    days[0] = { ...days[0]!, call: null };
+    days[3] = { ...days[3]!, call: null };
+    serveDays(days);
+
+    render(<ForecastRange />);
+
+    const beyond = await screen.findByRole('group', { name: /beyond the measured archive/i });
+    expect(within(beyond).getByTestId(`day-label-${days[3]!.date}`)).toBeInTheDocument();
+    expect(within(beyond).queryByTestId(`day-label-${days[0]!.date}`)).not.toBeInTheDocument();
+  });
 });
 
 describe('how sure the forecast is', () => {

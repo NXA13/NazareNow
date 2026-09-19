@@ -494,23 +494,28 @@ footer p {
   padding: 0 var(--space-1);
 }
 
-/* The comparison, drawn rather than stated: a track across whatever room the row has left,
-   filled to this day's share of the largest day on screen.
+/* The comparison, drawn rather than stated: a track across whatever room the line has left,
+   filled to this point's share of the largest one beside it.
  *
- * **In the neutrals.** How a day compares with the week is not a judgement about travelling, and
- * a bar in the status colours would make the two the same signal. `ink.test.ts` holds the rest of
- * the sheet to that rule; this is the same rule kept by hand, because the fill's width is the one
- * part of this a stylesheet never sees. */
-.day-bar {
+ * **One pair of rules for both bars**, the day row's and the series under a call's history. They
+ * were written twice and had already drifted a height apart; the history bar's own comment says
+ * it is "the same relative treatment the day rows use", which is a comment asking to be a shared
+ * class.
+ *
+ * **In the neutrals.** How one height compares with the tallest beside it is not a judgement
+ * about the sea, and a bar in the status colours would make "biggest day this week" and "book a
+ * flight" one signal — the confusion this page exists to prevent. `ink.test.ts` holds these two
+ * selectors to that. */
+.track {
   flex: 1 1 4rem;
   min-width: 2.5rem;
-  height: 0.3rem;
+  height: var(--space-2);
   border-radius: var(--radius-badge);
   background: var(--ink-border);
   overflow: hidden;
 }
 
-.day-bar-fill {
+.fill {
   display: block;
   height: 100%;
   background: var(--ink-muted);
@@ -539,11 +544,7 @@ footer p {
    glance. The design spec puts day rows inside the status system for exactly this. The wash is
    the only thing in the row that is not in the neutrals, and the badge it surrounds is what
    names the verdict — the row says "look here", the badge says what it is. */
-.day-go {
-  background: var(--ink-go-dim);
-  border-color: var(--ink-go);
-}
-
+.day-go,
 .day-confirmed {
   background: var(--ink-go-dim);
   border-color: var(--ink-go);
@@ -593,7 +594,7 @@ footer p {
   font-weight: var(--weight-regular);
 }
 
-.days.beyond .day-bar-fill {
+.days.beyond .fill {
   opacity: 0.55;
 }
 
@@ -884,28 +885,12 @@ footer p {
   font-family: var(--font-mono);
 }
 
-/* The bar. Scaled against the largest point in this series, so it needs no domain knowledge
-   and no calibrated threshold — the same relative treatment the day rows use. Deliberately
-   not the plausible range: it encodes the one height the row is about, and a track that also
-   drew the range would put two lengths on one line that mean different things.
- *
- * In the neutrals for the reason rank is: this is one height against the tallest in its own
- * series, not a judgement about the sea. */
-.history .track {
-  flex: 1 1 4rem;
-  min-width: 3rem;
-  height: var(--space-2);
-  border-radius: var(--radius-badge);
-  background: var(--ink-border);
-  overflow: hidden;
-}
+/* The bar is `.track` and `.fill`, declared once with the day row's. Scaled against the largest
+   point in this series, so it needs no domain knowledge and no calibrated threshold.
+   Deliberately not the plausible range: it encodes the one height the row is about, and a track
+   that also drew the range would put two lengths on one line that mean different things.
 
-.history .fill {
-  display: block;
-  height: 100%;
-  background: var(--ink-muted);
-}
-
+   What is local to the series is which point a reader is being shown. */
 .history li.current .fill {
   background: var(--ink-text);
 }
