@@ -1416,6 +1416,53 @@ function Verdict({ days }: { days: ForecastDay[] }) {
  * fed fixtures directly would trade a tested boundary for a prop. The slot is optional, so every
  * one of those call sites still renders what it always did.
  */
+/**
+ * The swell windows, on the reading page (#119).
+ *
+ * **Why it is not on the forecast page any more.** Spec §2 lists five things down the home
+ * column — the verdict, the four tiles, the days, the hours, and one line of track record — and
+ * this was a sixth. Its actionable half is already in the verdict, which names the window a Go
+ * Call falls inside; what is left is the enumeration of every window in range and the paragraph
+ * explaining what a window is, and the second of those is teaching material by #119's own rule.
+ * Ruled 2026-09-19 to move the panel whole rather than split it, so the list and the sentence
+ * that explains the list stay together.
+ *
+ * **It fetches the forecast itself**, which is the one cost of the move: this page otherwise
+ * reads only `/api/track-record`. Passing the days down from the forecast page is not available
+ * — they are different routes — and deriving windows from the track record would be a second
+ * answer to "which days is this swell", which is exactly the drift #85 was written to prevent.
+ */
+export function SwellWindowsSection() {
+  const [state, setState] = useState<LoadState>({ status: 'loading' });
+
+  useEffect(() => {
+    let active = true;
+    fetchForecast()
+      .then((forecast) => active && setState({ status: 'loaded', forecast }))
+      .catch(() => active && setState({ status: 'failed' }));
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (state.status === 'loading') {
+    return <p>Loading forecast...</p>;
+  }
+
+  // An alert rather than nothing. This page is reachable when the forecast service is down, and
+  // a section that silently disappears reads as a page that failed to load rather than as one
+  // part of it being unavailable.
+  if (state.status === 'failed') {
+    return (
+      <p role="alert" className="alert">
+        Could not load the forecast, so there is nothing to say about swell windows right now.
+      </p>
+    );
+  }
+
+  return <SwellWindows days={state.forecast.days} />;
+}
+
 export function ForecastRange({ tiles }: { tiles?: ReactNode }) {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const [openDate, setOpenDate] = useState<string | null>(null);
@@ -1486,8 +1533,6 @@ export function ForecastRange({ tiles }: { tiles?: ReactNode }) {
 
       {forecast && (
         <>
-          <SwellWindows days={forecast.days} />
-
           <h2 id="forecast-heading">The next {forecast.days.length} days</h2>
 
           <DayList

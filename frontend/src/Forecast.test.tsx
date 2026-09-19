@@ -18,7 +18,7 @@ import { delay, http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { type CallStatus, type EarlierCall } from './api';
-import { ForecastRange } from './Forecast';
+import { ForecastRange, SwellWindowsSection } from './Forecast';
 import { compassPoint } from './format';
 import { calibration, dayFrom, forecast, unmeasurableSpread } from './test/handlers';
 import { server } from './test/server';
@@ -1425,7 +1425,11 @@ describe('swells spanning more than a day', () => {
     server.use(
       http.get('*/api/conditions/forecast', () => HttpResponse.json({ ...forecast, days })),
     );
-    render(<ForecastRange />);
+    // The reading page's component, not the forecast page's. #119 moved the panel: its
+    // actionable half is in the verdict, and the paragraph explaining what a window is is
+    // teaching material. Every assertion below is unchanged — what moved is where it renders,
+    // and a suite rewritten at the same time as the thing it guards proves nothing about it.
+    render(<SwellWindowsSection />);
     return screen.findByTestId('swell-windows');
   }
 
@@ -1527,13 +1531,20 @@ describe('swells spanning more than a day', () => {
   it('leaves every day inside a window with the verdict it was given', async () => {
     // A window must invent no status. Story 12 requires a quiet day shown as quiet, and a
     // window that promoted its members would break it exactly where a reader is about to act.
+    //
+    // **Rendered through `ForecastRange`, not the panel, and that is the point.** The rows are
+    // what this asserts and they stayed on the forecast page when #119 moved the panel to the
+    // reading page. The two can no longer contradict each other on one screen, which makes this
+    // weaker than it was — but the guarantee it names is about the day list, so it is kept and
+    // pointed at the day list rather than deleted along with the coupling it used to catch.
     const days = [
       dayFrom('2026-02-12', 4.0, 14, 300, 'watch', 3),
       dayFrom('2026-02-13', 7.2, 17, 300, 'go', 2),
       dayFrom('2026-02-14', 5.1, 15, 300, 'watch', 1),
     ];
 
-    await windowsFor(days);
+    serveDays(days);
+    render(<ForecastRange />);
 
     for (const [date, label] of [
       ['2026-02-12', 'Watch'],
