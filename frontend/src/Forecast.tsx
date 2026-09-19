@@ -1296,7 +1296,8 @@ function Verdict({ days }: { days: ForecastDay[] }) {
       ) : (
         <>
           <p className="verdict-status">
-            {CALL_LABELS[call.status]} Call · issued {call.lead_time_days} days ahead
+            {CALL_LABELS[call.status]} Call · issued {call.lead_time_days}{' '}
+            {call.lead_time_days === 1 ? 'day' : 'days'} ahead
           </p>
 
           <h2 id="verdict-heading" className="verdict-headline">
@@ -1440,14 +1441,12 @@ export function ForecastRange({ tiles }: { tiles?: ReactNode }) {
       )}
 
       {forecast && (
-        <>
-          <h2 id="forecast-heading">The next {forecast.days.length} days</h2>
-
-          {/* First, and above the windows: a reader who takes one sentence from this page should
-              take this one. The windows below give it its shape and the range below that gives
-              every day its own verdict, in that order of how much reading each costs. */}
-          <Verdict days={forecast.days} />
-        </>
+        /* First on the page, above everything including the heading that used to sit over it: a
+           reader who takes one sentence from here should take this one. "The next 16 days" was
+           rendered above the verdict while it labelled the section as a whole, which put a
+           heading about a list over the answer the list exists to produce. It now sits with the
+           list it names, which is also the order the spec sets out — verdict, tiles, days. */
+        <Verdict days={forecast.days} />
       )}
 
       {tiles}
@@ -1455,6 +1454,8 @@ export function ForecastRange({ tiles }: { tiles?: ReactNode }) {
       {forecast && (
         <>
           <SwellWindows days={forecast.days} />
+
+          <h2 id="forecast-heading">The next {forecast.days.length} days</h2>
 
           <DayList
             days={forecast.days}

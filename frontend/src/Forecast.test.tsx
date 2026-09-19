@@ -1770,6 +1770,30 @@ describe('the verdict', () => {
     expect(statement.textContent).toContain(`issued ${days[0]!.call!.lead_time_days} days ahead`);
   });
 
+  it('counts one day as a day, not as 1 days', async () => {
+    // The shortest Lead Time is the one most worth reading correctly — a call issued a day out
+    // is the one a reader has least time to act on — and it is the case a fixture using three
+    // and nine never renders. It read "issued 1 days ahead" on the most prominent panel of the
+    // page for as long as this sentence has existed.
+    const statement = await statementFor([dayFrom('2026-02-13', 7.2, 17, 300, 'go', 1)]);
+
+    expect(statement.textContent).toContain('issued 1 day ahead');
+    expect(statement.textContent).not.toContain('1 days');
+  });
+
+  it('comes before the heading that names the list below it', async () => {
+    // The spec's order down the column is verdict, tiles, days. "The next 16 days" labelled the
+    // section as a whole and so rendered above the verdict, which put a heading about a list
+    // over the answer that list exists to produce.
+    const statement = await statementFor([
+      dayFrom('2026-02-12', 1.2, 7, 300, 'none', 3),
+      dayFrom('2026-02-13', 7.2, 17, 300, 'go', 2),
+    ]);
+
+    const heading = await screen.findByRole('heading', { name: /^The next \d+ days$/ });
+    expect(statement.compareDocumentPosition(heading)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
   it('says plainly when nothing in range carries either, as an answer and not a fault', async () => {
     // The quiet case is the common case. Story 12's reason, one level up again: a statement
     // that renders nothing is indistinguishable from a page that failed to load, and most of
