@@ -149,8 +149,13 @@
    * The type scale. Nine steps, each one earning its place on these two pages: four sizes of
    * quiet label below the body, the body itself, a lead, and three sizes of figure.
    *
-   * The two largest are fluid, because the wordmark and the headline readings are the two
-   * things that should fill a phone rather than sit politely in the middle of it.
+   * The two largest are fluid, because the headline readings are what should fill a phone
+   * rather than sit politely in the middle of it.
+   *
+   * `--text-display` was the wordmark's, and since #128 made the header a bar it has no
+   * consumer at all. Left in the scale rather than deleted: #116's verdict is a headline at
+   * exactly this size in the mockup, and it is the next ticket. If #116 lands without taking
+   * it, delete it — a step nothing sets is not a scale, it is a leftover.
    * ---------------------------------------------------------------------- */
   --text-micro: 0.7rem;
   --text-tiny: 0.75rem;
@@ -170,15 +175,19 @@
   --leading-body: 1.5;
   --leading-tight: 1.25;
 
-  /* Tracking. Negative on the wordmark; the three positive steps are for the uppercase labels,
-     which need air at these sizes or they read as a block. */
+  /* Tracking. The three middle steps are for the uppercase labels, which need air at these
+     sizes or they read as a block.
+
+     The two ends are the wordmark's, at the two sizes it has been. `--tracking-tight` suited it
+     at 2.5rem and is wrong at 14.4px, so #128 left it without a consumer; it is kept beside its
+     size, `--text-display`, and the two should leave together or not at all. What replaced it is
+     more than twice `--tracking-widest`, which is why it is a step rather than a reuse: at this
+     size the mark has to be read as a mark rather than as a word, and once the scale has gone
+     the tracking is the only thing left doing that. */
   --tracking-tight: -0.02em;
   --tracking-wide: 0.04em;
   --tracking-wider: 0.06em;
   --tracking-widest: 0.08em;
-  /* Wider than the label steps by a long way, and only ever on the wordmark. A mark set at
-     the size of body copy has to be read as a mark rather than as a word, and tracking is
-     what does that once the size has gone (#128). */
   --tracking-wordmark: 0.17em;
 
   /* -------------------------------------------------------------------------

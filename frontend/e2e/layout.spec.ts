@@ -301,6 +301,90 @@ test.describe(`narrow widths, at ${NARROW.width}x${NARROW.height}`, () => {
   });
 });
 
+/**
+ * The chrome, on both routes (#128).
+ *
+ * The header is shared by every page and the `h2` rhythm is set by a bare element selector, so
+ * a change made for the forecast column silently reaches the reading page too — which is a
+ * different kind of page, bounded by `--measure-page` and made of prose rather than
+ * instrument. #128 was reviewed with no recorded check of that page at all, and this is it.
+ *
+ * These are height assertions, so they can only live here: in jsdom the header is 0px tall and
+ * every bound below passes against a header of any size.
+ */
+async function loadReading(page: Page) {
+  await page.goto('/#/how-it-works');
+  await expect(page.getByRole('heading', { name: 'Track record' })).toBeVisible();
+}
+
+test.describe('the chrome, which both routes share', () => {
+  /** A bar, not a block. The stack it replaced was 134px, so the bound is written well clear of
+   * a bar and well under what it replaced: this is a guard against the header quietly growing
+   * a line back, not a pin on its exact height. */
+  const BAR_CEILING = 64;
+
+  test('is a bar on the forecast page, not the block it was', async ({ page }) => {
+    await loadHome(page);
+
+    const header = (await page.locator('header').boundingBox())!;
+    expect(header.height).toBeLessThanOrEqual(BAR_CEILING);
+  });
+
+  test('is the same bar on the reading page, which has its own rhythm', async ({ page }) => {
+    await loadReading(page);
+
+    const header = (await page.locator('header').boundingBox())!;
+    expect(header.height).toBeLessThanOrEqual(BAR_CEILING);
+
+    // The page it was measured on, rather than the forecast page under a different address.
+    // An earlier measurement of this route went to `/how-it-works` instead of `/#/how-it-works`,
+    // which a hash router answers with the forecast page, and so reported the home page's
+    // numbers twice without anything looking wrong.
+    await expect(page.locator('.home')).toHaveCount(0);
+    expect(await scrollsSideways(page)).toBe(false);
+  });
+
+  test('puts the wordmark, the tagline and the nav on one line', async ({ page }) => {
+    await loadHome(page);
+
+    const wordmark = (await page.getByRole('heading', { name: 'NazareNow' }).boundingBox())!;
+    const tagline = (await page.locator('.tagline').boundingBox())!;
+    const nav = (await page.getByRole('navigation', { name: 'Pages' }).boundingBox())!;
+
+    // One line: all three overlap vertically. Their heights differ, since they are set at three
+    // sizes and aligned on the baseline, so this asks that each starts before the wordmark ends
+    // rather than that their tops match.
+    for (const box of [tagline, nav]) {
+      expect(box.y).toBeLessThan(wordmark.y + wordmark.height);
+    }
+
+    // And in that order across it, with the nav pushed to the far end rather than following the
+    // tagline. This is the `margin-left: auto`, which is the whole of the bar.
+    expect(tagline.x).toBeGreaterThan(wordmark.x + wordmark.width - 1);
+    expect(nav.x).toBeGreaterThan(tagline.x + tagline.width);
+  });
+});
+
+test.describe(`the chrome at ${NARROW.width}x${NARROW.height}`, () => {
+  test.use({ viewport: NARROW });
+
+  /** Weaker than the three above, and worth saying so: the stacked header this replaced also
+   * fit a 390px screen, so this test passes against both and proves nothing about the change.
+   * What it guards is the bar's one new failure mode — three things asked to share a line on a
+   * screen too narrow for them. It holds because the header wraps; delete the `flex-wrap` and
+   * this is what fails. */
+  test('wraps rather than running off either page', async ({ page }) => {
+    await loadHome(page);
+    expect(await scrollsSideways(page)).toBe(false);
+    await expect(page.getByRole('heading', { name: 'NazareNow' })).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Pages' })).toBeVisible();
+
+    await loadReading(page);
+    expect(await scrollsSideways(page)).toBe(false);
+    await expect(page.getByRole('navigation', { name: 'Pages' })).toBeVisible();
+  });
+});
+
 test.describe('how tall the page is, which is the promise not yet kept', () => {
   test('does not fit yet, and #116 and #119 are not on their own enough', async ({ page }) => {
     await loadHome(page);
