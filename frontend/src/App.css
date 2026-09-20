@@ -591,6 +591,64 @@ footer p {
   }
 }
 
+/* --- the sea floor, drawn from soundings (#121) ---------------------------- */
+
+/*
+ * The map fills its slot at the proportion the shell reserved. `slice` on the SVG rather than
+ * `meet`: the frame is a fixed view of a fixed place and the slot's aspect ratio follows the
+ * column beside it, so the choice is between cropping the frame and letterboxing the panel.
+ * Cropping keeps the canyon head — the part of this map anybody is looking at — filling the
+ * space it is given.
+ */
+.bathymetry {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius);
+}
+
+.bathymetry-deep {
+  fill: var(--map-band-7);
+}
+
+.bathymetry-band-0 {
+  fill: var(--map-band-0);
+}
+.bathymetry-band-1 {
+  fill: var(--map-band-1);
+}
+.bathymetry-band-2 {
+  fill: var(--map-band-2);
+}
+.bathymetry-band-3 {
+  fill: var(--map-band-3);
+}
+.bathymetry-band-4 {
+  fill: var(--map-band-4);
+}
+.bathymetry-band-5 {
+  fill: var(--map-band-5);
+}
+.bathymetry-band-6 {
+  fill: var(--map-band-6);
+}
+.bathymetry-band-7 {
+  fill: var(--map-band-7);
+}
+
+.bathymetry-hairline {
+  fill: none;
+  stroke: var(--map-hairline);
+  stroke-width: 0.6;
+  stroke-linejoin: round;
+}
+
+.bathymetry-land {
+  fill: var(--map-land);
+  stroke: var(--map-hairline);
+  stroke-width: 0.6;
+}
+
 /* Where the map goes, and visibly not a map. See `MapSlot.tsx` for why it refuses to resemble
    one. Dashed, because a dashed edge is the one border convention that reads as "not finished"
    without having to say so, and it says so as well. */
@@ -609,15 +667,19 @@ footer p {
      "visibly a placeholder", and it stays visible at the top once #117 brings the column down
      to one viewport. */
   justify-content: flex-start;
-  gap: var(--space-3);
-  padding: var(--space-6);
-  background: var(--ink-panel);
-  /* Dashed, and in the muted neutral rather than the hairline: a border at `--ink-border` is
-     1.28:1 against this panel, which is right for a hairline dividing rows and wrong for the
-     one thing on the page whose whole job is to announce that it is not finished. */
-  border: var(--rule) dashed var(--ink-muted);
+  gap: var(--space-2);
+  /* **Solid and quiet since #121.** It was dashed in `--ink-muted` while it was a placeholder,
+     because a dashed edge is the one border convention that reads as "not finished" without
+     having to say so. There is a map in it now, so the frame goes back to being a frame. */
+  border: var(--rule) solid var(--ink-border);
   border-radius: var(--radius);
-  text-align: center;
+  overflow: hidden;
+}
+
+/* The map takes the room; the caption takes a line. */
+.map-slot .bathymetry {
+  flex: 1;
+  min-height: 0;
 }
 
 .map-slot-what {
@@ -630,8 +692,8 @@ footer p {
 }
 
 .map-slot-note {
-  margin: 0 auto;
-  max-width: 22rem;
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
   color: var(--ink-muted);
   font-size: var(--text-small);
 }

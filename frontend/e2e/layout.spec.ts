@@ -240,23 +240,46 @@ test.describe(`the day list, at ${DESKTOP.width}x${DESKTOP.height}`, () => {
 });
 
 test.describe('the map slot', () => {
-  test('says it is a placeholder rather than resembling a map', async ({ page }) => {
+  test('draws the sea floor, at the proportion the shell reserved', async ({ page }) => {
+    // **This test asserted the opposite until #121**: that the slot said "placeholder" and drew
+    // nothing, because a placeholder resembling the thing it stands in for is how a half-built
+    // feature gets mistaken for a finished one. The map is real now, so the assertion inverts —
+    // and what it holds is that the drawing fills the slot rather than sitting in a corner of
+    // it, which is the shape the two-column promise reserved.
     const { slot } = await loadHome(page);
+    const map = slot.locator('svg.bathymetry');
 
     await expect(slot).toBeVisible();
-    await expect(slot).toContainText('Map');
-    await expect(slot).toContainText(/placeholder/i);
+    await expect(map).toBeVisible();
 
-    // Nothing drawn. A placeholder that resembles the thing it stands in for is how a half-built
-    // feature gets mistaken for a finished one.
-    expect(await slot.locator('svg, canvas, img').count()).toBe(0);
+    const slotBox = (await slot.boundingBox())!;
+    const mapBox = (await map.boundingBox())!;
+    // The slot's own hairline, one rule each side, is the difference between its border box and
+    // the box the map is given. Read off the element rather than assumed, so a change to the
+    // frame's weight does not read as the map having come loose from it.
+    const border = await slot.evaluate(
+      (element) =>
+        parseFloat(getComputedStyle(element).borderLeftWidth) +
+        parseFloat(getComputedStyle(element).borderRightWidth),
+    );
+    expect(mapBox.width).toBeCloseTo(slotBox.width - border, 0);
+    // The caption takes a line under it; the map takes the rest.
+    expect(mapBox.height).toBeGreaterThan(slotBox.height * 0.75);
 
-    // And legible without scrolling to it. `toBeVisible` only means the box is non-empty, so it
-    // passes happily on a label centred a thousand pixels down a very tall slot — which is what
-    // this page did until the label was moved to the top. "Visibly a placeholder" has to mean
-    // visible on arrival, or the page opens on what reads as an empty panel.
-    const label = (await slot.locator('.map-slot-what').boundingBox())!;
-    expect(label.y + label.height).toBeLessThanOrEqual((await viewport(page)).height);
+    // Readable on arrival rather than somewhere down a very tall panel.
+    expect(mapBox.y).toBeLessThan((await viewport(page)).height);
+  });
+
+  test('says under the map that it is depth and not today', async ({ page }) => {
+    // The one sentence that stops a permanent feature of the sea bed being read as a forecast.
+    // On this map colour means live data, and there is none on it yet.
+    const { slot } = await loadHome(page);
+
+    await expect(slot).toContainText(/sea floor/i);
+    await expect(slot).toContainText(/GEBCO/);
+
+    const note = (await slot.locator('.map-slot-note').boundingBox())!;
+    expect(note.y + note.height).toBeLessThanOrEqual((await viewport(page)).height + 1);
   });
 
   test('is present before the conditions arrive, so the page does not jump', async ({ page }) => {
