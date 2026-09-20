@@ -30,14 +30,33 @@
 
 const G = 9.81;
 
-/** How far apart the drawn crests are, in view units. See the note on exaggeration below. */
-export const CREST_SPACING = 38.0;
+/**
+ * How far apart the drawn crests are, in view units.
+ *
+ * **Raised from 38 to 58 after looking at it.** At 38 the frame carried 33 fronts, which read
+ * as diagonal hatching and buried the canyon underneath — the one shape the map exists to
+ * show. The spacing was always arbitrary (the true spacing here is about 160 crests and a
+ * moiré pattern, which is why the exaggeration has to be stated), so it is chosen for
+ * legibility, and legibility means the sea floor still showing through.
+ */
+export const CREST_SPACING = 58.0;
 
 /**
  * The shore cells get a 2 m floor so they cost time rather than infinity; without it the
  * whole front stalls on one pixel of surf zone.
  */
 const MIN_DEPTH_M = 2.0;
+
+/** Newton steps for the dispersion relation. Three reaches machine precision; four is margin. */
+const NEWTON_STEPS = 4;
+
+/**
+ * How much the front must have slowed before the map draws it bright: 5%.
+ *
+ * A threshold rather than a depth, so it follows the physics at any period. At 13.75 s it lands
+ * near 80 m, which is the outer edge of where this coast actually turns the swell.
+ */
+const SHOALING_FRACTION = 0.95;
 
 export interface DepthGrid {
   rows: number;
@@ -60,14 +79,70 @@ export interface Crest {
   points: [number, number][];
 }
 
+/** One instant of the animation, with each front split where it starts to feel the bottom. */
+export interface CrestFrame {
+  /** Out in deep water, where the front is still straight. Drawn dim. */
+  deep: string[];
+  /** Inside the shoaling zone, which is exactly where the bending begins. Drawn bright. */
+  shoaling: string[];
+}
+
 /** Deep-water celerity, which is also the ceiling on celerity anywhere. */
 export function deepCelerity(periodSeconds: number): number {
   return (G * periodSeconds) / (2 * Math.PI);
 }
 
-/** Depth at which the swell starts to feel the bottom: half the deep-water wavelength. */
+/**
+ * How fast the front travels in water of a given depth, from the dispersion relation
+ *
+ *     omega^2 = g * k * tanh(k * d)        c = omega / k
+ *
+ * **This replaced `c = min(c_deep, sqrt(g*d))`, and the replacement is the difference between
+ * a map that shows refraction and one that draws ruled diagonal lines.** That law is *exactly*
+ * deep-water celerity for every depth below `c_deep^2/g` — 47 m at 13.75 s — and then switches
+ * abruptly to the shallow-water form. The Nazaré shelf is 100–200 m and the canyon is over
+ * 1000 m, so under it the shelf and the canyon ran at identical speed and nothing refracted
+ * until the wave was inside the 47 m contour, which hugs the shore. Measured on the real sea
+ * floor, the median crest bowed 7.85 view units under that law and 10.96 under this one.
+ *
+ * Solved by Newton from a `kappa = x / sqrt(tanh x)` start, which reaches machine precision in
+ * three steps (checked against bisection across 77 depth/period pairs: worst relative error
+ * 1.3e-15). `prototypes/v2-map/refraction.py` runs the identical iteration from the identical
+ * start, because the two must agree to the last decimal — see `refraction.parity.test.ts`.
+ */
+export function celerity(depthMetres: number, periodSeconds: number): number {
+  const depth = Math.max(depthMetres, MIN_DEPTH_M);
+  const omega = (2 * Math.PI) / periodSeconds;
+  const x = (omega * omega * depth) / G;
+  let kappa = x / Math.sqrt(Math.tanh(x));
+  for (let i = 0; i < NEWTON_STEPS; i++) {
+    const tanh = Math.tanh(kappa);
+    kappa -= (kappa * tanh - x) / (tanh + kappa * (1 - tanh * tanh));
+  }
+  return (omega * depth) / kappa;
+}
+
+/**
+ * The depth at which the front has measurably slowed, which is where the map turns it bright.
+ *
+ * **Not half the deep-water wavelength**, which is the textbook line for where a wave begins to
+ * feel the bottom and is useless for drawing: at that depth the front is still at 99.6% of its
+ * open-ocean speed, and at a 17 s period the contour swallows most of this frame — 31 of 33
+ * crests came out "bright", so the distinction said nothing. This asks the model itself where
+ * the slowing is, so the boundary moves with the period for the same reason the bending does.
+ */
 export function shoalingDepth(periodSeconds: number): number {
-  return (G * periodSeconds * periodSeconds) / (2 * Math.PI) / 2;
+  const deep = deepCelerity(periodSeconds);
+  let shallow = MIN_DEPTH_M;
+  let deepest = (G * periodSeconds * periodSeconds) / (2 * Math.PI);
+  // Bisection, because `celerity` rises monotonically with depth and a closed form for this
+  // inverse would be one more thing to keep in step with the line above.
+  for (let i = 0; i < 40; i++) {
+    const mid = (shallow + deepest) / 2;
+    if (celerity(mid, periodSeconds) < SHOALING_FRACTION * deep) shallow = mid;
+    else deepest = mid;
+  }
+  return (shallow + deepest) / 2;
 }
 
 /** A binary heap of (time, cell), because the solve is the hot path and an array sort is not. */
@@ -144,13 +219,10 @@ export function travelTime(grid: DepthGrid, swell: Swell): Float64Array {
   const count = rows * cols;
   const deep = deepCelerity(swell.periodSeconds);
 
-  const celerity = new Float64Array(count);
+  const speed = new Float64Array(count);
   for (let i = 0; i < count; i++) {
     const elevationHere = elevation[i]!;
-    celerity[i] =
-      elevationHere >= 0
-        ? -1
-        : Math.min(deep, Math.sqrt(G * Math.max(-elevationHere, MIN_DEPTH_M)));
+    speed[i] = elevationHere >= 0 ? -1 : celerity(-elevationHere, swell.periodSeconds);
   }
 
   // Direction of travel, in view coordinates: x east, y south. The conditions report the
@@ -176,7 +248,7 @@ export function travelTime(grid: DepthGrid, swell: Swell): Float64Array {
         (c === 0 && dx > 0) ||
         (c === cols - 1 && dx < 0);
       const i = r * cols + c;
-      if (!onEdge || celerity[i]! < 0) continue;
+      if (!onEdge || speed[i]! < 0) continue;
       const time = ((c * unitsPerCol * dx + r * unitsPerRow * dy) * grid.metresPerUnit) / deep;
       if (time < best[i]!) {
         best[i] = time;
@@ -199,13 +271,13 @@ export function travelTime(grid: DepthGrid, swell: Swell): Float64Array {
     if (time > best[i]!) continue;
     const r = (i / cols) | 0;
     const c = i - r * cols;
-    const here = celerity[i]!;
+    const here = speed[i]!;
     for (let k = 0; k < 8; k++) {
       const nr = r + stepRow[k]!;
       const nc = c + stepCol[k]!;
       if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
       const j = nr * cols + nc;
-      const there = celerity[j]!;
+      const there = speed[j]!;
       if (there < 0) continue;
       const step =
         Math.hypot(stepRow[k]! * unitsPerRow, stepCol[k]! * unitsPerCol) * grid.metresPerUnit;
@@ -414,4 +486,64 @@ export function crestFrames(
     frames.push(crests);
   }
   return frames;
+}
+
+/** Depth in metres at a point in view coordinates, by nearest sounding. */
+function depthAt(grid: DepthGrid, x: number, y: number): number {
+  const col = Math.min(
+    grid.cols - 1,
+    Math.max(0, Math.round((x / grid.viewWidth) * (grid.cols - 1))),
+  );
+  const row = Math.min(
+    grid.rows - 1,
+    Math.max(0, Math.round((y / grid.viewHeight) * (grid.rows - 1))),
+  );
+  return -(grid.elevationMetres[row * grid.cols + col] ?? 0);
+}
+
+function pathData(points: Point[]): string {
+  return 'M' + points.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join('L');
+}
+
+/**
+ * The frames the map draws: every front, split where the swell starts to feel the bottom.
+ *
+ * **The split moves with the period**, because the shoaling zone is half the deep-water
+ * wavelength and that is a function of period alone — 148 m for a 13.75 s swell, 28 m for a
+ * 6 s one. It is not a fixed depth contour, and drawing it as one would be a different claim.
+ *
+ * A front crossing the boundary is cut at the crossing and appears in both lists, so the
+ * bright part begins exactly where the bending does.
+ */
+export function crestPaths(grid: DepthGrid, swell: Swell, frameCount = 16): CrestFrame[] {
+  const boundary = shoalingDepth(swell.periodSeconds);
+  return crestFrames(grid, swell, frameCount).map((crests) => {
+    const deep: string[] = [];
+    const shoaling: string[] = [];
+    for (const crest of crests) {
+      let run: Point[] = [];
+      let runIsShoaling: boolean | null = null;
+      const flush = () => {
+        if (run.length >= 2 && runIsShoaling !== null) {
+          (runIsShoaling ? shoaling : deep).push(pathData(run));
+        }
+        run = [];
+      };
+      for (const point of crest.points) {
+        const isShoaling = depthAt(grid, point[0], point[1]) < boundary;
+        if (runIsShoaling === null || isShoaling === runIsShoaling) {
+          run.push(point);
+        } else {
+          // The crossing vertex belongs to both runs, so the two halves meet rather than
+          // leaving a gap in the front at the one place a reader is looking.
+          run.push(point);
+          flush();
+          run = [point];
+        }
+        runIsShoaling = isShoaling;
+      }
+      flush();
+    }
+    return { deep, shoaling };
+  });
 }

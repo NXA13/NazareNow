@@ -63,8 +63,41 @@
  *   the geometry — found by the review of the same ticket rather than by the measurement, which
  *   had no way to see it.
  *
- * 130 kB leaves about 4.4 kB, which is deliberately not enough for a library. #122's crests and
- * #123's wind will each need their own raise, measured the same way.
+ * **Raised again, from 130 kB to 145 kB, by #122** — the swell. ADR 0016 is the argument: the
+ * crests were to have been precomputed at build time for binned period and direction, and the
+ * bins did not fit. Measured, a direction bin passes its own width through to the screen almost
+ * undamped (10° in, 9.35° of front rotation out), so the bins could not be coarse, and fine ones
+ * came to **302 kB** — 54 fields at 5.60 kB. Worse than the size: that cannot be bundled, so it
+ * forces the fields to be fetched one at a time, and then *this check* has to stop summing
+ * `dist/` because it would count 302 kB against a visitor who downloads 5.60 kB. The budget
+ * would have been bought at the cost of the guard.
+ *
+ * So the page solves the refraction itself, against the live period and direction, and ships the
+ * sea floor instead of pictures of it. Measured against a real build rather than projected:
+ *
+ * | | gzip | |
+ * |---|---|---|
+ * | before #122 | 125.61 kB | |
+ * | the solve, the component and the decoder | 128.80 kB | **+3.19 kB** |
+ * | plus the 12,826 soundings they read | 140.88 kB | **+12.08 kB** |
+ *
+ * Three things were done before moving it rather than after:
+ *
+ * - **The soundings are packed, and the packing was measured four ways.** As JSON numbers they
+ *   are 13.72 kB gzipped; as int16 they are 11.93; delta-encoded along rows, 9.35; and 11.00 as
+ *   base64 standalone, which is 12.08 inside a JS string literal. Deltas because neighbouring
+ *   soundings are close in value, which is what gzip is good at.
+ * - **The cheaper quantisation was measured and declined.** Rounding depth to 5 m instead of 1 m
+ *   saves 3.70 kB. Celerity is `sqrt(g*d)`, so a 5 m quantum is a 50% speed error in 10 m of
+ *   water — precisely the shoaling zone the map exists to explain. Removing one quantisation by
+ *   introducing a worse one where it matters most is not a saving.
+ * - **The 1.65 kB of base64 overhead is paid knowingly.** A raw `.bin` asset would be 9.35 kB,
+ *   but it needs a second request, a loading state and a failure mode, on a page whose map must
+ *   render in every state including "the conditions never arrived". The bundled import matches
+ *   how `map-geometry.json` already reaches the page.
+ *
+ * 145 kB leaves about 4.1 kB, which is deliberately not enough for a library. #123's wind will
+ * need its own raise, measured the same way.
  */
 
 import { gzipSync } from 'node:zlib';
@@ -72,9 +105,9 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/** Compressed kilobytes the whole first load may cost. Today it is about 126, of which 43 is
- * the two fonts. See the note above for why it moved. */
-const BUDGET_KB = 130;
+/** Compressed kilobytes the whole first load may cost. Today it is about 141, of which 43 is
+ * the two fonts and 12 the soundings. See the note above for why it moved. */
+const BUDGET_KB = 145;
 
 // Through `fileURLToPath` rather than the URL's own `pathname`, which on Windows hands back
 // `/C:/...` — a string `fs` cannot open, so the check reported "no dist/" on a tree that had one.

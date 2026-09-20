@@ -14,7 +14,14 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { CREST_SPACING, crestFrames, type DepthGrid } from './refraction';
+import {
+  celerity,
+  CREST_SPACING,
+  crestFrames,
+  crestPaths,
+  shoalingDepth,
+  type DepthGrid,
+} from './refraction';
 
 /** A rectangle of sea at one depth, with the frame's real proportions. */
 function flatSea(depthMetres: number, rows = 40, cols = 40): DepthGrid {
@@ -116,5 +123,108 @@ describe('shallow water lags the front', () => {
       return Math.max(...ys) - Math.min(...ys);
     });
     expect(Math.max(...spans)).toBeLessThan(0.5);
+  });
+});
+
+describe('crests are split where the swell starts to feel the bottom', () => {
+  // The map draws each front twice: dim out in deep water, bright inside the shoaling zone,
+  // which is exactly where the bending begins. The split is depth against half the
+  // deep-water wavelength, so it MOVES with the period rather than being a fixed contour.
+  const shallowShelfEast = (): DepthGrid => {
+    const grid = flatSea(2000, 40, 40);
+    const elevation = grid.elevationMetres as number[];
+    for (let r = 0; r < grid.rows; r++) {
+      for (let c = 20; c < grid.cols; c++) elevation[r * grid.cols + c] = -20;
+    }
+    return grid;
+  };
+
+  it('puts the bright crests over the shallow half and the dim ones over the deep half', () => {
+    const [frame] = crestPaths(shallowShelfEast(), SWELL);
+    expect(frame!.shoaling.length).toBeGreaterThan(0);
+    expect(frame!.deep.length).toBeGreaterThan(0);
+
+    const meanX = (paths: string[]) => {
+      const xs = paths.flatMap((d) =>
+        d
+          .slice(1)
+          .split('L')
+          .map((pair) => Number(pair.split(',')[0])),
+      );
+      return xs.reduce((s, x) => s + x, 0) / xs.length;
+    };
+    // The shelf is the eastern half of this sea, so the bright crests must sit east of the
+    // dim ones. A split that had stopped depending on depth would put them on top of
+    // each other and this comparison would fail.
+    expect(meanX(frame!.shoaling)).toBeGreaterThan(meanX(frame!.deep) + 100);
+  });
+
+  it('moves the boundary with the period, because a longer wave feels the bottom sooner', () => {
+    // At 2000 m nothing has slowed at any period, so the whole frame must be dim. A boundary
+    // that had stopped depending on depth would light this up.
+    const [deepOnly] = crestPaths(flatSea(2000), SWELL);
+    expect(deepOnly!.shoaling).toHaveLength(0);
+    expect(deepOnly!.deep.length).toBeGreaterThan(0);
+
+    const long = shoalingDepth(16);
+    const short = shoalingDepth(8);
+    expect(long).toBeGreaterThan(short * 1.5);
+
+    // A sea between the two boundaries is bright for the long swell and dim for the short
+    // one, in the same water — which is the whole claim the split makes.
+    const between = (long + short) / 2;
+    const [longPeriod] = crestPaths(flatSea(between), { periodSeconds: 16, fromDirectionDeg: 0 });
+    const [shortPeriod] = crestPaths(flatSea(between), { periodSeconds: 8, fromDirectionDeg: 0 });
+    expect(longPeriod!.shoaling.length).toBeGreaterThan(0);
+    expect(shortPeriod!.shoaling).toHaveLength(0);
+  });
+});
+
+describe('the wave slows over the shelf, not only at the beach', () => {
+  /**
+   * This is the test that the first version of this model could not pass, and the reason the
+   * map drew near-straight lines while every other test here was green.
+   *
+   * The model was `c = min(c_deep, sqrt(g*d))`, which is flat — *exactly* deep-water celerity —
+   * for every depth below `c_deep²/g`, which at 13.75 s is 47 m. The Nazaré shelf is 100–200 m
+   * and the canyon is over 1000 m, so under that law the shelf and the canyon ran at identical
+   * speed, and the contrast between them is the whole reason the front bends. Nothing could
+   * refract until the wave was inside the 47 m contour, which hugs the shore.
+   *
+   * The real dispersion relation, ω² = gk·tanh(kd), has the wave at 97.5% of deep-water speed
+   * in 100 m and 89% in 60 m. Small differences, compounded over 40 km of shelf, are the bend.
+   */
+  const T = 13.75;
+
+  it('runs slower over a 100 m shelf than in open ocean', () => {
+    const open = celerity(4000, T);
+    const shelf = celerity(100, T);
+    expect(shelf).toBeLessThan(open * 0.99);
+    expect(shelf).toBeGreaterThan(open * 0.95);
+  });
+
+  it('slows monotonically as the water shallows, with no flat step', () => {
+    // A flat step is exactly what the old law had, and what made the shelf invisible.
+    const depths = [4000, 500, 300, 200, 150, 100, 80, 60, 40, 20, 10, 5];
+    const speeds = depths.map((d) => celerity(d, T));
+    for (let i = 1; i < speeds.length; i++) {
+      expect(speeds[i]!, `${depths[i]} m is not slower than ${depths[i - 1]} m`).toBeLessThan(
+        speeds[i - 1]!,
+      );
+    }
+  });
+
+  it('matches the deep-water and shallow-water limits it sits between', () => {
+    // Expected values from the two closed forms, not from this function, so agreeing with
+    // itself is not enough to pass.
+    expect(celerity(10000, T)).toBeCloseTo((9.81 * T) / (2 * Math.PI), 2);
+    // The shallow-water form is a LIMIT, approached from below as kd goes to zero, not a
+    // value this should equal: at 3 m and 13.75 s, kd is 0.25 and the true celerity is about
+    // 1% under sqrt(gd). Asserting equality here would be asserting the approximation.
+    // 3 m and not less because `celerity` floors depth at 2 m on purpose, so the shore cells
+    // cost time rather than stalling the whole front on one pixel of surf zone.
+    const ratio = celerity(3, T) / Math.sqrt(9.81 * 3);
+    expect(ratio).toBeLessThan(1);
+    expect(ratio).toBeGreaterThan(0.98);
   });
 });

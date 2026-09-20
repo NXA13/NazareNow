@@ -87,10 +87,24 @@ describe('every colour, font and size lives in one place', () => {
 });
 
 describe('the three colour systems stay apart', () => {
-  /** The whole of Ice's licence: the wordmark, the nav, and links. */
-  const ICE_BELONGS_TO = ['header h1', 'header nav a', 'a'];
+  /**
+   * The whole of Ice's licence: the wordmark, the nav, links — and, since #122, the swell.
+   *
+   * The crests are not an exception grudgingly made. `tokens.css` has said since #114 that Main
+   * carries "the swell crests when the map arrives", and the base map is greyscale precisely so
+   * that colour on it can mean live data. What this list still forbids is the thing that would
+   * actually hurt: Ice on the verdict panel or a call badge, where the brand would compete with
+   * the call for attention.
+   */
+  const ICE_BELONGS_TO = [
+    'header h1',
+    'header nav a',
+    'a',
+    '.bathymetry-crest-deep',
+    '.bathymetry-crest-shoaling',
+  ];
 
-  it('puts Ice on the wordmark, the nav and links, and nowhere else', () => {
+  it('puts Ice on the wordmark, the nav, links and the swell, and nowhere else', () => {
     const misuse = rules(APP)
       .filter((rule) => rule.body.includes('var(--ink-main)'))
       .map((rule) => rule.selector)

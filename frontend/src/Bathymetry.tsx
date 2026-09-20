@@ -16,7 +16,9 @@
  * place and nothing reprojects anything, so there is nothing for a library to do.
  */
 
+import { Crests } from './Crests';
 import geometry from './map-geometry.json';
+import type { Swell } from './refraction';
 
 /**
  * The bands and the hairlines, exactly as the build step emitted them.
@@ -30,7 +32,7 @@ import geometry from './map-geometry.json';
 const BANDS: { level: number; d: string }[] = geometry.bands;
 const LEVELS: Record<string, string[]> = geometry.levels;
 
-export function Bathymetry() {
+export function Bathymetry({ swell }: { swell: Swell | null }) {
   return (
     <svg
       className="bathymetry"
@@ -68,6 +70,12 @@ export function Bathymetry() {
           d={(LEVELS[String(band.level)] ?? []).join('')}
         />
       ))}
+
+      {/* The swell, over the water and under the land (#122). Solved in the page against the
+          live period and direction — see `Crests.tsx` and ADR 0016. Null until the conditions
+          arrive, and then nothing is drawn: a default sea would be a picture of a swell nobody
+          reported. */}
+      <Crests swell={swell} />
 
       {/* Land last, over the water it borders.
 

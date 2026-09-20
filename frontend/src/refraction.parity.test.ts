@@ -77,7 +77,7 @@ describe('the browser solve matches refraction.py', () => {
     // Without this the per-frame loops below would pass against an empty fixture or an
     // empty solve, which is how a port that had stopped working would read as identical.
     expect(reference.frames).toHaveLength(16);
-    expect(reference.frames.flat().length).toBeGreaterThan(300);
+    expect(reference.frames.flat().length).toBeGreaterThan(200);
     expect(grid.rows * grid.cols).toBe(12826);
   });
 

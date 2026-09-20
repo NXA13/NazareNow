@@ -18,12 +18,13 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { Bathymetry } from './Bathymetry';
+import { MapSlot } from './MapSlot';
 import geometry from './map-geometry.json';
 import packageJson from '../package.json';
 
 /** The map, as the element a reader is offered rather than as a container. */
 function draw() {
-  render(<Bathymetry />);
+  render(<Bathymetry swell={null} />);
   return screen.getByRole('img', { name: /sea floor|canyon/i });
 }
 
@@ -203,5 +204,48 @@ describe('what the base map is allowed to be', () => {
     // and this one is not current at all — it is permanent. A reader taking a feature of the
     // sea bed for a forecast is this project's characteristic failure.
     expect(draw()).toHaveAttribute('aria-label', expect.stringMatching(/sea floor/i));
+  });
+});
+
+describe('what the map is allowed to claim', () => {
+  /**
+   * Two statements travel together wherever this map is explained, per #122 and spec §5: the
+   * crest SHAPE is computed and the crest SPACING is exaggerated, and the model is refraction
+   * ALONE. They are required because the picture is persuasive and the model is thin — and
+   * since ADR 0016 the model runs live, on the reader's own machine, against this morning's
+   * sea, which makes it easier to mistake for a forecast of the surf, not harder.
+   */
+  const note = () => {
+    render(<MapSlot swell={{ periodSeconds: 13.75, fromDirectionDeg: 310 }} />);
+    return screen.getByText(/GEBCO soundings/i).closest('p')!;
+  };
+
+  it('says the shape is computed and the spacing is exaggerated', () => {
+    const text = note().textContent ?? '';
+    expect(text).toMatch(/shape is computed/i);
+    expect(text).toMatch(/spacing is exaggerated/i);
+  });
+
+  it('says the model is refraction alone, and names what it leaves out', () => {
+    const text = note().textContent ?? '';
+    expect(text).toMatch(/refraction alone/i);
+    for (const ignored of ['diffraction', 'reflection', 'currents', 'non-linearity']) {
+      expect(text.toLowerCase()).toContain(ignored);
+    }
+  });
+
+  it('says a real swell is a spread rather than the single one drawn', () => {
+    expect(note().textContent ?? '').toMatch(/spread of periods and directions/i);
+  });
+
+  it('never calls it a wave model, a forecast of the surf, or a prediction of the waves', () => {
+    // The map sits on a page that legitimately says "forecast" about the numbers beside it, so
+    // this is scoped to the map's own note rather than to the document.
+    const text = (note().textContent ?? '').toLowerCase();
+    for (const claim of ['wave model', 'spectral', 'forecast of the surf', 'predicts the waves']) {
+      expect(text, `the map note claims "${claim}"`).not.toContain(claim);
+    }
+    // And it says the opposite out loud, which is the part a deletion would silently lose.
+    expect(text).toContain('does not say how big the waves will be');
   });
 });

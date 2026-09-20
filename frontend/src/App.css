@@ -659,6 +659,34 @@ footer p {
   stroke-width: 0.6;
 }
 
+/* **The swell (#122), and the only colour on this map.** The base is greyscale precisely so
+   that colour can mean live data, and these crests are the first live thing drawn on it —
+   solved in the page against today's period and direction (ADR 0016).
+
+   Ice, which is the main colour: `ink.test.ts` holds the list of what may name `--ink-main`
+   and these two selectors are on it deliberately, because `tokens.css` has said since #114
+   that Main carries "the swell crests when the map arrives". They arrived.
+
+   Dim in deep water and bright inside the shoaling zone — the same stroke at two opacities,
+   so the difference reads as one front crossing a boundary rather than as two kinds of thing. */
+.bathymetry-crest {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.bathymetry-crest-deep {
+  stroke: var(--ink-main);
+  stroke-width: 0.7;
+  opacity: 0.3;
+}
+
+.bathymetry-crest-shoaling {
+  stroke: var(--ink-main);
+  stroke-width: 1.2;
+  opacity: 0.78;
+}
+
 /* Where the map goes. It held a placeholder from #115 until #121 and refused to resemble a map
    for all of it; `MapSlot.tsx` records why. There is a real one in it now. */
 .map-slot {

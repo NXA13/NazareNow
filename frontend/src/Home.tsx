@@ -291,7 +291,21 @@ export function Home() {
           after they fail: a column that appeared only on success would make the page jump at
           the moment a reader is deciding whether to trust it. */}
       <div className="home-map">
-        <MapSlot />
+        {/* **The swell the map bends is the swell the tiles report**, taken from the same
+            `/api/conditions/current` payload rather than fetched again, so the picture and the
+            figures beside it can never disagree. Null in every other state: before the
+            conditions load and after they fail the map is sea floor only, because a crest drawn
+            from a default would be a picture of a sea nobody reported. */}
+        <MapSlot
+          swell={
+            state.status === 'loaded'
+              ? {
+                  periodSeconds: state.conditions.swell_period.value,
+                  fromDirectionDeg: state.conditions.swell_direction.value,
+                }
+              : null
+          }
+        />
       </div>
     </div>
   );
