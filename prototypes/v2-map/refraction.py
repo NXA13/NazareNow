@@ -31,13 +31,23 @@ from __future__ import annotations
 import heapq
 import json
 import math
+import sys
 from pathlib import Path
 
-from contours import join, path_data, simplify
+# `bathymetry.json` and `contours.py` were promoted into `frontend/scripts/map/` by #121, where
+# the build step that ships the map can own them. This prototype still reads them from there,
+# so there is one copy of the soundings and one tracer rather than two of each. The path goes on
+# `sys.path` before `contours` is imported, which is why this sits above the import rather than
+# beside the other constants.
+PROMOTED = Path(__file__).resolve().parents[2] / "frontend" / "scripts" / "map"
+sys.path.insert(0, str(PROMOTED))
+
+from contours import join, path_data, simplify  # noqa: E402
 
 HERE = Path(__file__).parent
-GRID = json.loads((HERE / "bathymetry.json").read_text(encoding="utf-8"))
-CONTOURS = json.loads((HERE / "contours.json").read_text(encoding="utf-8"))
+
+GRID = json.loads((PROMOTED / "bathymetry.json").read_text(encoding="utf-8"))
+CONTOURS = json.loads((HERE.parents[1] / "frontend" / "src" / "map-geometry.json").read_text(encoding="utf-8"))
 
 VIEW_W, VIEW_H = (float(v) for v in CONTOURS["viewBox"].split()[2:])
 ROWS, COLS = GRID["rows"], GRID["cols"]

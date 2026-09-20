@@ -22,7 +22,16 @@ import json
 from pathlib import Path
 
 HERE = Path(__file__).parent
-DATA = json.loads((HERE / "contours.json").read_text(encoding="utf-8"))
+import sys
+from pathlib import Path
+
+# `bathymetry.json` and `contours.py` were promoted into `frontend/scripts/map/` by #121, where
+# the build step that ships the map can own them. This prototype still reads them from there,
+# so there is one copy of the soundings and one tracer rather than two of each.
+PROMOTED = Path(__file__).resolve().parents[2] / "frontend" / "scripts" / "map"
+sys.path.insert(0, str(PROMOTED))
+
+DATA = json.loads((HERE.parents[1] / "frontend" / "src" / "map-geometry.json").read_text(encoding="utf-8"))
 CRESTS = json.loads((HERE / "crests.json").read_text(encoding="utf-8"))
 
 VIEW_W, VIEW_H = (float(v) for v in DATA["viewBox"].split()[2:])
@@ -131,7 +140,7 @@ def wind_grid_points() -> list[tuple[float, float]]:
     fetched point rather than a continuous flow keeps the mark honest about the data: it
     is a sample, not a field, and the map should not imply otherwise.
     """
-    grid = json.loads((HERE / "bathymetry.json").read_text(encoding="utf-8"))
+    grid = json.loads((PROMOTED / "bathymetry.json").read_text(encoding="utf-8"))
     z = grid["elevation_m"]
     step = 0.09
     points = []

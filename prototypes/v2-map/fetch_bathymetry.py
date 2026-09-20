@@ -40,7 +40,7 @@ API = "https://api.opentopodata.org/v1/gebco2020"
 BATCH = 100
 PAUSE = 1.1  # the public instance allows one call a second; leave headroom.
 
-OUT = Path(__file__).with_name("bathymetry.json")
+OUT = Path(__file__).resolve().parents[2] / "frontend" / "scripts" / "map" / "bathymetry.json"
 # Keep the wide sample; it is what proved where the canyon actually is.
 WIDE = Path(__file__).with_name("bathymetry-wide.json")
 

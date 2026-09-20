@@ -1,8 +1,13 @@
 """Trace the sampled bathymetry into simplified SVG contour paths.
 
+**This is the map's build step (#121), promoted out of `prototypes/v2-map/`.** Run it with
+`npm run map`, which writes `src/map-geometry.json` for the page to import. It is manual and
+its output is committed, exactly like `npm run fonts` -- the difference being that this one
+needs no network at all, only the soundings committed beside it.
+
 Marching squares over the grid, one pass per depth level, then Ramer-Douglas-Peucker to
-cut the point count down to something a 140 kB payload budget can carry. No numpy: the
-grid is 82 x 96, and plain Python traces the whole thing in well under a second.
+cut the point count down. No numpy: the grid is 106 x 121, and plain Python traces the whole
+thing in well under a second.
 
 The output is deliberately coordinates-in-a-viewBox rather than lon/lat, because nothing
 downstream reprojects anything -- the map is one fixed frame of one fixed place. The
@@ -35,7 +40,22 @@ VIEW_H = 780.0
 LEVELS = [-1800, -1600, -1400, -1200, -1000, -850, -700, -575, -460,
           -360, -280, -210, -155, -110, -75, -45, -20]
 
-SIMPLIFY_PX = 0.9
+# How far a simplified contour may sit from the traced one, in viewBox pixels.
+#
+# **Raised from 0.9 to 2.0 by #121, and it costs no accuracy at all.** One pixel is 59.9 m
+# across this frame, so 0.9 px is a 54 m tolerance -- asserted over soundings that are
+# 0.004 degrees apart, which at this latitude is about 342 m. A contour's position between two
+# samples 342 m apart is interpolation; holding it to 54 m is precision the data does not have.
+#
+# 2.0 px is 120 m, roughly a third of a grid cell, so nothing true is discarded. Measured
+# across the whole sweep, the traced path count is **33 at every tolerance from 0.9 to 2.5** --
+# no contour, no seamount and no canyon wall is ever dropped, only vertex density changes. What
+# it buys is 31% of the bytes: 7.46 kB gzipped at 0.9, 5.16 kB at 2.0.
+#
+# So this is not a fidelity-for-bytes trade. It is declining to ship false precision, and being
+# paid for it. Anything past ~2.9 px would exceed half a grid cell and should not be taken
+# without re-measuring against the soundings.
+SIMPLIFY_PX = 2.0
 MIN_POINTS = 4
 MIN_SPAN_PX = 9.0
 
@@ -256,7 +276,11 @@ def main() -> None:
     print(f"land path {len(out['land'])} chars")
     print(f"total {total + len(out['land'])} chars of path data")
 
-    (HERE / "contours.json").write_text(json.dumps(out), encoding="utf-8")
+    # Into the app, not beside this script. The page imports it; nothing regenerates it at
+    # build time and nothing needs a network to.
+    destination = HERE.parents[1] / "src" / "map-geometry.json"
+    destination.write_text(json.dumps(out, separators=(",", ":")), encoding="utf-8")
+    print(f"wrote {destination.relative_to(HERE.parents[2])}")
 
 
 if __name__ == "__main__":
