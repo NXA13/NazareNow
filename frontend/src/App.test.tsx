@@ -384,8 +384,19 @@ describe('current conditions', () => {
       const verdict = await screen.findByTestId('verdict');
       const days = await screen.findByRole('heading', { name: /^The next \d+ days$/ });
 
-      expect(verdict.compareDocumentPosition(admission)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      // Inside the verdict panel, not merely after it: `CONTAINED_BY | FOLLOWING`. The first
+      // version rendered it as a sibling below the panel, which put a limit near the figure
+      // rather than beside it — and left it free to render on a day the panel prints no range.
+      expect(verdict.compareDocumentPosition(admission)).toBe(
+        Node.DOCUMENT_POSITION_CONTAINED_BY | Node.DOCUMENT_POSITION_FOLLOWING,
+      );
       expect(admission.compareDocumentPosition(days)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+
+      // It is a limit, so it has to be covered by the rule that limits are never set quieter
+      // than the figures they qualify. It has no styling of its own: what covers it is carrying
+      // `verdict-scope`, which `ink.test.ts` guards. Asserted here so that connection cannot be
+      // broken by a tidy-up that drops the class as redundant.
+      expect(admission.classList.contains('verdict-scope')).toBe(true);
     });
 
     it('says so when the range has held less often than it claims', async () => {
@@ -435,10 +446,15 @@ describe('current conditions', () => {
       );
     });
 
-    it('renders nothing at all until the record has arrived', async () => {
-      // Unlike the track-record line lower down, this sits directly under a figure. A
-      // placeholder here would read as a qualification of that figure rather than as something
-      // still on its way.
+    it('renders nothing at all when the record never arrives', async () => {
+      // Named for the branch it exercises. It read "until the record has arrived" while serving
+      // a 503, so it described the loading path and locked in the permanent-failure one under a
+      // name that disclaimed it.
+      //
+      // Nothing rather than a placeholder, in both cases: this sits directly under a figure, and
+      // a placeholder there would read as a qualification of that figure rather than as
+      // something still on its way. Nothing above it depends on the record, so silence here must
+      // not read as the forecast having failed either.
       server.use(http.get('*/api/track-record', () => new HttpResponse(null, { status: 503 })));
 
       render(<App />);

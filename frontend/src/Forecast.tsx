@@ -9,10 +9,12 @@ import {
   type ForecastDay,
   type HeightRange,
   type ModelAgreement,
+  type RangeCalibration,
   type Reading,
 } from './api';
 import { Figure } from './Figure';
 import { ADDRESS } from './router';
+import { RangeWidthAdmission } from './TrackRecord';
 import { compassPoint, formatRange, formatReading, formatTimestamp, formatValue } from './format';
 
 type LoadState =
@@ -1270,7 +1272,13 @@ function ModelVerdict({ agreement }: { agreement: ModelAgreement | null }) {
  * **Earliest means first in the range**, which arrives in date order from
  * `/api/conditions/forecast` — the same assumption `swellWindows` rests on.
  */
-function Verdict({ days }: { days: ForecastDay[] }) {
+function Verdict({
+  days,
+  rangeCalibration,
+}: {
+  days: ForecastDay[];
+  rangeCalibration: RangeCalibration | null;
+}) {
   const first = (status: CallStatus) => days.find((day) => day.call?.status === status) ?? null;
 
   const go = first('go');
@@ -1374,6 +1382,13 @@ function Verdict({ days }: { days: ForecastDay[] }) {
               outlive what it caveats, and in the same panel at the same size rather than below
               the fold: a redesign is exactly the change that turns a disclaimer into elegant
               grey fine print. */}
+          {/* Beside the range, and only when there is a range. Rendered from `plausible_range`
+              like the caveat above it, because a sentence opening "That range..." on a day the
+              panel prints no range is a limit qualifying nothing. */}
+          {call.plausible_range && rangeCalibration && (
+            <RangeWidthAdmission calibration={rangeCalibration} />
+          )}
+
           {(call.plausible_range || call.height_bar_probability !== null) && (
             <p className="verdict-scope">
               Height only — the swell period, swell direction and wind a giant day also needs are
@@ -1403,25 +1418,6 @@ function Verdict({ days }: { days: ForecastDay[] }) {
   );
 }
 
-/**
- * The forecast section: the verdict, the windows, the days, and what a selected day opens into.
- *
- * **`belowVerdict` is a slot, and it exists because the page interleaves three fetches.** The spec's
- * order down the left column is verdict, then the four condition tiles, then the day list — and
- * the verdict and the day list come from `/api/conditions/forecast` while the tiles come from
- * `/api/conditions/current` and the range admission beside the verdict comes from
- * `/api/track-record`. Something has to sit between two things this component owns.
- *
- * It was called `tiles` while the tiles were the only thing in it. #119 put the range-runs-wide
- * admission in there too — a limit that has to sit beside the range the verdict prints — so the
- * name now says where the slot is rather than what happens to be in it.
- *
- * A slot rather than lifting the fetch into `Home`: this component is rendered bare, as
- * `<ForecastRange />`, at 74 places across two suites (72 in `Forecast.test.tsx`, 2 in
- * `every-field-is-read.test.tsx`), with msw at the network boundary. That is the seam this repo tests at, and turning it into a presentational component
- * fed fixtures directly would trade a tested boundary for a prop. The slot is optional, so every
- * one of those call sites still renders what it always did.
- */
 /**
  * The swell windows, on the reading page (#119).
  *
@@ -1469,7 +1465,34 @@ export function SwellWindowsSection() {
   return <SwellWindows days={state.forecast.days} />;
 }
 
-export function ForecastRange({ belowVerdict }: { belowVerdict?: ReactNode }) {
+/**
+ * The forecast section: the verdict, the days, and what a selected day opens into.
+ *
+ * **`belowVerdict` is a slot, and it exists because the page interleaves two fetches.** The
+ * spec's order down the left column is verdict, then the four condition tiles, then the day list
+ * — and the verdict and the day list come from `/api/conditions/forecast` while the tiles come
+ * from `/api/conditions/current`. Something has to sit between two things this component owns.
+ *
+ * It was called `tiles` while the tiles were the only thing in it, and the name now says where
+ * the slot is rather than what happens to be in it.
+ *
+ * A slot rather than lifting the fetch into `Home`: this component is rendered bare, as
+ * `<ForecastRange />`, at scores of places across two suites, with msw at the network boundary.
+ * That is the seam this repo tests at, and turning it into a presentational component fed
+ * fixtures directly would trade a tested boundary for a prop. The slot is optional, so every one
+ * of those call sites still renders what it always did.
+ *
+ * `rangeCalibration` is a prop rather than a third slot because it is not laid out here — it
+ * reaches `Verdict`, which renders it directly under the range it qualifies. `Home` fetches it
+ * once and passes it to both this and the line of track record below.
+ */
+export function ForecastRange({
+  belowVerdict,
+  rangeCalibration = null,
+}: {
+  belowVerdict?: ReactNode;
+  rangeCalibration?: RangeCalibration | null;
+}) {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const [openDate, setOpenDate] = useState<string | null>(null);
 
@@ -1532,7 +1555,7 @@ export function ForecastRange({ belowVerdict }: { belowVerdict?: ReactNode }) {
            rendered above the verdict while it labelled the section as a whole, which put a
            heading about a list over the answer the list exists to produce. It now sits with the
            list it names, which is also the order the spec sets out — verdict, tiles, days. */
-        <Verdict days={forecast.days} />
+        <Verdict days={forecast.days} rangeCalibration={rangeCalibration} />
       )}
 
       {belowVerdict}

@@ -45,17 +45,58 @@ describe('what the numbers are', () => {
     const proxy = screen.getByTestId('proxy-target');
     expect(proxy).toHaveTextContent(/proxy target/i);
     expect(proxy).toHaveTextContent(/15km offshore rather than at the beach/i);
-    // Why a proxy is needed at all, which is the part that justifies it.
-    expect(proxy).toHaveTextContent(/cannot be looked up historically/i);
+    // Why a proxy is needed at all, which is the part that justifies it. CONTEXT.md says Face
+    // Height has "no reliable historical archive", not that it cannot be looked up — the first
+    // draft here said the stronger thing, which claims more than the glossary does.
+    expect(proxy).toHaveTextContent(/no reliable historical archive/i);
   });
 
-  it('says the canyon transformation is the thing not modelled', () => {
-    // The largest limit the system has, and the one most likely to be softened into "the model
-    // accounts for the canyon" by anyone editing for confidence.
+  it('says where the prediction stops, without claiming the system models nothing', () => {
+    // The largest limit the system has, and it has to be stated without either softening
+    // ("the model accounts for the canyon") or overshooting.
+    //
+    // **The first draft overshot.** It said the canyon's transformation was "exactly what this
+    // system does not model", which contradicts CONTEXT.md — that transformation is
+    // *Amplification*, "the relationship this system exists to learn" — and tells a reader the
+    // product does nothing. The truth is narrower: it learns as far as the record reaches, and
+    // the last stretch to the beach is unmodelled. Both halves are asserted, because either one
+    // alone is the misleading version.
     render(<WhatTheNumbersMean />);
 
-    expect(screen.getByTestId('amplification-gap')).toHaveTextContent(
-      /exactly what this system does not model/i,
+    const gap = screen.getByTestId('amplification-gap');
+    expect(gap).toHaveTextContent(/the relationship this system exists to learn/i);
+    expect(gap).toHaveTextContent(/from the mooring to the beach — is not modelled/i);
+  });
+
+  it('keeps the swell height apart from the combined figure', () => {
+    // CONTEXT.md lists "swell height (a different variable)" under Significant Wave Height's
+    // avoid list, and the forecast page renders both. A sentence claiming every height on the
+    // site is a significant wave height would collapse the two it exists to separate.
+    render(<WhatTheNumbersMean />);
+
+    expect(screen.getByTestId('swell-height-aside')).toHaveTextContent(
+      /travelled component on its own/i,
+    );
+  });
+
+  it('lists all six conditions a Go Call has to clear', () => {
+    // #119's move list names the six-gate chain. It was on neither page: it lived in the
+    // backend's decision module, and the reading page's existing caveat named only the two of
+    // the six that a reconstruction cannot ask.
+    render(<WhatTheNumbersMean />);
+
+    expect(screen.getAllByRole('listitem')).toHaveLength(6);
+    expect(screen.getByTestId('gate-chain-intro')).toHaveTextContent(/six conditions/i);
+  });
+
+  it('says plainly that the threshold check does not cover these pages', () => {
+    // The first draft claimed it did. `test_prose_marks_the_shipped_bars.py` names 21 files and
+    // not one is a frontend file — so the claim was false, on the page describing the rule it
+    // was false about. Stating the hole is the only honest version.
+    render(<WhatTheNumbersMean />);
+
+    expect(screen.getByTestId('current-numbers-rule')).toHaveTextContent(
+      /does not yet cover these pages/i,
     );
   });
 
@@ -67,7 +108,18 @@ describe('what the numbers are', () => {
     const { container } = render(<WhatTheNumbersMean />);
     const copy = container.textContent ?? '';
 
-    for (const forbidden of ['ground truth', 'target variable', 'wave size', 'epic', 'big day']) {
+    for (const forbidden of [
+      'ground truth',
+      'target variable',
+      'wave size',
+      'epic',
+      'big day',
+      // Amplification's own avoid list. The first draft wrote "the canyon focuses swell",
+      // which names the thing ADR 0014 says an avoid list forbids naming.
+      'focus',
+      'magnification',
+      'canyon effect',
+    ]) {
       expect(copy.toLowerCase(), `copy uses "${forbidden}"`).not.toContain(forbidden);
     }
   });

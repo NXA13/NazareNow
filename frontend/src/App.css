@@ -1063,9 +1063,19 @@ footer p {
  * Muted rather than an `.alert`: it is a scope note on an honest figure, not a warning that
  * something is wrong. Loud styling here would compete with the beyond-the-archive notice,
  * which is a genuine shortfall and has to stay the louder of the two. */
+/*
+ * The height-only caveat inside the day panel.
+ *
+ * It was `--ink-muted` at `--text-meta`: a step down the scale and a step toward the quiet tone,
+ * against a percentage rendered at full size in full colour. Smaller and dimmer than the figure
+ * it qualifies, which is the pair of things #116's criterion forbids and #119 asks to be true of
+ * every limit on the site rather than only the one the verdict carries.
+ *
+ * The verdict's copy of the same caveat was written correctly; this one predates it and was
+ * missed because nothing guarded it. `ink.test.ts` guards it now.
+ */
 .plausible-range-scope {
-  color: var(--ink-muted);
-  font-size: var(--text-meta);
+  color: var(--ink-text);
 }
 
 /* How the prediction has moved since the run before.

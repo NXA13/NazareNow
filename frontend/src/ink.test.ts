@@ -163,7 +163,20 @@ describe('a limit is never set quieter than the figure it qualifies', () => {
    * second `.verdict-scope` block further down the sheet, passed it untouched. It also said
    * nothing about `opacity`, which dims text without naming a colour at all.
    */
-  const LIMITS = ['.verdict-scope', '.conditions-provenance'];
+  const LIMITS = [
+    '.verdict-scope',
+    '.conditions-provenance',
+    // Added by #119: the height-only caveat inside the day panel, which was muted and a size
+    // down while the verdict's copy of the same sentence was correct. The review found it
+    // because this guard did not.
+    '.plausible-range-scope',
+  ];
+
+  // `.range-admission` is deliberately absent. It has no rule of its own — it takes its size and
+  // tone from `.verdict-scope`, which is on this list — and adding it here would trip the arm
+  // below that requires every named class to be styled, forcing a no-op rule into the sheet to
+  // satisfy a test. What keeps it covered is that it carries `verdict-scope` in the markup, and
+  // `App.test.tsx` asserts that rather than leaving it to be noticed.
 
   /** Every rule in the sheet whose selector could apply to this class, including descendant and
    * compound forms. A bare `includes` on purpose: it over-matches rather than under-matches, and

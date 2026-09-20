@@ -499,51 +499,37 @@ function RangeCalibrationSection({ calibration }: { calibration: RangeCalibratio
 }
 
 /**
- * How often the printed range has actually held — on the forecast page, beside the range (#119).
+ * How often the printed range has actually held, in one sentence (#119).
  *
- * **This is a limit, so it stays here; the table behind it is teaching, so that moved.** #119's
- * rule is that limits qualifying a number stay beside that number, and it lists the
- * range-runs-wide admission among the things staying on the forecast page. It was not on this
- * page at all: the whole finding lived on the reading page, under the tables that produced it,
- * which left the verdict printing "plausibly 2.5m to 4.6m" with nothing beside it saying how
- * often a range like that has held.
+ * **A limit, so it stays on the forecast page; the tables behind it are teaching, so they did
+ * not.** #119's rule is that limits qualifying a number stay beside that number, and it lists
+ * the range-runs-wide admission among the things staying. It was not on that page at all: the
+ * whole finding lived on the reading page, under the tables that produced it, which left the
+ * verdict printing "plausibly 2.5m to 4.6m" with nothing beside it saying how often a range like
+ * that has held.
+ *
+ * **It takes the calibration rather than fetching it**, and it is rendered by `Verdict` rather
+ * than beside it. The first version did neither: it fetched `/api/track-record` itself while
+ * `TrackRecordLine` fetched the same endpoint as its sibling — two requests for one payload on
+ * one page — and it rendered unconditionally, so it could print "That range..." on a day the
+ * verdict prints no range at all, which is a limit qualifying nothing.
  *
  * **Every direction is stated, including the flattering one.** A component that spoke up only
- * when the range ran wide would be silent in the one case that matters most — a range holding
- * *less* often than it claims is the dangerous direction, because it makes the system look surer
- * than it is. Silence would also be unreadable: a reader cannot tell "measured and fine" from
- * "never measured".
+ * when the range ran wide would be silent in the case that matters most: a range holding *less*
+ * often than it claims makes the system look surer than it is. Silence would also be unreadable
+ * — a reader cannot tell "measured and fine" from "never measured".
  *
- * **The verdict is derived here rather than read off a field**, using the same two functions the
+ * **The verdict is derived here rather than read off a field**, with the same function the
  * reading page's tables use. The backend sends the claim and the measurement and no verdict, for
- * the reason `verdictAcross` gives: the verdict is the thing most likely to stop being true.
- * Deriving it in one place and rendering it in two keeps the two pages from disagreeing.
- *
- * It renders nothing at all until the record has loaded. Unlike the track-record line below it,
- * this sits directly under a figure and a placeholder there would read as a qualification of
- * that figure rather than as a thing still arriving.
+ * the reason `verdictAcross` gives; deriving it once and rendering it twice keeps the two pages
+ * from disagreeing.
  */
-export function RangeWidthAdmission() {
-  const [state, setState] = useState<LoadState>({ status: 'loading' });
-
-  useEffect(() => {
-    let active = true;
-    fetchTrackRecord()
-      .then((record) => active && setState({ status: 'loaded', record }))
-      .catch(() => active && setState({ status: 'failed' }));
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  if (state.status !== 'loaded') return null;
-
-  const calibration = state.record.range_calibration;
+export function RangeWidthAdmission({ calibration }: { calibration: RangeCalibration }) {
   const verdict = verdictAcross(calibration.claimed, calibration.leads);
   const claimed = percent(calibration.claimed);
 
   return (
-    <p className="range-admission" data-testid="range-admission">
+    <p className="verdict-scope range-admission" data-testid="range-admission">
       {verdict === 'narrow' ? (
         <>
           <strong>That range has held less often than it claims.</strong> It is drawn to cover{' '}
@@ -597,21 +583,12 @@ export function RangeWidthAdmission() {
  * **The held-out panel, not the whole record.** It is measured only on seasons the thresholds
  * never saw, which is the one of the two that answers "would this have helped me".
  */
-export function TrackRecordLine() {
-  const [state, setState] = useState<LoadState>({ status: 'loading' });
+export function TrackRecordLine({ record: loaded }: { record: TrackRecord | null }) {
+  const state: LoadState = loaded ? { status: 'loaded', record: loaded } : { status: 'loading' };
 
-  useEffect(() => {
-    let active = true;
-    fetchTrackRecord()
-      .then((record) => active && setState({ status: 'loaded', record }))
-      .catch(() => active && setState({ status: 'failed' }));
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  // Silence rather than an error. The calls above this line do not depend on the track record,
-  // and an alert here would read as the forecast having failed. The link still goes out.
+  // The link and nothing else, whether the record is still coming or never arrives. The calls
+  // above this line do not depend on it, so an alert here would read as the forecast having
+  // failed — and a sentence kept without its figures would be a claim with nothing behind it.
   if (state.status !== 'loaded') {
     return (
       <p className="track-record-line" data-testid="track-record-line">
