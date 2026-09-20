@@ -333,6 +333,166 @@ def fetch_weather(client: httpx.Client, sleep=time.sleep) -> tuple[dict[str, Any
     return fetch(client, WEATHER_URL, WEATHER_VARIABLES, sleep)
 
 
+# ---------------------------------------------------------------------------------------
+# The grid (#120).
+#
+# The map draws one fixed frame and the grid covers exactly it, corner to corner. **Sharing
+# the bounds is the whole point**: a wind glyph placed from a grid point can then never sit
+# outside the drawn map, because there is no grid point outside it. The numbers are the frame
+# `frontend/scripts/map/bathymetry.json` was sampled over, and if that frame ever moves these
+# move with it or the guarantee quietly stops holding.
+# ---------------------------------------------------------------------------------------
+
+GRID_SOUTH = 39.40
+GRID_NORTH = 39.82
+GRID_WEST = -9.52
+GRID_EAST = -9.04
+
+# 5 x 5. Twenty-five points is enough for a wind field to read as a field rather than as a
+# scatter, and few enough that the whole grid is one request per API and 25 rows in the store.
+GRID_SIDE = 5
+
+
+def grid_points() -> list[tuple[float, float]]:
+    """The 25 coordinates, north to south then west to east.
+
+    Rounded to four decimals because that is about 11 m and the provider's own grid is far
+    coarser than that -- an unrounded float here would make the store's primary key depend on
+    binary representation rather than on a place.
+    """
+    step_lat = (GRID_NORTH - GRID_SOUTH) / (GRID_SIDE - 1)
+    step_lon = (GRID_EAST - GRID_WEST) / (GRID_SIDE - 1)
+    return [
+        (round(GRID_NORTH - row * step_lat, 4), round(GRID_WEST + column * step_lon, 4))
+        for row in range(GRID_SIDE)
+        for column in range(GRID_SIDE)
+    ]
+
+
+def validate_grid_point(body: dict[str, Any], variables: list[str], where: str) -> None:
+    """Hold one location's block to the same standard as the single point's `current`.
+
+    **Deliberately not `validate`.** That one also requires an `hourly` block and a
+    forecast horizon, and the grid asks for neither: it is the latest conditions only, so a
+    response carrying `current` and nothing else is correct rather than short. What is shared
+    is the part that matters -- every requested variable present, non-null, with a unit, in
+    the unit the thresholds are written against.
+    """
+    current = body.get("current")
+    if not isinstance(current, dict):
+        raise ValueError(f"Open-Meteo grid point {where} has no current block")
+
+    zone = body.get("timezone")
+    if zone != TIMEZONE:
+        raise ValueError(
+            f"Open-Meteo returned grid point {where} on {zone!r}; this system reads "
+            f"conditions on {TIMEZONE!r}"
+        )
+
+    if "time" not in current:
+        raise ValueError(f"Open-Meteo grid point {where} has no observation time")
+
+    missing = [name for name in variables if name not in current]
+    if missing:
+        raise ValueError(f"Open-Meteo grid point {where} is missing variables: {missing}")
+
+    # Present but null is not present -- the same failure the single point's validator
+    # documents, and the same reason: a null reaches the page as a blank, and a blank on a
+    # wind field reads as calm rather than as a fault.
+    null = [name for name in variables if current[name] is None]
+    if null:
+        raise ValueError(f"Open-Meteo grid point {where} has null readings for: {null}")
+
+    units = body.get("current_units")
+    if not isinstance(units, dict):
+        raise ValueError(f"Open-Meteo grid point {where} has no units")
+
+    without_units = [name for name in variables if name not in units]
+    if without_units:
+        raise ValueError(f"Open-Meteo grid point {where} is missing units for: {without_units}")
+
+    validate_units(units, variables, f"current at {where}")
+
+
+def validate_grid(
+    body: Any, variables: list[str], points: list[tuple[float, float]]
+) -> list[dict[str, Any]]:
+    """Reject a grid response that is not one well-formed block per point we asked for.
+
+    Open-Meteo answers a multi-coordinate request with a JSON **array**, one element per
+    location, in the order the coordinates were sent. A single object comes back when one
+    coordinate is sent, which is not a shape this asks for -- so it is rejected rather than
+    wrapped, because a grid that silently became one point would be a wind field of one dart.
+    """
+    if not isinstance(body, list):
+        raise ValueError(
+            f"Open-Meteo grid response is {type(body).__name__}, not the list of "
+            f"{len(points)} locations that was requested"
+        )
+    if len(body) != len(points):
+        raise ValueError(
+            f"Open-Meteo returned {len(body)} grid locations, not the {len(points)} requested"
+        )
+
+    # `strict=True` is redundant after the length check above and stated anyway: the two
+    # guards protect different mistakes, and the one that cannot be forgotten is the cheap one.
+    for block, (latitude, longitude) in zip(body, points, strict=True):
+        if not isinstance(block, dict):
+            raise ValueError(f"Open-Meteo grid point {latitude},{longitude} is not an object")
+        validate_grid_point(block, variables, f"{latitude},{longitude}")
+
+    return body
+
+
+def fetch_grid(
+    client: httpx.Client, url: str, variables: list[str], sleep=time.sleep
+) -> tuple[list[dict[str, Any]], str]:
+    """GET the whole grid from one endpoint, in one request.
+
+    Open-Meteo takes several coordinates at once, so this is one request per API rather than
+    twenty-five -- which is what makes a grid affordable against a free rate limit at all.
+
+    `current` only, and no forecast horizon. #120 rules out a time scrubber and per-day grid
+    fields: one snapshot per run. Asking for `hourly` as well would multiply the response by
+    the horizon for a feature nobody has asked to use.
+    """
+    points = grid_points()
+    params = {
+        "latitude": ",".join(f"{latitude}" for latitude, _ in points),
+        "longitude": ",".join(f"{longitude}" for _, longitude in points),
+        "current": ",".join(variables),
+        "timezone": TIMEZONE,
+        **UNIT_PARAMS,
+    }
+
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            response = client.get(url, params=params, timeout=30)
+        except httpx.HTTPError:
+            if attempt == MAX_ATTEMPTS:
+                raise
+            sleep(min(BACKOFF_SECONDS * attempt, MAX_BACKOFF_SECONDS))
+            continue
+
+        retryable = response.status_code >= 500 or is_rate_limited(response)
+        if retryable and attempt < MAX_ATTEMPTS:
+            sleep(retry_delay(response, attempt))
+            continue
+
+        response.raise_for_status()
+        return validate_grid(response.json(), variables, points), str(response.url)
+
+    raise AssertionError("retry loop completed without returning or raising")
+
+
+def fetch_grid_marine(client: httpx.Client, sleep=time.sleep) -> tuple[list[dict[str, Any]], str]:
+    return fetch_grid(client, MARINE_URL, MARINE_VARIABLES, sleep)
+
+
+def fetch_grid_weather(client: httpx.Client, sleep=time.sleep) -> tuple[list[dict[str, Any]], str]:
+    return fetch_grid(client, WEATHER_URL, WEATHER_VARIABLES, sleep)
+
+
 # The readings Model Spread is measured on: the three the Heuristic Baseline decides a day
 # by. Spread in anything else would be measuring doubt no tier consults.
 #
