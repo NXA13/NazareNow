@@ -37,6 +37,15 @@ function serveDays(days: (typeof forecast)['days']) {
   server.use(http.get('*/api/conditions/forecast', () => HttpResponse.json({ ...forecast, days })));
 }
 
+/** Put the day list back in the slot.
+ *
+ * Since #118 the list and one day's detail share a slot, so a second day cannot be reached
+ * from the first — its row is not on the screen to click. Every test that reads two days goes
+ * through here, which is also the path a reader has. */
+async function backToTheList() {
+  await userEvent.click(screen.getByRole('button', { name: /back to all \d+ days/i }));
+}
+
 describe('calls', () => {
   it('shows each status distinguishably, with the right label on each', async () => {
     // Asserting only that three labels differ let Go and Watch swap places — a Go day
@@ -187,6 +196,7 @@ describe('calls', () => {
     expect(await screen.findByRole('note')).toHaveTextContent(/worth booking/i);
 
     const easing = forecast.days[2]!;
+    await backToTheList();
     await userEvent.click(await screen.findByRole('button', { name: new RegExp(easing.date) }));
     const note = await screen.findByRole('note');
     expect(note).toHaveTextContent(/do not book yet/i);
@@ -1069,6 +1079,7 @@ describe('the forecast range', () => {
     render(<ForecastRange />);
 
     await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
+    await backToTheList();
     await userEvent.click(await screen.findByRole('button', { name: new RegExp(QUIET.date) }));
 
     // Read the swell cell of a specific row. Searching the whole table for a number
@@ -1081,36 +1092,42 @@ describe('the forecast range', () => {
     expect(swellCell).not.toHaveTextContent(String(BIG.hours[5]!.swell_height.value));
   });
 
-  it('marks the open day as selected', async () => {
+  it('marks the day it was last showing, once the list is back', async () => {
     // The commit that fixed the selection styling claimed this was asserted through the
     // rendered class. It was not: nothing referenced `selected` or aria-pressed, and
     // four mutants survived — the class never applied, always applied, and aria-pressed
     // pinned either way.
+    //
+    // **Asserted after the return rather than during (#118.)** The list and the open day now
+    // share a slot, so while a day is open its row is not rendered at all and there is nothing
+    // to mark. The mark earns its keep on the way back instead, which is the moment a reader
+    // is looking at sixteen near-identical rows wondering which one they just read.
     render(<ForecastRange />);
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
 
-    const big = await screen.findByRole('button', { name: new RegExp(BIG.date) });
-    const quiet = await screen.findByRole('button', { name: new RegExp(QUIET.date) });
-    expect(big).toHaveAttribute('aria-pressed', 'false');
+    await backToTheList();
 
-    await userEvent.click(big);
-
+    // Queried again: these are new elements, and the ones captured before the swap would
+    // carry whatever attributes they had when React detached them.
+    const big = screen.getByRole('button', { name: new RegExp(BIG.date) });
+    const quiet = screen.getByRole('button', { name: new RegExp(QUIET.date) });
     expect(big).toHaveAttribute('aria-pressed', 'true');
     expect(big.className).toContain('selected');
     expect(quiet).toHaveAttribute('aria-pressed', 'false');
     expect(quiet.className).not.toContain('selected');
   });
 
-  it('closes the open day when it is clicked again', async () => {
+  it('opens the same day again when its row is clicked a second time', async () => {
+    // This row used to be a toggle: clicking the open day closed it. It cannot be one now —
+    // the row is not on screen while its day is — and the risk in the state machine that
+    // replaced it is the mirror image, a row that reads as already open and does nothing.
     render(<ForecastRange />);
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
+    await backToTheList();
 
-    const big = await screen.findByRole('button', { name: new RegExp(BIG.date) });
-    await userEvent.click(big);
+    await userEvent.click(screen.getByRole('button', { name: new RegExp(BIG.date) }));
+
     expect(await screen.findByRole('table')).toBeInTheDocument();
-
-    await userEvent.click(big);
-
-    expect(screen.queryByRole('table')).not.toBeInTheDocument();
-    expect(big).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('shows a readable date on each day, not the raw ISO string', async () => {
@@ -2400,5 +2417,123 @@ describe('how the prediction has moved', () => {
 
       expect(history).not.toHaveTextContent(/withheld|because|swell period \d/i);
     });
+  });
+});
+
+/**
+ * The hours take the day list's slot (#118).
+ *
+ * Opening a day used to render its detail *beneath* the list, which grew the left column — and
+ * the map beside it is `height: 100%` of that column, so clicking a row changed the map's
+ * proportion and moved the page under the reader. Both states now share one slot, and
+ * everything a selection reveals lives inside it.
+ *
+ * **The heights themselves are in `e2e/layout.spec.ts`.** jsdom does no layout at all: every
+ * element is 0x0 and `scrollHeight` is 0, so "the column did not change height" passes here
+ * against a column that doubles. What this file can prove is what is in the document and what
+ * has focus, which is the rest of the ticket.
+ */
+describe('the hours take the day list’s slot', () => {
+  /** The control back to the list, named as a reader sees it rather than by test id. */
+  const backToList = () => screen.getByRole('button', { name: /back to all \d+ days/i });
+
+  /** Open a day and settle on its detail. */
+  async function open(date: string) {
+    render(<ForecastRange />);
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(date) }));
+    return screen.findByTestId('day-slot');
+  }
+
+  it('replaces the list rather than opening the hours beneath it', async () => {
+    const slot = await open(BIG.date);
+
+    expect(within(slot).getByRole('table')).toBeInTheDocument();
+    // Not "still there but dimmed", and not "scrolled past": every other day has left the
+    // document. A row that stayed would keep its height and defeat the whole ticket.
+    expect(screen.queryByRole('button', { name: new RegExp(QUIET.date) })).not.toBeInTheDocument();
+    expect(screen.queryByTestId(`day-peak-${QUIET.date}`)).not.toBeInTheDocument();
+    // The invitation to pick a day is gone with the list it invited a reader into.
+    expect(screen.queryByText(/select a day/i)).not.toBeInTheDocument();
+  });
+
+  it('brings everything a selection reveals into the slot, not just the hours', async () => {
+    // The call detail and the agreement panel used to sit outside the swapped region. Left
+    // there they would grow the column exactly as the hours did, which is the defect itself
+    // rather than a tidier version of it.
+    const slot = await open(BIG.date);
+
+    expect(within(slot).getByRole('table')).toBeInTheDocument();
+    expect(within(slot).getByTestId(`spread-${BIG.date}`)).toBeInTheDocument();
+    expect(within(slot).getByRole('note')).toBeInTheDocument();
+  });
+
+  it('gives the list back, whole, from the back control', async () => {
+    await open(BIG.date);
+
+    await userEvent.click(backToList());
+
+    for (const day of forecast.days) {
+      expect(screen.getByRole('button', { name: new RegExp(day.date) })).toBeInTheDocument();
+    }
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(screen.getByText(/select a day/i)).toBeInTheDocument();
+  });
+
+  it('gives the list back on Escape, so the way out is not one button wide', async () => {
+    await open(BIG.date);
+
+    await userEvent.keyboard('{Escape}');
+
+    expect(screen.getByRole('button', { name: new RegExp(QUIET.date) })).toBeInTheDocument();
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+  });
+
+  it('moves focus into the slot when a day opens, and back to that day on return', async () => {
+    // "Works from the keyboard" is not the same as "the buttons are buttons". Without this,
+    // opening a day leaves focus on a element that has just been unmounted, and the next Tab
+    // starts again from the top of the document — which on this page is the site header.
+    render(<ForecastRange />);
+    const big = await screen.findByRole('button', { name: new RegExp(BIG.date) });
+
+    big.focus();
+    await userEvent.keyboard('{Enter}');
+
+    expect(backToList()).toHaveFocus();
+
+    await userEvent.keyboard('{Enter}');
+
+    // Queried again rather than reused: the row this returns to is a new element, and a
+    // reference to the old one would pass against focus landing nowhere.
+    expect(screen.getByRole('button', { name: new RegExp(BIG.date) })).toHaveFocus();
+  });
+
+  it('gives every hour all five Offshore Conditions, not only the hours a test names', async () => {
+    // CONTEXT.md defines Offshore Conditions as swell height, swell period, swell direction,
+    // wind speed and wind direction. The existing coverage checks hours 0, 7 and 23, which a
+    // table rendering the first hour's values into every later row would survive.
+    const slot = await open(BIG.date);
+    const rows = within(within(slot).getByRole('table')).getAllByRole('row').slice(1);
+
+    expect(rows).toHaveLength(BIG.hours.length);
+    rows.forEach((row, index) => {
+      const hour = BIG.hours[index]!;
+      const cells = within(row).getAllByRole('cell');
+      expect(cells[0]).toHaveTextContent(`${hour.swell_height.value}${hour.swell_height.unit}`);
+      expect(cells[1]).toHaveTextContent(`${hour.swell_period.value}${hour.swell_period.unit}`);
+      expect(cells[2]).toHaveTextContent(compassPoint(hour.swell_direction.value));
+      expect(cells[3]).toHaveTextContent(`${hour.wind_speed.value}${hour.wind_speed.unit}`);
+      expect(cells[3]).toHaveTextContent(compassPoint(hour.wind_direction.value));
+    });
+  });
+
+  it('keeps the day count heading with the list it counts', async () => {
+    // "The next 16 days" standing over one day's hour table names something that is no longer
+    // on screen. It belongs to the list, so it travels with it.
+    render(<ForecastRange />);
+    await screen.findByRole('heading', { name: `The next ${forecast.days.length} days` });
+
+    await userEvent.click(screen.getByRole('button', { name: new RegExp(BIG.date) }));
+
+    expect(screen.queryByRole('heading', { name: /^The next \d+ days$/ })).not.toBeInTheDocument();
   });
 });
