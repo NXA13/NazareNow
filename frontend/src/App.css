@@ -594,11 +594,21 @@ footer p {
 /* --- the sea floor, drawn from soundings (#121) ---------------------------- */
 
 /*
- * The map fills its slot at the proportion the shell reserved. `slice` on the SVG rather than
- * `meet`: the frame is a fixed view of a fixed place and the slot's aspect ratio follows the
- * column beside it, so the choice is between cropping the frame and letterboxing the panel.
- * Cropping keeps the canyon head — the part of this map anybody is looking at — filling the
- * space it is given.
+ * The map fills its slot at the proportion the shell reserved. The frame is a fixed view of a
+ * fixed place and the slot's aspect ratio follows the column beside it, so the choice is between
+ * cropping the frame and letterboxing the panel.
+ *
+ * **It was `slice`, and this comment argued for it: cropping kept the canyon head filling the
+ * space it was given.** That argument was made against an estimate and the estimate was wrong.
+ * Measured, `slice` crops 12.98% of the width — 6.49% each side, nothing vertically — and #120's
+ * grid puts its outer columns on the bounds rather than at cell centres, so those two thin
+ * strips contained two of the five wind columns. 40% of the data the map exists to show, off
+ * the edge. It is `meet` now; `docs/adr/0015-the-whole-frame-is-drawn.md` records why.
+ *
+ * The ~97 px the letterbox leaves stays this panel's own background. **Do not fill it with
+ * `--map-band-7`.** The bands fall at the frame's north and south edges — open ocean and coast —
+ * so extending the deepest tone into them would draw sea floor nobody surveyed, which is the
+ * objection that got the hand-drawn canyon rejected in the first place.
  */
 .bathymetry {
   display: block;

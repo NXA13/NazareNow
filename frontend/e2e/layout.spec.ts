@@ -246,6 +246,10 @@ test.describe('the map slot', () => {
     // feature gets mistaken for a finished one. The map is real now, so the assertion inverts —
     // and what it holds is that the drawing fills the slot rather than sitting in a corner of
     // it, which is the shape the two-column promise reserved.
+    //
+    // Everything below measures the `<svg>` **element**, which fills the slot under either
+    // `preserveAspectRatio`. Whether the drawing inside it is whole is a different question and
+    // a different test — the one after this one.
     const { slot } = await loadHome(page);
     const map = slot.locator('svg.bathymetry');
 
@@ -268,6 +272,50 @@ test.describe('the map slot', () => {
 
     // Readable on arrival rather than somewhere down a very tall panel.
     expect(mapBox.y).toBeLessThan((await viewport(page)).height);
+  });
+
+  test('shows the whole frame, so nothing drawn is cropped away', async ({ page }) => {
+    // **The element box cannot see this, which is why it needs its own test.** Under both
+    // `slice` and `meet` the `<svg>` element fills the slot exactly; what crops or letterboxes
+    // is its *contents*. So the test above passes unchanged against a drawing with two of its
+    // five wind columns off the edge, and did.
+    //
+    // Measured through the CTM, which is the matrix mapping viewBox units to the screen, so the
+    // corners of the frame are located where they actually landed rather than where the element
+    // is. #120 puts the outer grid points on the bounds themselves — x=0 and x=686.8 — so a
+    // crop of any width at all takes a whole column of darts with it, and the spec's reason for
+    // choosing darts is that "one dart per fetched point is literally what the data is".
+    const { slot } = await loadHome(page);
+    const map = slot.locator('svg.bathymetry');
+    await expect(map).toBeVisible();
+
+    const frame = await map.evaluate((svg: SVGSVGElement) => {
+      const ctm = svg.getScreenCTM()!;
+      const box = svg.getBoundingClientRect();
+      const { width, height } = svg.viewBox.baseVal;
+      // Relative to the element's own box, and read in the same call, so no scroll position or
+      // round trip can come between the two coordinate systems being compared.
+      return {
+        left: ctm.e - box.left,
+        top: ctm.f - box.top,
+        right: ctm.a * width + ctm.e - box.left,
+        bottom: ctm.d * height + ctm.f - box.top,
+        width: box.width,
+        height: box.height,
+      };
+    });
+
+    // A pixel of tolerance each way: the browser rounds, and a fit this close is a fit.
+    expect(frame.left).toBeGreaterThanOrEqual(-1);
+    expect(frame.right).toBeLessThanOrEqual(frame.width + 1);
+    expect(frame.bottom).toBeLessThanOrEqual(frame.height + 1);
+
+    // **`YMin`, not `YMid`, and this is the assertion that tells them apart.** The frame is
+    // taller in proportion than the slot, so ~97 px of the panel goes unpainted whatever we do.
+    // `YMid` splits it into two bands and a gap above the map reads as a rendering fault; `YMin`
+    // puts the map flush to the top and collects the space into one band above the caption,
+    // where it reads as caption spacing.
+    expect(frame.top).toBeCloseTo(0, 0);
   });
 
   test('says under the map that it is depth and not today', async ({ page }) => {
