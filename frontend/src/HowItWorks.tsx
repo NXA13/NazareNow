@@ -12,10 +12,16 @@
 
 import { SwellWindowsSection } from './Forecast';
 import { TrackRecordPage } from './TrackRecord';
+import { WhatTheNumbersMean } from './WhatTheNumbersMean';
 
 export function HowItWorks() {
   return (
     <>
+      {/* Before the numbers rather than under them. Every figure below this is a significant
+          wave height, and a reader arriving with the number they have seen in news coverage
+          reads all of them as several times too small — so the distinction has to come first. */}
+      <WhatTheNumbersMean />
+
       <TrackRecordPage />
 
       {/* Arrived with #119, which moved it off the forecast page: spec §2 puts five things down

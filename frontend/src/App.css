@@ -308,6 +308,25 @@ h2 {
 }
 
 /*
+ * The line of track record at the foot of the forecast column (#119).
+ *
+ * Body size and body colour, which is the point of it: #113 replaced a track record on the page
+ * with a link to one, on the reasoning that a track record nobody navigates to is a limitation
+ * nobody reads, and a line set as fine print would be the same retreat by a different route.
+ */
+.track-record-line {
+  margin: var(--space-4) 0 0;
+  max-width: var(--measure-prose);
+  line-height: var(--leading-body);
+}
+
+/* The reading page's prose, bounded by how far a line of text can run rather than by the page
+   width — `--measure-page` is the column, this is the paragraph inside it. */
+.explainer p {
+  max-width: var(--measure-prose);
+}
+
+/*
  * Where the tile figures came from, beside them rather than under the page (#116).
  *
  * It used to be the last element on the page, inside a `footer` set at `--text-small` in
