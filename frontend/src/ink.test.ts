@@ -353,6 +353,35 @@ describe('both fonts are served from this origin', () => {
     // mid-sentence. `scripts/fetch-fonts.mjs` holds the repertoire and the one known gap.
     expect(Object.fromEntries(uncovered)).toEqual({});
   });
+
+  it('carries every letter in both cases, because the sheet uppercases at paint time (#130)', () => {
+    /*
+     * **The test above reads the source; the browser reads the source *transformed*.**
+     *
+     * `text-transform: uppercase` is applied at paint, so a rule that uppercases an element
+     * renders characters that appear nowhere in the source the guard above sweeps. The hour
+     * table is where it showed: the caption and the `Time (Nazaré)` header are both uppercased,
+     * the source says `é` and is covered, and what a reader actually got was NAZAR, one
+     * system-face É, mid-word, in the first column of the panel they had just opened.
+     *
+     * So the rule is about the repertoire rather than about the sheet: **every letter carried is
+     * carried in both cases.** The alternative was to teach the guard to find the sheet's
+     * uppercasing selectors and fold them in, which is a second thing to keep in step with
+     * `App.css` — and the failure it guards against is precisely the one nobody notices. This
+     * cannot rot: a new `text-transform: uppercase` on any rule cannot introduce a fallback
+     * glyph, because there is no letter here whose uppercase is missing.
+     *
+     * Cheap, too. The accented letters are nine, the list is deliberately short, and the cost is
+     * nine glyphs across two faces.
+     */
+    // Named as the glyph that is *missing*, not as the lowercase that implies it: "É is not
+    // carried" is the sentence somebody can act on.
+    const missing = [...new Set(REPERTOIRE)]
+      .map((character) => character.toUpperCase())
+      .filter((upper) => !REPERTOIRE.includes(upper));
+
+    expect(missing).toEqual([]);
+  });
 });
 
 describe('contrast is measured against the ground, not assumed', () => {
