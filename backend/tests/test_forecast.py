@@ -378,14 +378,17 @@ def test_a_duplicated_hour_is_rejected(store, client) -> None:
 def test_the_provider_is_asked_for_the_whole_range_hour_by_hour(store) -> None:
     """Nothing pinned the request itself: dropping forecast_days left the suite green
     while the provider quietly fell back to its seven-day default."""
-    asked: list[httpx.URL] = []
+    asked: list[httpx.Request] = []
 
     def handle(request: httpx.Request) -> httpx.Response:
-        asked.append(request.url)
+        asked.append(request)
         if is_ensemble_request(request):
             return httpx.Response(200, json=ensemble_body_from(marine_with_hourly()))
         marine = "marine" in request.url.host
-        return httpx.Response(200, json=marine_with_hourly() if marine else weather_with_hourly())
+        body = marine_with_hourly() if marine else weather_with_hourly()
+        if is_grid_request(request):
+            return httpx.Response(200, json=grid_from(body, body["current_units"]))
+        return httpx.Response(200, json=body)
 
     with httpx.Client(transport=httpx.MockTransport(handle)) as http:
         run_pipeline(store, http, sleep=lambda _: None)
@@ -393,7 +396,9 @@ def test_the_provider_is_asked_for_the_whole_range_hour_by_hour(store) -> None:
     # The grid is deliberately not in this loop. #120 asks it for `current` only and no
     # horizon at all, which `test_it_asks_for_current_only_and_no_forecast_horizon` pins from
     # the other side — so a grid request carrying `forecast_days` would be the bug there.
-    forecasts = [url for url in asked if "," not in url.params.get("latitude", "")]
+    # Told apart by the shared predicate rather than by re-deriving it here: two spellings of
+    # "this is a grid request" is one more place than it can be right in.
+    forecasts = [request.url for request in asked if not is_grid_request(request)]
     assert len(forecasts) == 3
 
     for url in forecasts:
@@ -408,9 +413,9 @@ def test_the_provider_is_asked_for_the_whole_range_hour_by_hour(store) -> None:
     # block per model would add a second way for that call to fail for something nothing
     # reads. Asserted separately rather than dropped, or the ensemble's exemption would
     # have quietly excused the other two.
-    for url in asked:
-        if "models" not in url.params:
-            assert url.params.get("current"), "current conditions must still be requested"
+    for request in asked:
+        if "models" not in request.url.params:
+            assert request.url.params.get("current"), "current conditions must still be requested"
 
 
 def test_every_ingested_hourly_reading_is_served_by_the_api() -> None:

@@ -243,7 +243,7 @@ def test_raw_provider_responses_are_retained(store) -> None:
         # system fetches and does not retain. This table exists so a prediction can be traced
         # to what it was derived from, and nothing a reader acts on is derived from the grid;
         # it is also already kept in full in `conditions_grid`, so a permanent second copy of
-        # twenty-five blocks a run would be provenance for nobody. `store_conditions_grid`
+        # twenty-five blocks a run would be provenance for nobody. `refresh_conditions_grid`
         # gives the argument, and the failure case *is* recorded, because nothing else says it.
     }
     assert all(entry["body"] for entry in raw)

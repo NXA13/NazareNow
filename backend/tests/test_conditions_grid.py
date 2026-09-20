@@ -37,6 +37,7 @@ from nazarenow.sources.open_meteo import (
 )
 
 URL = "https://marine-api.open-meteo.com/v1/marine"
+WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
 
 
 def point_body(variables: list[str] = MARINE_VARIABLES, **overrides: Any) -> dict[str, Any]:
@@ -104,6 +105,24 @@ def weather_grid_observed_at(transport: httpx.MockTransport, at: str) -> httpx.M
     return rewrite_grid(transport, restamp, marine=False)
 
 
+def one_weather_point_observed_at(
+    transport: httpx.MockTransport, index: int, at: str
+) -> httpx.MockTransport:
+    """A provider whose weather grid is current everywhere except at one location.
+
+    Real enough to be worth pinning: the twenty-five coordinates are answered from whichever
+    of the provider's own cells each fell in, and there is nothing promising those cells were
+    all refreshed in the same pass.
+    """
+
+    def restamp(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        aged = [{**block, "current": dict(block["current"])} for block in blocks]
+        aged[index]["current"]["time"] = at
+        return aged
+
+    return rewrite_grid(transport, restamp, marine=False)
+
+
 def malformed_grid(transport: httpx.MockTransport) -> httpx.MockTransport:
     """A grid response that arrived and is not a grid: one object where an array was asked for.
 
@@ -112,6 +131,11 @@ def malformed_grid(transport: httpx.MockTransport) -> httpx.MockTransport:
     produce, and the one that would quietly become a wind field of a single dart.
     """
     return rewrite_grid(transport, lambda blocks: blocks[0])
+
+
+def malformed_weather_grid(transport: httpx.MockTransport) -> httpx.MockTransport:
+    """Only the *weather* grid comes back malformed; the marine one is fine."""
+    return rewrite_grid(transport, lambda blocks: blocks[0], marine=False)
 
 
 class TestTheGridCoversTheMap:
@@ -391,7 +415,9 @@ class TestTheStoreHoldsOneGrid:
     def test_every_point_carries_its_own_stamps_and_readings(self, store):
         store.replace_conditions_grid(self._grid())
 
-        for point in store.latest_conditions_grid():
+        held = store.latest_conditions_grid()
+        assert len(held) == 25
+        for point in held:
             assert point["observed_at"] == "2026-02-13T09:00"
             assert point["fetched_at"]
             assert point["readings"]["swell_height"] == {"value": 1.5, "unit": "m"}
@@ -515,6 +541,17 @@ class TestAGridThatDoesNotArrive:
         assert store.failed_runs() == []
         assert store.latest_conditions_grid() == []
 
+    def test_the_record_names_the_endpoint_that_actually_failed(self, store):
+        # The URL is the whole provenance of a degradation nothing else reports. Recording a
+        # broken weather grid against the marine endpoint would send the one person who ever
+        # reads this row to the wrong API.
+        ingest(store, malformed_weather_grid(forecast_provider()))
+
+        lost = [row for row in store.raw_responses() if row["source"] == GRID_UNAVAILABLE]
+        assert lost
+        assert all("weather" not in row["url"] or "marine" not in row["url"] for row in lost)
+        assert all(row["url"] == WEATHER_URL for row in lost)
+
     def test_a_malformed_grid_is_recorded_as_a_payload_we_did_not_recognise(self, store):
         # Quieter than the ensemble is not the same as silent. The record has to distinguish
         # a provider having a bad afternoon from one this system has stopped understanding —
@@ -563,6 +600,46 @@ class TestServingTheGrid:
             assert point["wind_direction"]["unit"] == "°"
             assert point["swell_height"]["unit"] == "m"
             assert point["swell_period"]["value"] is not None
+
+    def test_the_grid_is_dated_by_its_oldest_point_not_by_its_first(self, store, client):
+        """One observation time stands for twenty-five, so it has to be the oldest of them.
+
+        `merge_grid` dates each point by the older of its own two endpoints, and nothing
+        promises the provider refreshed all twenty-five cells in one pass. Reading the stamp
+        off the first row would let a corner that is hours behind hide under a fresh one --
+        the same overstatement `earliest` exists to prevent between the two endpoints, one
+        level up. The whole picture is at least this old, or the number is not worth sending.
+        """
+        stale_corner = 12
+        ingest(
+            store,
+            one_weather_point_observed_at(forecast_provider(), stale_corner, "2026-02-08T18:00"),
+        )
+
+        body = client.get("/api/conditions/grid").json()
+
+        assert body["observed_at"] == "2026-02-08T18:00"
+        # And the point really is the odd one out, so this cannot pass by every point being old.
+        held = store.latest_conditions_grid()
+        assert held[stale_corner]["observed_at"] == "2026-02-08T18:00"
+        assert {p["observed_at"] for p in held} == {"2026-02-08T18:00", "2026-02-09T00:00"}
+
+    def test_nothing_the_run_stored_is_dropped_on_the_way_out(self, store, client):
+        """Every reading held for a point reaches the response.
+
+        Pydantic drops an unmodelled key without a word, so a reading this system pays a
+        provider request for, validates the unit of, and writes to disk can vanish between
+        the store and the page with nothing anywhere saying so. The check is the stored keys
+        against the served ones rather than a list written out here, which would be a third
+        place for the same set to be right in.
+        """
+        ingest(store, forecast_provider())
+
+        stored = set(store.latest_conditions_grid()[0]["readings"])
+        served = set(client.get("/api/conditions/grid").json()["points"][0])
+
+        assert stored
+        assert stored - served == set()
 
     def test_it_carries_the_stamps_the_grid_was_fetched_and_observed_at(self, store, client):
         ingest(store, forecast_provider())
@@ -614,10 +691,7 @@ class TestServingTheGrid:
         assert grid["fetched_at"] == grid_fetched.isoformat()
         assert grid["stale"] is True
 
-    def test_the_endpoint_makes_no_third_party_call_of_its_own(self, store, client):
-        # ADR 0005: nothing in the request path contacts a provider. `conftest` blocks
-        # outbound sockets, so an endpoint that fetched its own grid would fail here rather
-        # than pass quietly on a machine with a network.
-        ingest(store, forecast_provider())
-
-        assert client.get("/api/conditions/grid").status_code == 200
+    # ADR 0005's "nothing in the request path contacts a provider" is not asserted here. It is
+    # enforced for the whole suite by `conftest.block_outbound_network`, and a test restating it
+    # with `status_code == 200` would add no way for it to fail -- while reading, in a list of
+    # test names, like the thing actually holding the guarantee up.

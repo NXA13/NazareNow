@@ -754,7 +754,7 @@ def _fetch_and_store(store: Store, client: httpx.Client, sleep, run_id: int) -> 
     # would put two more provider requests between a validated forecast and its storage, so
     # a slow or sulking endpoint could cost a traveller the thing they came for in order to
     # protect the thing they did not.
-    store_conditions_grid(store, client, sleep, run_id)
+    refresh_conditions_grid(store, client, sleep, run_id)
 
 
 def fetch_spread_members(store: Store, client: httpx.Client, sleep, run_id: int) -> Ensemble:
@@ -804,8 +804,8 @@ def fetch_spread_members(store: Store, client: httpx.Client, sleep, run_id: int)
     return collect_ensemble(body, models)
 
 
-def store_conditions_grid(store: Store, client: httpx.Client, sleep, run_id: int) -> None:
-    """Fetch the map's grid and replace the stored one, or leave the run alone (#120).
+def refresh_conditions_grid(store: Store, client: httpx.Client, sleep, run_id: int) -> None:
+    """Fetch the map's grid and replace the stored one, or leave both alone (#120).
 
     **A grid that does not arrive degrades the map and never the run.** ADR 0003 already makes
     this trade for the ensemble, where a missing model "degrades the uncertainty estimate
@@ -842,16 +842,21 @@ def store_conditions_grid(store: Store, client: httpx.Client, sleep, run_id: int
     store refuses an empty replacement precisely so that a caller cannot clear it by accident,
     and the way this one avoids clearing it is by not calling at all.
     """
+    # Which endpoint is in flight, because the record's URL is the whole provenance of a
+    # degradation nothing else reports. A `ValueError` carries no request to read it off --
+    # the response arrived, it just was not a grid -- so a single hardcoded fallback recorded
+    # a malformed *weather* grid against the marine API, sending the one person who ever
+    # reads this row to the wrong provider.
+    attempting = open_meteo.MARINE_URL
     try:
         marine_blocks, _ = open_meteo.fetch_grid_marine(client, sleep)
+        attempting = open_meteo.WEATHER_URL
         weather_blocks, _ = open_meteo.fetch_grid_weather(client, sleep)
     except (httpx.HTTPError, ValueError) as error:
         store.record_raw_response(
             run_id,
             GRID_UNAVAILABLE,
-            attempted_url(error, open_meteo.MARINE_URL)
-            if isinstance(error, httpx.HTTPError)
-            else open_meteo.MARINE_URL,
+            attempted_url(error, attempting) if isinstance(error, httpx.HTTPError) else attempting,
             {"failure_kind": failure_kind(error).value, "failure_detail": failure_detail(error)},
         )
         return

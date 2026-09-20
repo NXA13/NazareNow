@@ -232,6 +232,12 @@ class GridPoint(BaseModel):
     wave_period: Reading
     wave_direction: Reading
     water_temperature: Reading
+    # Modelled although the map draws neither temperature, because the run fetches, unit-checks
+    # and stores both for all twenty-five points -- and pydantic drops an unmodelled key
+    # without a word. A reading paid for with a provider request and written to disk should not
+    # be able to vanish between the store and the page in silence; if the grid should stop
+    # carrying these, the place to stop is the request, not the response model.
+    air_temperature: Reading
     wind_speed: Reading
     wind_direction: Reading
 
@@ -247,7 +253,11 @@ class ConditionsGrid(BaseModel):
     """
 
     observed_at: str
-    """The older of the two providers' observation times, as the single point reports it."""
+    """The oldest observation time among the twenty-five points.
+
+    Each point carries its own -- the older of its two endpoints -- and this is the oldest of
+    those, so the sentence it supports is the one the single point's stamp supports too: the
+    whole picture is at least this old."""
 
     fetched_at: str
     """When the grid itself last arrived -- not when the last run finished."""
@@ -1168,13 +1178,19 @@ def conditions_grid(store: Annotated[Store, Depends(get_store)]) -> ConditionsGr
             detail="No conditions grid has been ingested yet. Run the pipeline first.",
         )
 
-    # Every row of one grid shares its stamps -- `replace_conditions_grid` writes them in a
-    # single transaction with a single `fetched_at` -- so the first row speaks for all of
-    # them, the way `forecast` reads its stamp off its first hour.
+    # `fetched_at` really is one value: `replace_conditions_grid` writes the whole grid in a
+    # single transaction under a single stamp, so any row speaks for all of them.
     fetched_at = points[0]["fetched_at"]
 
+    # **`observed_at` is not, and taking the first row's was wrong.** Each point is dated by
+    # `merge_grid` from its own two endpoints, and nothing promises the provider refreshed all
+    # twenty-five of its cells in one pass. One time standing for twenty-five therefore has to
+    # be the oldest of them, or a corner that is hours behind hides under a fresh neighbour --
+    # the same overstatement `earliest` prevents between the two endpoints, one level up.
+    observed_at = min(point["observed_at"] for point in points)
+
     return ConditionsGrid(
-        observed_at=points[0]["observed_at"],
+        observed_at=observed_at,
         fetched_at=fetched_at,
         stale=is_stale(fetched_at),
         stale_after_hours=STALE_AFTER_HOURS,

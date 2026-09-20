@@ -272,27 +272,22 @@ def validate_hourly(parsed: OpenMeteoResponse, variables: list[str]) -> None:
         )
 
 
-def fetch(
-    client: httpx.Client, url: str, variables: list[str], sleep=time.sleep
-) -> tuple[dict[str, Any], str]:
-    """GET one Open-Meteo endpoint, retrying transient failures with backoff.
+def get_with_retries(
+    client: httpx.Client, url: str, params: dict[str, Any], sleep=time.sleep
+) -> httpx.Response:
+    """GET an Open-Meteo endpoint, retrying transient failures with backoff.
 
-    Returns the parsed body and the URL it came from. Raises on a payload that does not
-    match the expected shape, so a provider changing its contract stops the run instead
-    of quietly producing conditions with holes in them.
+    Returns a response that is known to be a success; every other outcome raises. What
+    counts as worth retrying is decided in this one place because getting it wrong is
+    expensive in both directions -- retrying a permanent error burns a rate budget that is
+    shared across every request this system makes, and not retrying a transient one throws
+    away a run over a hiccup.
+
+    **One copy, deliberately.** The single point and the grid (#120) ran character-identical
+    loops for a while, and the reasoning below existed only beside the first of them -- so
+    the second was the same rule with its justification missing, which is the state in which
+    one of the two quietly stops matching the other.
     """
-    params = {
-        "latitude": LATITUDE,
-        "longitude": LONGITUDE,
-        "current": ",".join(variables),
-        "hourly": ",".join(variables),
-        "forecast_days": FORECAST_DAYS,
-        "timezone": TIMEZONE,
-        # Explicit, so a provider-side default cannot silently change the scale the
-        # thresholds are written against. Verified against the response as well.
-        **UNIT_PARAMS,
-    }
-
     for attempt in range(1, MAX_ATTEMPTS + 1):
         # Only transport failures are caught here. Catching HTTPError around
         # raise_for_status as well would swallow HTTPStatusError and retry it, which
@@ -316,13 +311,37 @@ def fetch(
         # Covers 3xx as well as 4xx and 5xx: anything that is not a success stops here
         # rather than reaching json() and failing as a confusing parse error.
         response.raise_for_status()
-
-        body = response.json()
-        validate(body, variables)
-        return body, str(response.url)
+        return response
 
     # Unreachable: the final attempt either returns or raises above.
     raise AssertionError("retry loop completed without returning or raising")
+
+
+def fetch(
+    client: httpx.Client, url: str, variables: list[str], sleep=time.sleep
+) -> tuple[dict[str, Any], str]:
+    """GET one Open-Meteo endpoint, retrying transient failures with backoff.
+
+    Returns the parsed body and the URL it came from. Raises on a payload that does not
+    match the expected shape, so a provider changing its contract stops the run instead
+    of quietly producing conditions with holes in them.
+    """
+    params = {
+        "latitude": LATITUDE,
+        "longitude": LONGITUDE,
+        "current": ",".join(variables),
+        "hourly": ",".join(variables),
+        "forecast_days": FORECAST_DAYS,
+        "timezone": TIMEZONE,
+        # Explicit, so a provider-side default cannot silently change the scale the
+        # thresholds are written against. Verified against the response as well.
+        **UNIT_PARAMS,
+    }
+
+    response = get_with_retries(client, url, params, sleep)
+    body = response.json()
+    validate(body, variables)
+    return body, str(response.url)
 
 
 def fetch_marine(client: httpx.Client, sleep=time.sleep) -> tuple[dict[str, Any], str]:
@@ -455,6 +474,9 @@ def fetch_grid(
     `current` only, and no forecast horizon. #120 rules out a time scrubber and per-day grid
     fields: one snapshot per run. Asking for `hourly` as well would multiply the response by
     the horizon for a feature nobody has asked to use.
+
+    Retries and what is worth retrying belong to `get_with_retries`, shared with the single
+    point so the two cannot drift into disagreeing about which failures are transient.
     """
     points = grid_points()
     params = {
@@ -465,24 +487,8 @@ def fetch_grid(
         **UNIT_PARAMS,
     }
 
-    for attempt in range(1, MAX_ATTEMPTS + 1):
-        try:
-            response = client.get(url, params=params, timeout=30)
-        except httpx.HTTPError:
-            if attempt == MAX_ATTEMPTS:
-                raise
-            sleep(min(BACKOFF_SECONDS * attempt, MAX_BACKOFF_SECONDS))
-            continue
-
-        retryable = response.status_code >= 500 or is_rate_limited(response)
-        if retryable and attempt < MAX_ATTEMPTS:
-            sleep(retry_delay(response, attempt))
-            continue
-
-        response.raise_for_status()
-        return validate_grid(response.json(), variables, points), str(response.url)
-
-    raise AssertionError("retry loop completed without returning or raising")
+    response = get_with_retries(client, url, params, sleep)
+    return validate_grid(response.json(), variables, points), str(response.url)
 
 
 def fetch_grid_marine(client: httpx.Client, sleep=time.sleep) -> tuple[list[dict[str, Any]], str]:
