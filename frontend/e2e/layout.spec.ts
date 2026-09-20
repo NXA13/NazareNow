@@ -473,25 +473,41 @@ test.describe(`the day slot, at ${DESKTOP.width}x${DESKTOP.height}`, () => {
     expect(seen.roomForRing).toBe(true);
   });
 
-  test('is the same height at three days as at sixteen', async ({ page }) => {
-    // What the fixed slot actually buys, and the reason it is a length rather than a
-    // `max-content`. The design spec's warning is that "any layout that assumes a fixed count
-    // is a layout that breaks silently" — this is the assertion that the layout no longer has
-    // an opinion about the count at all.
+  test('absorbs the day count into the scroller rather than into the page', async ({ page }) => {
+    // The design spec's warning is that "any layout that assumes a fixed count is a layout that
+    // breaks silently", so this is the assertion that the page has no opinion about the count.
     //
-    // The column rather than the slot. #118 held this by giving the slot a fixed height; #132
-    // caps the column itself, so the slot is free to be whatever its contents are and the thing
-    // that no longer has an opinion about the day count is the column around it.
+    // **Two halves, because either alone is worth nothing here.** Comparing the column's height
+    // at three days and at sixteen is what this test did first, and it could not fail: the
+    // column is pinned by the viewport whatever is inside it, so the assertion held even in the
+    // broken state where the flex chain was severed and the tail grew to 1020 inside a column
+    // of 818. What can fail is the page, and what proves the days are really there rather than
+    // dropped is the scroller's content growing with them.
     await loadHome(page);
-    const sixteen = (await page.locator('.home-forecast').boundingBox())!.height;
+    const { height: viewportHeight } = await viewport(page);
+    const sixteen = await page.evaluate(() => ({
+      page: document.documentElement.scrollHeight,
+      content: document.querySelector('.column-scroll')!.scrollHeight,
+    }));
 
     // Added after the `beforeEach` stub, so it is matched first.
     await page.route('**/api/conditions/forecast', (route) =>
       route.fulfill({ json: { ...longForecast, days: longForecast.days.slice(0, 3) } }),
     );
     await loadHome(page);
+    const three = await page.evaluate(() => ({
+      page: document.documentElement.scrollHeight,
+      content: document.querySelector('.column-scroll')!.scrollHeight,
+    }));
 
-    expect((await page.locator('.home-forecast').boundingBox())!.height).toBeCloseTo(sixteen, 1);
+    // The page fits at both counts, and measures the same at both.
+    expect(sixteen.page).toBeLessThanOrEqual(viewportHeight);
+    expect(three.page).toBeLessThanOrEqual(viewportHeight);
+    expect(three.page).toBe(sixteen.page);
+
+    // And the thirteen extra days went into the scroller, not into a page that grew or a list
+    // that quietly shortened.
+    expect(sixteen.content).toBeGreaterThan(three.content);
   });
 
   test('scrolls the column tail rather than lengthening the page', async ({ page }) => {
@@ -514,14 +530,50 @@ test.describe(`the day slot, at ${DESKTOP.width}x${DESKTOP.height}`, () => {
     // Every row is still in the document, scrolled rather than dropped.
     await expect(page.locator('.day')).toHaveCount(longForecast.days.length);
 
-    // And the four blocks that used to be stranded below it are inside it.
-    for (const inside of ['.day-slot', '.track-record-line', 'footer']) {
+    // And every block that used to be stranded below it is inside it — named one by one,
+    // because a loop over three of the four is a guard with a hole exactly where the fourth is.
+    for (const inside of [
+      '.day-slot',
+      // Scoped to the scroller already, so these are bare: `.forecast .alert` would look for a
+      // `.forecast` *inside* it, and the section is its ancestor.
+      '.alert',
+      '.provenance',
+      '.track-record-line',
+      'footer',
+    ]) {
       await expect(tail.locator(inside)).toHaveCount(1);
     }
   });
 });
 
 test.describe('how tall the page is, which is the promise', () => {
+  test('shows the verdict, the tiles and their provenance without scrolling', async ({ page }) => {
+    // **The first half of the promise, and the half a page-height assertion cannot see.**
+    // `.column-scroll` is a flex child, so anything added above the fold is paid for out of the
+    // scroller before it is paid for out of the page: the block below could squeeze to a slit
+    // while `scrollHeight` went on reporting exactly one viewport. That is the promise kept in
+    // the letter and lost in the substance, so it is asserted directly.
+    await loadHome(page);
+    const { height: viewportHeight } = await viewport(page);
+
+    const head = (await page.locator('.column-head').boundingBox())!;
+    expect(head.y + head.height).toBeLessThanOrEqual(viewportHeight);
+
+    // Each of the three the ruling names, by what a reader sees rather than by class.
+    for (const block of [
+      page.getByRole('heading', { level: 2 }).first(),
+      page.getByTestId('tiles'),
+      page.getByTestId('provenance'),
+    ]) {
+      const box = (await block.boundingBox())!;
+      expect(box.y + box.height).toBeLessThanOrEqual(viewportHeight);
+    }
+
+    // And the scroller still has room to be a list rather than a slit.
+    const tail = (await page.locator('.column-scroll').boundingBox())!;
+    expect(tail.height).toBeGreaterThan(150);
+  });
+
   test('fits a viewport at sixteen days, which is the no-scroll promise entire', async ({
     page,
   }) => {

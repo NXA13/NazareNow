@@ -1711,7 +1711,7 @@ export function ForecastRange({
           that scrolls without them. That stranding is exactly what the first attempt at this
           promise did: a scroller around the day list alone left four blocks outside it and on
           the page, and the arithmetic could not close. */}
-      <div className="column-scroll" data-testid="column-scroll">
+      <div className="column-scroll">
         {state.status === 'loading' && <p>Loading forecast...</p>}
 
         {state.status === 'failed' && (

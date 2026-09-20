@@ -17,10 +17,12 @@
  * there too.
  *
  * What stays local is *layout dimension*: the narrowest a card may shrink to before the grid
- * drops a column, the flex basis that lines the history ladder's columns up, the height the day
- * table caps at. Those are decisions about this page's geometry rather than about the visual
- * system — a token named `--space-5` has no business being the answer to "how wide is a
- * readable card" — and #115-#118 are the tickets that will move them.
+ * drops a column, the flex basis that lines the history ladder's columns up, and the height the
+ * forecast page is capped to. Those are decisions about this page's geometry rather than about
+ * the visual system — a token named `--space-5` has no business being the answer to "how wide
+ * is a readable card", and `--day-slot-height` had no business being the answer to "how tall is
+ * the day list", which is why #132 deleted it from the visual-system sheet and put the geometry
+ * here.
  *
  * Three rules this sheet is held to, all three enforced by that test:
  *
@@ -68,11 +70,6 @@ body {
  * to hold or fail. */
 main {
   margin: 0 auto;
-  /* A column, so the forecast page can ask for "whatever height is left" rather than for a
-     number (#132). The alternative was `calc(100vh - 5rem)`, which was wrong by 2px the day it
-     was written and would have been wrong by more the next time the chrome changed. */
-  display: flex;
-  flex-direction: column;
   /* Trimmed vertically by #128: the 48px that used to sit under the footer was the single
      largest piece of empty page on the site. The sides are left alone deliberately — the
      mockup's frame is 28px there, but a horizontal change buys no height, and the one viewport
@@ -95,6 +92,15 @@ main {
 .page-forecast {
   max-width: var(--measure-instrument);
   height: 100vh;
+  /* A column, so the forecast column can ask for "whatever height is left" rather than for a
+     number. The alternative was `calc(100vh - 5rem)`, which was wrong by 2px the day it was
+     written and would have been wrong by more the next time the chrome changed.
+
+     On this page only. It was on `main` first, where it also reached the reading page — which
+     has no cap, no second column and nothing to distribute, and quietly lost its margin
+     collapsing for the privilege. */
+  display: flex;
+  flex-direction: column;
 }
 
 .page-reading {
@@ -431,7 +437,9 @@ h2 {
 }
 
 footer {
-  margin-top: var(--space-8);
+  /* Was `--space-8`. That was the gap under a page; this now sits inside the column's scroller,
+     where 48px of air is a day row nobody can see (#132). */
+  margin-top: var(--space-5);
   padding-top: var(--space-5);
   border-top: var(--rule) solid var(--ink-border);
   color: var(--ink-muted);
@@ -532,7 +540,19 @@ footer p {
 
 .column-scroll {
   flex: 1;
-  min-height: 0;
+  /*
+   * **A floor, not `0`, and the floor is what makes the tripwire honest.**
+   *
+   * `flex: 1; min-height: 0` alone means anything added above the fold is paid for out of this
+   * box first: the scroller squeezes toward nothing and the page goes on measuring exactly one
+   * viewport, so `layout.spec.ts`'s promise test would keep passing while the day list shrank
+   * to a slit. The promise would be kept in the letter and lost in the substance.
+   *
+   * With a floor, above-fold growth pushes the column past its cap instead, the page grows, and
+   * the promise test fails — which is the behaviour that test's docstring claims. Roughly five
+   * day rows; it is a floor rather than a target and nothing should be sized against it.
+   */
+  min-height: 12rem;
   overflow-y: auto;
   /* A scroller clips at its padding edge, so this is the room a focused row's ring needs in
      order not to be cut in half by the box it scrolls in — `:focus-visible` is a 3px outline at
@@ -558,7 +578,16 @@ footer p {
   }
 
   .column-scroll {
-    overflow-y: visible;
+    /* **Both axes, because one is not enough.** `overflow-y: visible` beside an `overflow-x`
+       that is not visible computes to `auto`, so this stayed a scroll container on a phone
+       while the rule beside it claimed nothing scrolls inside anything down here. */
+    overflow: visible;
+    min-height: 0;
+    padding: 0;
+  }
+
+  .column-head {
+    padding: 0;
   }
 }
 
@@ -966,25 +995,20 @@ footer p {
 /* --- the slot the days and one day's hours share (#118) ------------------- */
 
 /*
- * One box, two states, one height.
+ * One box, two states, and no height of its own.
  *
  * The detail used to open *beneath* the list. That grew the left column, and `.map-slot` is
  * `height: 100%` of it — so clicking a row changed the map's proportion and moved the page
- * under the reader's hands. Fixing the height here is what makes "equal columns, nothing
- * scrolls" survive somebody clicking something.
+ * under the reader's hands. Swapping the two states inside one box is what fixes that, and it
+ * is the whole of what this rule is for.
  *
- * `overflow-y` is the slot's own, which is the scoped no-scroll promise in one line: the days
- * scroll in here rather than taking the page with them. `overflow-x: hidden` because the rows
- * already wrap and a stray horizontal bar inside a vertical scroller is the classic double
- * scrollbar.
+ * **#118 gave this box a fixed height and its own scrollbar; #132 took both away.** They were
+ * right for as long as this was the only thing holding the column steady. Once
+ * `.column-scroll` caps the column's tail, a height here buys nothing and costs a scroller
+ * inside a scroller — and the room a focused row's ring needs belongs on the box that does the
+ * clipping, which is that one and not this.
  */
-/* The slot sets no height of its own any more (#132). It had one for as long as it was the
-   only thing holding the column steady; now that `.column-scroll` below is capped and does the
-   scrolling, a height here would only buy a scroller inside a scroller. What is left is the box
-   the two states swap inside. */
 .day-slot {
-  /* Nothing. The box the two states swap inside, and no geometry of its own — the room a focus
-     ring needs is on `.column-scroll`, which is the box that does the clipping. */
   min-width: 0;
 }
 
