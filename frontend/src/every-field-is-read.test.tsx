@@ -76,7 +76,7 @@
  * one declared read fails its own, each alone.
  */
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
@@ -85,6 +85,7 @@ import type {
   AccuracyBand,
   Calibration,
   CallStatus,
+  ConditionsGrid,
   CurrentConditions,
   DayCall,
   DaySpread,
@@ -94,6 +95,7 @@ import type {
   Forecast,
   ForecastDay,
   ForecastHour,
+  GridPoint,
   HeightRange,
   IssuedRecord,
   ModelAgreement,
@@ -111,6 +113,7 @@ import { ForecastRange } from './Forecast';
 import { TrackRecordPage } from './TrackRecord';
 import {
   calibration,
+  conditionsGrid,
   currentConditions,
   forecast,
   trackRecord,
@@ -1831,6 +1834,123 @@ describe('IssuedRecord', () => {
       const changed = replace(ISSUED, name, spec.other);
 
       await holdToVerdict(spec, ISSUED, changed, () => recordFor(issuedIn(changed)), baseline);
+    });
+  }
+});
+
+/**
+ * The whole page with one wind grid served, waited on until the darts exist.
+ *
+ * The grid loads on its own and is allowed to fail on its own, so the map can be on the page
+ * before any dart is — which would make every mutation below look unread.
+ */
+async function mapFor(grid: ConditionsGrid): Promise<string> {
+  server.use(http.get('*/api/conditions/grid', () => HttpResponse.json(grid)));
+
+  const view = render(<App />);
+  await screen.findByTestId('freshness');
+  await waitFor(() => {
+    expect(view.container.querySelector('.wind-dart')).not.toBeNull();
+  });
+
+  const html = view.container.innerHTML;
+  view.unmount();
+  return html;
+}
+
+const GRID = conditionsGrid as unknown as ConditionsGrid;
+
+describe('ConditionsGrid', () => {
+  /**
+   * **Four of these five are not read, and that is the state #139 describes rather than an
+   * oversight.** The grid carries its own stamps and its own staleness verdict, and the map
+   * draws darts without saying how old they are — so a grid that failed to refresh presents as
+   * current for up to six hours. That gap is filed, decided and labelled `ready-for-agent`; the
+   * decision is to surface the *known* refresh failure rather than to move a threshold. When
+   * that lands, these entries become `read: true` and this note goes.
+   */
+  const fields: Registry<ConditionsGrid> = {
+    observed_at: {
+      read: false,
+      note: 'the map draws no stamp of its own; #139 is where that is decided',
+      other: (at) => shiftHours(at, 3),
+    },
+    fetched_at: {
+      read: false,
+      note: 'as above — the map says nothing yet about when its wind arrived',
+      other: (at) => shiftHours(at, 3),
+    },
+    stale: {
+      read: false,
+      note: 'the map shows no staleness of its own (#139)',
+      other: (stale) => !stale,
+    },
+    stale_after_hours: {
+      read: false,
+      note: 'the figure the banner would be built around, and there is no banner yet (#139)',
+      other: (hours) => hours + 3,
+    },
+    points: {
+      read: true,
+      note: 'one dart per point, which is the whole layer',
+      other: (points) => points.slice(0, 9),
+    },
+  };
+
+  for (const [name, spec] of decisions(fields)) {
+    it(`${name} is ${spec.read ? 'read' : 'not read'} — ${spec.note}`, async () => {
+      const baseline = await mapFor(GRID);
+      const changed = replace(GRID, name, spec.other);
+
+      await holdToVerdict(spec, GRID, changed, () => mapFor(changed), baseline);
+    });
+  }
+});
+
+describe('GridPoint', () => {
+  /**
+   * **The map reads four of these eleven**, and the other seven are the grid endpoint serving
+   * the same shape the single point does. They are not dropped from the wire: the pipeline
+   * fetches and unit-checks a whole wave field per point, and #122 draws the crests from
+   * `/api/conditions/current` instead — one swell over the whole frame rather than one per
+   * point — because a per-point refraction solve is twenty-five solves for a picture that
+   * would still be drawn at one period.
+   */
+  const fields: Registry<GridPoint> = {
+    latitude: { read: true, note: 'where the dart sits, north to south', other: (v) => v - 0.1 },
+    longitude: { read: true, note: 'where the dart sits, west to east', other: (v) => v + 0.1 },
+    wind_speed: { read: true, note: 'how fast the dart drifts: 33 / speed', other: mph },
+    wind_direction: { read: true, note: 'which way the dart points, downwind', other: veer },
+    swell_height: {
+      read: false,
+      note: 'the crests come from the single point, not the grid',
+      other: feet,
+    },
+    swell_period: { read: false, note: 'as above — one swell over the frame', other: longer },
+    swell_direction: { read: false, note: 'as above — one swell over the frame', other: veer },
+    significant_wave_height: {
+      read: false,
+      note: 'no per-point wave height is drawn',
+      other: feet,
+    },
+    wave_period: { read: false, note: 'no per-point wave period is drawn', other: longer },
+    wave_direction: { read: false, note: 'no per-point wave bearing is drawn', other: veer },
+    water_temperature: { read: false, note: 'the map draws no temperature', other: fahrenheit },
+    air_temperature: { read: false, note: 'the map draws no temperature', other: fahrenheit },
+  };
+
+  for (const [name, spec] of decisions(fields)) {
+    it(`${name} is ${spec.read ? 'read' : 'not read'} — ${spec.note}`, async () => {
+      const baseline = await mapFor(GRID);
+      // One point mutated, the other twenty-four left alone: a field changed in all of them
+      // could move the page for a reason this entry is not claiming.
+      const first = GRID.points[0]!;
+      const changed: ConditionsGrid = {
+        ...GRID,
+        points: [replace(first, name, spec.other), ...GRID.points.slice(1)],
+      };
+
+      await holdToVerdict(spec, first, changed.points[0]!, () => mapFor(changed), baseline);
     });
   }
 });

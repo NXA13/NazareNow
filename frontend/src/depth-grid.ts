@@ -19,6 +19,11 @@ import type { DepthGrid } from './refraction';
 export interface PackedDepthGrid {
   rows: number;
   cols: number;
+  /** The frame's corners on the earth, for placing a lat/lon inside the viewBox. */
+  latTop: number;
+  latBottom: number;
+  lonLeft: number;
+  lonRight: number;
   /** The viewBox the grid maps onto, so the page and the tracer cannot disagree about it. */
   viewWidth: number;
   viewHeight: number;
@@ -62,3 +67,15 @@ export const SEA_FLOOR: DepthGrid = {
   viewHeight: packed.viewHeight,
   metresPerUnit: packed.metresPerUnit,
 };
+
+/** The frame's corners on the earth, as the build step measured them from the soundings. */
+export const FRAME = {
+  latTop: packed.latTop,
+  latBottom: packed.latBottom,
+  lonLeft: packed.lonLeft,
+  lonRight: packed.lonRight,
+  viewWidth: packed.viewWidth,
+  viewHeight: packed.viewHeight,
+};
+
+export type Frame = typeof FRAME;

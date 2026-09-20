@@ -370,6 +370,14 @@ def packed_depth_grid() -> dict:
     return {
         "rows": GRID["rows"],
         "cols": GRID["cols"],
+        # The frame's corners on the earth, so the page can place a lat/lon inside the viewBox
+        # without a second opinion about where this map is. `open_meteo.py` fetches its wind
+        # grid over exactly these bounds so that "a wind glyph can never sit outside the drawn
+        # map" — a promise the page can only keep if it is told what they are.
+        "latTop": GRID["lat_top"],
+        "latBottom": GRID["lat_bottom"],
+        "lonLeft": GRID["lon_left"],
+        "lonRight": GRID["lon_right"],
         "viewWidth": round(VIEW_W, 1),
         "viewHeight": round(VIEW_H, 1),
         "metresPerUnit": round(metres_per_unit, 6),

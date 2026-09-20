@@ -20,8 +20,10 @@
 import { useEffect, useState, type ReactNode } from 'react';
 
 import {
+  fetchConditionsGrid,
   fetchCurrentConditions,
   fetchTrackRecord,
+  type ConditionsGrid,
   type CurrentConditions,
   type Reading,
   type TrackRecord,
@@ -35,6 +37,18 @@ type LoadState =
   | { status: 'loading' }
   | { status: 'loaded'; conditions: CurrentConditions }
   | { status: 'failed' };
+
+/**
+ * The map's wind, which loads on its own and is allowed to fail on its own.
+ *
+ * **Separate from the conditions above deliberately.** Losing the grid must not cost the page
+ * its forecast — that is the same trade the backend makes, where a failed grid fetch still
+ * leaves the run a success. And `failed` is kept distinct from `loading`, because the map has
+ * to say *wind unavailable* rather than quietly drawing no darts, which a reader cannot tell
+ * from a flat calm.
+ */
+type WindState =
+  { status: 'loading' } | { status: 'loaded'; grid: ConditionsGrid } | { status: 'failed' };
 
 /** A reading's value, its unit, and its compass point where it has one.
  *
@@ -184,6 +198,7 @@ function ConditionTiles({ conditions }: { conditions: CurrentConditions }) {
 
 export function Home() {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
+  const [wind, setWind] = useState<WindState>({ status: 'loading' });
   /**
    * The track record, fetched once for the whole column.
    *
@@ -203,6 +218,16 @@ export function Home() {
     fetchCurrentConditions()
       .then((conditions) => active && setState({ status: 'loaded', conditions }))
       .catch(() => active && setState({ status: 'failed' }));
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    fetchConditionsGrid()
+      .then((grid) => active && setWind({ status: 'loaded', grid }))
+      .catch(() => active && setWind({ status: 'failed' }));
     return () => {
       active = false;
     };
@@ -297,6 +322,8 @@ export function Home() {
             conditions load and after they fail the map is sea floor only, because a crest drawn
             from a default would be a picture of a sea nobody reported. */}
         <MapSlot
+          grid={wind.status === 'loaded' ? wind.grid : null}
+          windUnavailable={wind.status === 'failed'}
           swell={
             state.status === 'loaded'
               ? {

@@ -19,12 +19,35 @@
  */
 
 import { Bathymetry } from './Bathymetry';
+import { WindLegend } from './Wind';
+import type { ConditionsGrid } from './api';
 import type { Swell } from './refraction';
 
-export function MapSlot({ swell }: { swell: Swell | null }) {
+interface MapSlotProps {
+  swell: Swell | null;
+  grid: ConditionsGrid | null;
+  /** True once the grid request has failed, which is distinct from it not having arrived. */
+  windUnavailable: boolean;
+}
+
+export function MapSlot({ swell, grid, windUnavailable }: MapSlotProps) {
   return (
     <aside className="map-slot" aria-label="Map">
-      <Bathymetry swell={swell} />
+      <Bathymetry swell={swell} grid={grid} />
+
+      {/* The key, only where there is wind to key. It drifts at the rates it names, from the
+          same function the map uses, so it cannot disagree with the darts above it. */}
+      {grid ? <WindLegend /> : null}
+
+      {/* **Said, not left blank.** The endpoint answers 503 rather than an empty grid because
+          "a two hundred carrying no points is a map a reader cannot tell from a map of a flat
+          calm" — and a map that silently lost its darts is the same lie one layer up. */}
+      {windUnavailable ? (
+        <p className="map-slot-note map-slot-note-missing">
+          <strong>Wind unavailable.</strong> The map is showing the sea floor and the swell only —
+          not a calm.
+        </p>
+      ) : null}
       {/* Outside the figure, and saying the things a reader could otherwise get wrong: where
           the shape came from, what the drawn spacing is and is not, and how little of the sea
           this model contains. ADR 0012's rule is that prose says whether a number is current;

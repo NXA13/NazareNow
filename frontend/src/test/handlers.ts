@@ -41,6 +41,40 @@ export const currentConditions: CurrentConditions = {
 };
 
 /**
+ * The 5x5 wind grid, over exactly the bounds the map draws (#120): 39.40-39.82N,
+ * 9.04-9.52W. The corners sit ON the bounds rather than at cell centres, because
+ * `open_meteo.grid_points()` divides by `GRID_SIDE - 1` — which is the fact ADR 0015 turned
+ * on, and a fixture that quietly centred them would hide it.
+ *
+ * **Every point differs in speed and direction**, so a map that drew one dart twenty-five
+ * times, or drew them all pointing the same way, fails rather than looking plausible.
+ */
+export const conditionsGrid = {
+  observed_at: '2026-02-13T09:00',
+  fetched_at: '2026-02-13T09:04:11.221000+00:00',
+  stale: false,
+  stale_after_hours: 6,
+  points: Array.from({ length: 25 }, (_, index) => {
+    const row = Math.floor(index / 5);
+    const column = index % 5;
+    return {
+      latitude: Number((39.4 + (row * (39.82 - 39.4)) / 4).toFixed(6)),
+      longitude: Number((-9.52 + (column * (9.52 - 9.04)) / 4).toFixed(6)),
+      swell_height: { value: 8.1 - index * 0.05, unit: 'm' },
+      swell_period: { value: 17.0 - index * 0.1, unit: 's' },
+      swell_direction: { value: (298 + index) % 360, unit: '°' },
+      significant_wave_height: { value: 8.4 - index * 0.05, unit: 'm' },
+      wave_period: { value: 16.2 - index * 0.1, unit: 's' },
+      wave_direction: { value: (295 + index) % 360, unit: '°' },
+      water_temperature: { value: 15.2 + index * 0.01, unit: '°C' },
+      air_temperature: { value: 13.4 + index * 0.01, unit: '°C' },
+      wind_speed: { value: 6 + index * 1.5, unit: 'km/h' },
+      wind_direction: { value: (40 + index * 11) % 360, unit: '°' },
+    };
+  }),
+};
+
+/**
  * Every hour differs from every other, in every column the table renders.
  *
  * A fixture of 24 identical hours cannot tell a table that renders each hour from one
@@ -565,6 +599,7 @@ export const FIXTURE_BY_PATH = {
   '/api/conditions/forecast': forecast,
   '/api/conditions/current': currentConditions,
   '/api/track-record': trackRecord,
+  '/api/conditions/grid': conditionsGrid,
 };
 
 /** The same table as msw handlers. `*` for the origin, because the app reads `VITE_API_BASE`

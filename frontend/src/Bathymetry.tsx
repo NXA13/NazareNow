@@ -17,7 +17,9 @@
  */
 
 import { Crests } from './Crests';
+import { Wind } from './Wind';
 import geometry from './map-geometry.json';
+import type { ConditionsGrid } from './api';
 import type { Swell } from './refraction';
 
 /**
@@ -32,7 +34,7 @@ import type { Swell } from './refraction';
 const BANDS: { level: number; d: string }[] = geometry.bands;
 const LEVELS: Record<string, string[]> = geometry.levels;
 
-export function Bathymetry({ swell }: { swell: Swell | null }) {
+export function Bathymetry({ swell, grid }: { swell: Swell | null; grid: ConditionsGrid | null }) {
   return (
     <svg
       className="bathymetry"
@@ -76,6 +78,11 @@ export function Bathymetry({ swell }: { swell: Swell | null }) {
           arrive, and then nothing is drawn: a default sea would be a picture of a swell nobody
           reported. */}
       <Crests swell={swell} />
+
+      {/* The wind over the water and under the land (#123). One dart per point the endpoint
+          actually returned — never an interpolated field — and nothing at all when there is
+          no grid, because a map with no darts cannot be told from a map of a flat calm. */}
+      <Wind grid={grid} />
 
       {/* Land last, over the water it borders.
 

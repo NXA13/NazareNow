@@ -687,6 +687,81 @@ footer p {
   opacity: 0.78;
 }
 
+/* **The wind (#123), the third colour system and the quietest.** Status colours carry the
+   call, Ice carries the swell, and this neutral warm grey carries the wind — deliberately
+   below the crests in the reading order, because the swell is what the site is about.
+
+   **The animation is on the path, not on the group.** The group carries the dart's position
+   and bearing in a `transform` ATTRIBUTE, and a CSS `transform` animation on the same element
+   overrides that attribute outright — every dart would pile up at the origin, pointing east,
+   and still animate convincingly. The path sits inside the rotated group, so translating it
+   along +x moves it along its own heading, which is what "drifts along its own heading" means.
+
+   `animation-duration: inherit` is doing real work: the duration is set inline on the group,
+   per dart, from `driftSeconds`. Duration is not an inherited property, so without `inherit`
+   every dart would drift at whatever this rule said and speed would vanish from the map. */
+.wind-dart path {
+  fill: var(--ink-wind);
+  animation-name: wind-drift;
+  animation-duration: inherit;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+@keyframes wind-drift {
+  0% {
+    transform: translateX(-9px);
+    opacity: 0;
+  }
+  22% {
+    opacity: 0.85;
+  }
+  74% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translateX(13px);
+    opacity: 0;
+  }
+}
+
+/* **Reduced motion keeps the map, not just the stillness.** Direction is in the glyph's
+   bearing and survives; only the drift stops. The cost is stated in `Wind.tsx`: speed lives
+   entirely in the motion, so a still map shows which way and not how hard. */
+@media (prefers-reduced-motion: reduce) {
+  .wind-dart path {
+    animation: none;
+    opacity: 0.85;
+  }
+}
+
+.wind-legend {
+  display: flex;
+  gap: var(--space-4);
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--ink-muted);
+}
+
+.wind-legend li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.wind-legend-glyph {
+  width: 20px;
+  height: 12px;
+  overflow: visible;
+}
+
+.map-slot-note-missing strong {
+  color: var(--ink-muted);
+}
+
 /* Where the map goes. It held a placeholder from #115 until #121 and refused to resemble a map
    for all of it; `MapSlot.tsx` records why. There is a real one in it now. */
 .map-slot {

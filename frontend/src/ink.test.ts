@@ -469,3 +469,28 @@ describe('contrast is measured against the ground, not assumed', () => {
     }
   });
 });
+
+describe('every token a rule names actually exists', () => {
+  /**
+   * `--size-fine` was written into `App.css` during #123 and is not a token. Nothing failed:
+   * `font-size: var(--size-fine)` resolves to nothing, the declaration is dropped, and the
+   * element quietly inherits — so the rule above ("a font-size is named nowhere but tokens.css")
+   * was satisfied by a size that did not exist.
+   *
+   * This closes that: a `var()` naming a token `tokens.css` does not define is a typo with a
+   * visual consequence, and typos in custom property names are invisible by design.
+   */
+  it('defines every custom property App.css reads', () => {
+    const defined = new Set([...TOKENS.matchAll(/^\s*(--[a-z0-9-]+):/gm)].map((m) => m[1]!));
+    // Sanity: the sweep found the token file, rather than an empty set that would pass on
+    // anything at all.
+    expect(defined.size).toBeGreaterThan(20);
+    expect(defined).toContain('--ink-wind');
+
+    const used = new Set([...APP.matchAll(/var\((--[a-z0-9-]+)/g)].map((m) => m[1]!));
+    expect(used.size).toBeGreaterThan(20);
+
+    const undefinedTokens = [...used].filter((token) => !defined.has(token)).sort();
+    expect(undefinedTokens).toEqual([]);
+  });
+});

@@ -24,7 +24,7 @@ import packageJson from '../package.json';
 
 /** The map, as the element a reader is offered rather than as a container. */
 function draw() {
-  render(<Bathymetry swell={null} />);
+  render(<Bathymetry swell={null} grid={null} />);
   return screen.getByRole('img', { name: /sea floor|canyon/i });
 }
 
@@ -216,7 +216,13 @@ describe('what the map is allowed to claim', () => {
    * sea, which makes it easier to mistake for a forecast of the surf, not harder.
    */
   const note = () => {
-    render(<MapSlot swell={{ periodSeconds: 13.75, fromDirectionDeg: 310 }} />);
+    render(
+      <MapSlot
+        swell={{ periodSeconds: 13.75, fromDirectionDeg: 310 }}
+        grid={null}
+        windUnavailable={false}
+      />,
+    );
     return screen.getByText(/GEBCO soundings/i).closest('p')!;
   };
 
