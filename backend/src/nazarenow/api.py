@@ -209,6 +209,59 @@ class CurrentConditions(BaseModel):
     wind_direction: Reading
 
 
+class GridPoint(BaseModel):
+    """One of the twenty-five places the map's wind and swell are drawn at (#120).
+
+    Its own model rather than a reuse of `CurrentConditions`, which carries the water and
+    air temperatures, the wave direction and the whole staleness apparatus. A grid point
+    needs none of those: it is drawn, not read, and twenty-five copies of a verdict that is
+    the same for all of them would invite an interface to believe they could differ.
+
+    The coordinates are the ones the grid was *defined* at, not the ones the provider
+    answered with. They are what a glyph is positioned by, and the guarantee that no glyph
+    lands outside the drawn map is the statement that these are the frame's own corners.
+    """
+
+    latitude: float
+    longitude: float
+
+    swell_height: Reading
+    swell_period: Reading
+    swell_direction: Reading
+    significant_wave_height: Reading
+    wave_period: Reading
+    wave_direction: Reading
+    water_temperature: Reading
+    wind_speed: Reading
+    wind_direction: Reading
+
+
+class ConditionsGrid(BaseModel):
+    """The whole grid, under one set of stamps and one verdict on its age.
+
+    **The stamps are the grid's own and not the latest run's**, which is the distinction this
+    endpoint exists to keep. A run whose grid fetch failed is still a success: its forecast
+    arrived, and the previous grid stayed where it was. So the conditions beside this can be
+    minutes old while the wind on the map is two cycles old, and dating the grid by the run
+    would present last night's wind as this morning's.
+    """
+
+    observed_at: str
+    """The older of the two providers' observation times, as the single point reports it."""
+
+    fetched_at: str
+    """When the grid itself last arrived -- not when the last run finished."""
+
+    stale: bool
+    """The backend's verdict on that stamp, reached the same way the other two endpoints
+    reach theirs. Never the reader's clock: a browser with the wrong time would otherwise
+    decide for itself whether the sea was current."""
+
+    stale_after_hours: int
+
+    points: list[GridPoint]
+
+
 class ForecastHour(BaseModel):
     at: str
     swell_height: Reading
@@ -1091,4 +1144,46 @@ def current_conditions(store: Annotated[Store, Depends(get_store)]) -> CurrentCo
         latitude=latest["latitude"],
         longitude=latest["longitude"],
         **latest["readings"],
+    )
+
+
+@app.get("/api/conditions/grid")
+def conditions_grid(store: Annotated[Store, Depends(get_store)]) -> ConditionsGrid:
+    """The latest grid of conditions, for the map to draw its wind and swell from.
+
+    **503 when there is no grid, rather than an empty one.** An installation that has never
+    fetched a grid, or whose very first run lost it, has nothing to draw -- and a two hundred
+    carrying no points is a map a reader cannot tell from a map of a flat calm. Calm is a
+    claim about the sea; having no data is a claim about this software, and the two must not
+    look alike. It is the same refusal `current_conditions` makes, for the same reason.
+
+    Read-only, like everything in this layer: ADR 0005 puts every third-party call in the
+    Pipeline Run, so this serves what the last successful grid fetch left behind and never
+    reaches for a fresher one.
+    """
+    points = store.latest_conditions_grid()
+    if not points:
+        raise HTTPException(
+            status_code=503,
+            detail="No conditions grid has been ingested yet. Run the pipeline first.",
+        )
+
+    # Every row of one grid shares its stamps -- `replace_conditions_grid` writes them in a
+    # single transaction with a single `fetched_at` -- so the first row speaks for all of
+    # them, the way `forecast` reads its stamp off its first hour.
+    fetched_at = points[0]["fetched_at"]
+
+    return ConditionsGrid(
+        observed_at=points[0]["observed_at"],
+        fetched_at=fetched_at,
+        stale=is_stale(fetched_at),
+        stale_after_hours=STALE_AFTER_HOURS,
+        points=[
+            GridPoint(
+                latitude=point["latitude"],
+                longitude=point["longitude"],
+                **point["readings"],
+            )
+            for point in points
+        ],
     )

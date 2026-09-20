@@ -12,12 +12,14 @@ this map could say. So the validation cases outnumber the happy path here on pur
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta
 from typing import Any
 
 import httpx
 import pytest
 
 from helpers import forecast_provider, ingest, is_grid_request
+from nazarenow.cycle import INTERVAL_SECONDS, STALE_AFTER_HOURS, STALE_AFTER_SECONDS
 from nazarenow.pipeline import GRID_UNAVAILABLE, MINIMUM_FORECAST_HOURS
 from nazarenow.runs import FailureKind
 from nazarenow.sources.open_meteo import (
@@ -526,3 +528,96 @@ class TestAGridThatDoesNotArrive:
             json.loads(row["body"])["failure_kind"] == FailureKind.PAYLOAD_UNRECOGNISED.value
             for row in lost
         )
+
+
+class TestServingTheGrid:
+    """The read endpoint the map draws from (#120), and what it must refuse to imply."""
+
+    def freeze(self, monkeypatch, moment: str) -> None:
+        monkeypatch.setattr("nazarenow.api.utc_now", lambda: datetime.fromisoformat(moment))
+
+    def test_an_installation_that_never_fetched_a_grid_says_so(self, store, client):
+        # 503, on the same terms as the two endpoints beside it. Two hundred with an empty
+        # list would be a map with nothing on it, which a reader cannot tell from a map of a
+        # calm afternoon — and calm is a claim about the sea rather than about the software.
+        response = client.get("/api/conditions/grid")
+
+        assert response.status_code == 503
+        assert "grid" in response.json()["detail"].lower()
+
+    def test_it_serves_every_point_at_the_coordinates_the_map_expects(self, store, client):
+        ingest(store, forecast_provider())
+
+        points = client.get("/api/conditions/grid").json()["points"]
+
+        assert [(p["latitude"], p["longitude"]) for p in points] == grid_points()
+
+    def test_every_point_carries_its_readings_and_their_units(self, store, client):
+        ingest(store, forecast_provider())
+
+        points = client.get("/api/conditions/grid").json()["points"]
+
+        assert points
+        for point in points:
+            assert point["wind_speed"]["unit"] == "km/h"
+            assert point["wind_direction"]["unit"] == "°"
+            assert point["swell_height"]["unit"] == "m"
+            assert point["swell_period"]["value"] is not None
+
+    def test_it_carries_the_stamps_the_grid_was_fetched_and_observed_at(self, store, client):
+        ingest(store, forecast_provider())
+
+        body = client.get("/api/conditions/grid").json()
+
+        assert body["fetched_at"] == store.latest_conditions_grid()[0]["fetched_at"]
+        assert body["observed_at"] == store.latest_conditions_grid()[0]["observed_at"]
+
+    def test_a_grid_from_the_last_cycle_is_not_stale(self, store, client, monkeypatch):
+        ingest(store, forecast_provider())
+        fetched = datetime.fromisoformat(store.latest_conditions_grid()[0]["fetched_at"])
+        self.freeze(monkeypatch, (fetched + timedelta(seconds=INTERVAL_SECONDS)).isoformat())
+
+        assert client.get("/api/conditions/grid").json()["stale"] is False
+
+    def test_a_grid_older_than_two_missed_cycles_is_stale(self, store, client, monkeypatch):
+        ingest(store, forecast_provider())
+        fetched = datetime.fromisoformat(store.latest_conditions_grid()[0]["fetched_at"])
+        self.freeze(monkeypatch, (fetched + timedelta(seconds=STALE_AFTER_SECONDS + 1)).isoformat())
+
+        assert client.get("/api/conditions/grid").json()["stale"] is True
+
+    def test_it_states_how_old_is_too_old(self, store, client):
+        # Sent so the interface can name the figure without knowing it, the same reason the
+        # other two endpoints send it.
+        ingest(store, forecast_provider())
+
+        assert client.get("/api/conditions/grid").json()["stale_after_hours"] == STALE_AFTER_HOURS
+
+    def test_a_grid_left_behind_by_a_failed_fetch_reports_its_own_age(
+        self, store, client, monkeypatch
+    ):
+        """**The test the whole degraded path rests on.**
+
+        A run whose grid fetch failed is a success: its forecast arrived, and the previous
+        grid is still there. So the conditions beside it are fresh while the wind on the map
+        is two cycles old, and the only thing that can say so is the grid's own `fetched_at`.
+        Reporting the run's stamp here would present last night's wind as this morning's.
+        """
+        ingest(store, forecast_provider())
+        grid_fetched = datetime.fromisoformat(store.latest_conditions_grid()[0]["fetched_at"])
+
+        later = grid_fetched + timedelta(seconds=STALE_AFTER_SECONDS + 1)
+        self.freeze(monkeypatch, later.isoformat())
+        ingest(store, forecast_provider(grid_status=503))
+
+        grid = client.get("/api/conditions/grid").json()
+        assert grid["fetched_at"] == grid_fetched.isoformat()
+        assert grid["stale"] is True
+
+    def test_the_endpoint_makes_no_third_party_call_of_its_own(self, store, client):
+        # ADR 0005: nothing in the request path contacts a provider. `conftest` blocks
+        # outbound sockets, so an endpoint that fetched its own grid would fail here rather
+        # than pass quietly on a machine with a network.
+        ingest(store, forecast_provider())
+
+        assert client.get("/api/conditions/grid").status_code == 200
