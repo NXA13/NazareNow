@@ -260,6 +260,29 @@ snapshot per run. A scrubber can be added later without redesigning anything —
 simply gains hours — and was rejected now because it multiplies stored bytes by the forecast
 horizon for a feature nobody has asked to use.
 
+### The whole frame is drawn, settled 2026-09-20
+
+The frame's aspect ratio is fixed and the panel's follows the forecast column beside it, so they
+do not match and cannot be made to. #121 shipped `preserveAspectRatio="xMidYMid slice"` —
+cropping the frame to fill the panel. **It is now `xMidYMin meet`**, and the panel letterboxes
+instead. ADR 0015 carries the full argument; the measurement that decided it, taken in a browser
+at 1440×900:
+
+```
+svg.bathymetry box   574.67 × 750.05 px   (aspect 0.7662)
+viewBox              686.8  × 780.0       (aspect 0.8805)
+slice -> 42.88 px off each side = 44.59 user units = 6.49% of the width, each side
+meet  -> 97.39 px of letterbox vertically, nothing horizontally
+```
+
+**12.98% of the width, and it cost 40% of the wind field.** `grid_points()` divides by
+`GRID_SIDE - 1`, so the outer columns sit on the bounds themselves rather than at cell centres —
+two of five columns, 10 of 25 darts, inside the cropped strips. That contradicts this section's
+own stated reason for choosing darts: *one dart per fetched point is literally what the data is.*
+
+The unpainted band stays the panel's background and **is not filled with the deepest tone** — it
+falls at the frame's north and south edges, so filling it would draw sea floor nobody surveyed.
+
 ---
 
 ## 6. Constraints that bind the implementation
