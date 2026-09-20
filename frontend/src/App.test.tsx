@@ -19,13 +19,13 @@
  * whole suite green.
  */
 
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { App } from './App';
-import { currentConditions } from './test/handlers';
+import { currentConditions, trackRecord } from './test/handlers';
 import { server } from './test/server';
 
 /** Find the labelled block for one reading, e.g. "Swell height". */
@@ -344,6 +344,215 @@ describe('current conditions', () => {
     expect(times[0]).toHaveAttribute('datetime', currentConditions.observed_at);
   });
 
+  describe('how often the printed range has held (#119)', () => {
+    /**
+     * #119 lists the range-runs-wide admission among the things that stay on the forecast page,
+     * "attached to the figures they qualify". It was not on this page at all: the whole finding
+     * lived on the reading page, under the tables that produced it, which left the verdict
+     * printing a plausible range with nothing beside it saying how often a range like that has
+     * held.
+     *
+     * The table stays on the reading page — that part is teaching. What belongs here is the one
+     * sentence a reader needs before acting on the range above it.
+     */
+    /** The record with its coverage forced to a given share at every lead time, which is what
+     * decides which way the admission reads. */
+    function recordCovering(covered: number) {
+      const range = trackRecord.range_calibration;
+      return {
+        ...trackRecord,
+        range_calibration: {
+          ...range,
+          leads: range.leads.map((lead) => ({
+            ...lead,
+            all_hours: { ...lead.all_hours, covered },
+          })),
+        },
+      };
+    }
+
+    async function admissionFor(covered: number) {
+      server.use(http.get('*/api/track-record', () => HttpResponse.json(recordCovering(covered))));
+      render(<App />);
+      return screen.findByTestId('range-admission');
+    }
+
+    it('sits under the verdict and above the days, beside the range it qualifies', async () => {
+      render(<App />);
+
+      const admission = await screen.findByTestId('range-admission');
+      const verdict = await screen.findByTestId('verdict');
+      const days = await screen.findByRole('heading', { name: /^The next \d+ days$/ });
+
+      // Inside the verdict panel, not merely after it: `CONTAINED_BY | FOLLOWING`. The first
+      // version rendered it as a sibling below the panel, which put a limit near the figure
+      // rather than beside it — and left it free to render on a day the panel prints no range.
+      expect(verdict.compareDocumentPosition(admission)).toBe(
+        Node.DOCUMENT_POSITION_CONTAINED_BY | Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+      expect(admission.compareDocumentPosition(days)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+
+      // It is a limit, so it has to be covered by the rule that limits are never set quieter
+      // than the figures they qualify. It has no styling of its own: what covers it is carrying
+      // `verdict-scope`, which `ink.test.ts` guards. Asserted here so that connection cannot be
+      // broken by a tidy-up that drops the class as redundant.
+      expect(admission.classList.contains('verdict-scope')).toBe(true);
+    });
+
+    it('says so when the range has held less often than it claims', async () => {
+      // The dangerous direction, and the reason this cannot be a component that only speaks up
+      // when the news is good: a range holding less often than it claims makes the system look
+      // surer than it is, which is the failure mode that costs someone a flight.
+      const admission = await admissionFor(0.7);
+
+      expect(admission).toHaveTextContent(/held less often than it claims/i);
+      expect(admission).toHaveTextContent(/optimistic edge of the doubt/i);
+    });
+
+    it('says so when it runs wider than the outcomes justify', async () => {
+      const admission = await admissionFor(0.98);
+
+      expect(admission).toHaveTextContent(/wider than the outcomes justify/i);
+      // Named as the forgiving direction rather than left to read as a fault of the same size.
+      expect(admission).toHaveTextContent(/forgiving direction/i);
+    });
+
+    it('refuses a single answer when the table disagrees with itself', async () => {
+      const range = trackRecord.range_calibration;
+      server.use(
+        http.get('*/api/track-record', () =>
+          HttpResponse.json({
+            ...trackRecord,
+            range_calibration: {
+              ...range,
+              leads: range.leads.map((lead, index) => ({
+                ...lead,
+                all_hours: { ...lead.all_hours, covered: index === 0 ? 0.7 : 0.98 },
+              })),
+            },
+          }),
+        ),
+      );
+      render(<App />);
+
+      const admission = await screen.findByTestId('range-admission');
+      expect(admission).toHaveTextContent(/depends on how far ahead it looks/i);
+    });
+
+    it('states the share the range claims, from the record rather than a literal', async () => {
+      const admission = await admissionFor(0.9);
+      expect(admission).toHaveTextContent(
+        `${Math.round(trackRecord.range_calibration.claimed * 100)}%`,
+      );
+    });
+
+    it('renders nothing at all when the record never arrives', async () => {
+      // Named for the branch it exercises. It read "until the record has arrived" while serving
+      // a 503, so it described the loading path and locked in the permanent-failure one under a
+      // name that disclaimed it.
+      //
+      // Nothing rather than a placeholder, in both cases: this sits directly under a figure, and
+      // a placeholder there would read as a qualification of that figure rather than as
+      // something still on its way. Nothing above it depends on the record, so silence here must
+      // not read as the forecast having failed either.
+      server.use(http.get('*/api/track-record', () => new HttpResponse(null, { status: 503 })));
+
+      render(<App />);
+
+      await screen.findByTestId('verdict');
+      expect(screen.queryByTestId('range-admission')).toBeNull();
+    });
+  });
+
+  describe('the line of track record (#119)', () => {
+    /**
+     * The debt #113 took on knowingly. It removed an assertion that the track record was *on*
+     * the page rather than behind a link, on the reasoning that a track record nobody navigates
+     * to is a limitation nobody reads, and left a link in its place for exactly one ticket.
+     *
+     * What makes this the strong form again is that the line carries figures. A link saying
+     * "how well these calls have done" asks a reader to go and find out; a line saying a Go Call
+     * landed on 12 of 13 confirmed days, and that at worst 94% of them would have been wasted,
+     * has already told them.
+     */
+    const TIER = trackRecord.held_out.go_call;
+
+    /** The line once the record has actually arrived.
+     *
+     * `findByTestId` alone is not enough and the difference is the point: the line renders
+     * immediately, carrying only the link, so that a failed or slow track record never reads as
+     * the forecast having failed. A test that stopped at the test id would assert against that
+     * placeholder and pass while the figures never arrived. The node itself is stable — both
+     * branches return the same element in the same position, so React reconciles rather than
+     * replaces it. */
+    async function loadedLine() {
+      const line = await screen.findByTestId('track-record-line');
+      await waitFor(() => expect(line).toHaveTextContent(/never saw/i));
+      return line;
+    }
+
+    it('carries figures, not just an invitation to go and look', async () => {
+      render(<App />);
+
+      const line = await loadedLine();
+      expect(line).toHaveTextContent(String(TIER.gold_days_called));
+      expect(line).toHaveTextContent(String(TIER.gold_days_in_panel));
+      expect(line).toHaveTextContent(String(trackRecord.held_out.big_wave_seasons));
+    });
+
+    it('states what the calls cost as well as what they caught', async () => {
+      // A line carrying recall alone is the flattering half of a pair, and this project exists
+      // to avoid exactly that. Both numbers or neither.
+      render(<App />);
+
+      const line = await loadedLine();
+      const waste = `${Math.round(TIER.wasted_upper_bound * 100)}%`;
+
+      expect(line).toHaveTextContent(waste);
+      expect(line).toHaveTextContent(/wasted/i);
+    });
+
+    it('names the counterweight the waste figure needs rather than printing it bare', async () => {
+      // `TierRecord` requires `wasted_upper_bound` and `delivered` to travel together: waste is
+      // scored against ratified giant days, a bar so high that a rule flagging nothing but
+      // excellent days still reads as mostly wasted. One line cannot carry both without becoming
+      // a paragraph, so it has to say the counterweight exists and where it is. Printing the
+      // waste figure alone would be the misreading that rule was written to prevent.
+      render(<App />);
+
+      const line = await loadedLine();
+      expect(line).toHaveTextContent(/ratified days only/i);
+      expect(within(line).getByRole('link')).toHaveAttribute('href', '#/how-it-works');
+    });
+
+    it('measures on the seasons the thresholds never saw, not on the whole record', async () => {
+      // The held-out panel is the one that answers "would this have helped me". The full record
+      // partly covers the seasons the thresholds were chosen on, and a line quoting it would be
+      // quoting the system's performance on its own training material.
+      render(<App />);
+
+      const line = await loadedLine();
+      expect(line).toHaveTextContent(/never saw/i);
+      expect(line.textContent).not.toContain(
+        String(trackRecord.full_record.go_call.gold_days_in_panel),
+      );
+    });
+
+    it('still links out, and says nothing it cannot support, when the record will not load', async () => {
+      // The calls above this line do not depend on the track record, so a failure here must not
+      // read as the forecast having failed. What it must not do is keep the sentence and drop
+      // the figures, which would leave a claim with nothing behind it.
+      server.use(http.get('*/api/track-record', () => new HttpResponse(null, { status: 503 })));
+
+      render(<App />);
+
+      const line = await screen.findByTestId('track-record-line');
+      expect(within(line).getByRole('link')).toHaveAttribute('href', '#/how-it-works');
+      expect(line.textContent).not.toMatch(/wasted|confirmed giant/i);
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+  });
+
   it('sends a reader to the track record from the forecast, in one link', async () => {
     // This assertion used to read "carries the track record on the page, not behind a link",
     // and the reasoning behind it was that a track record nobody navigates to is a limitation
@@ -351,10 +560,9 @@ describe('current conditions', () => {
     // something else: the link itself, which is why its presence is asserted here rather than
     // left to the nav's own test.
     //
-    // The guarantee this test makes is weaker than the one it replaces, and deliberately so
-    // for exactly one ticket. #119 restores the strong form — a line of track record on the
-    // home page, and every limit that qualifies a number kept beside that number — and the
-    // assertions that pin it belong with that work rather than here.
+    // **#119 has now restored the strong form**, in the block below this one: a line of track
+    // record on the home page, carrying figures rather than only an invitation. This test keeps
+    // its narrower job — that the link itself exists and points at the right address.
     render(<App />);
 
     const link = await screen.findByRole('link', { name: /how it works/i });

@@ -19,9 +19,16 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 
-import { fetchCurrentConditions, type CurrentConditions, type Reading } from './api';
+import {
+  fetchCurrentConditions,
+  fetchTrackRecord,
+  type CurrentConditions,
+  type Reading,
+  type TrackRecord,
+} from './api';
 import { ForecastRange } from './Forecast';
 import { MapSlot } from './MapSlot';
+import { TrackRecordLine } from './TrackRecord';
 import { compassPoint, formatTimestamp, formatValue } from './format';
 
 type LoadState =
@@ -177,12 +184,37 @@ function ConditionTiles({ conditions }: { conditions: CurrentConditions }) {
 
 export function Home() {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
+  /**
+   * The track record, fetched once for the whole column.
+   *
+   * Two things read it — the range admission inside the verdict, and the line of track record
+   * at the foot — and when each fetched its own, `/api/track-record` was requested twice per
+   * render of this page. msw answered both, so no test noticed.
+   *
+   * `null` means "not here", whether it is still coming or never arrived. Neither consumer
+   * distinguishes the two: the admission renders nothing without it, and the line falls back to
+   * its link. Nothing above them depends on it, so a failure must not read as the forecast
+   * having failed.
+   */
+  const [record, setRecord] = useState<TrackRecord | null>(null);
 
   useEffect(() => {
     let active = true;
     fetchCurrentConditions()
       .then((conditions) => active && setState({ status: 'loaded', conditions }))
       .catch(() => active && setState({ status: 'failed' }));
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    fetchTrackRecord()
+      .then((fetched) => active && setRecord(fetched))
+      .catch(() => {
+        // Deliberately silent. See the state's own note: this page works without it.
+      });
     return () => {
       active = false;
     };
@@ -217,7 +249,16 @@ export function Home() {
               </p>
             )}
 
-            <ForecastRange tiles={<ConditionTiles conditions={state.conditions} />} />
+            <ForecastRange
+              belowVerdict={<ConditionTiles conditions={state.conditions} />}
+              rangeCalibration={record?.range_calibration ?? null}
+            />
+
+            {/* Item five of the five the spec puts down this column, and the one #113 took away
+                on purpose: it used to assert the track record was on this page rather than
+                behind a link, because a track record nobody navigates to is a limitation nobody
+                reads. #119 owes it back, as a line. */}
+            <TrackRecordLine record={record} />
 
             <footer>
               <p data-testid="freshness">

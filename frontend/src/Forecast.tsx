@@ -9,9 +9,12 @@ import {
   type ForecastDay,
   type HeightRange,
   type ModelAgreement,
+  type RangeCalibration,
   type Reading,
 } from './api';
 import { Figure } from './Figure';
+import { ADDRESS } from './router';
+import { RangeWidthAdmission } from './TrackRecord';
 import { compassPoint, formatRange, formatReading, formatTimestamp, formatValue } from './format';
 
 type LoadState =
@@ -1269,7 +1272,13 @@ function ModelVerdict({ agreement }: { agreement: ModelAgreement | null }) {
  * **Earliest means first in the range**, which arrives in date order from
  * `/api/conditions/forecast` — the same assumption `swellWindows` rests on.
  */
-function Verdict({ days }: { days: ForecastDay[] }) {
+function Verdict({
+  days,
+  rangeCalibration,
+}: {
+  days: ForecastDay[];
+  rangeCalibration: RangeCalibration | null;
+}) {
   const first = (status: CallStatus) => days.find((day) => day.call?.status === status) ?? null;
 
   const go = first('go');
@@ -1373,6 +1382,13 @@ function Verdict({ days }: { days: ForecastDay[] }) {
               outlive what it caveats, and in the same panel at the same size rather than below
               the fold: a redesign is exactly the change that turns a disclaimer into elegant
               grey fine print. */}
+          {/* Beside the range, and only when there is a range. Rendered from `plausible_range`
+              like the caveat above it, because a sentence opening "That range..." on a day the
+              panel prints no range is a limit qualifying nothing. */}
+          {call.plausible_range && rangeCalibration && (
+            <RangeWidthAdmission calibration={rangeCalibration} />
+          )}
+
           {(call.plausible_range || call.height_bar_probability !== null) && (
             <p className="verdict-scope">
               Height only — the swell period, swell direction and wind a giant day also needs are
@@ -1403,20 +1419,80 @@ function Verdict({ days }: { days: ForecastDay[] }) {
 }
 
 /**
- * The forecast section: the verdict, the windows, the days, and what a selected day opens into.
+ * The swell windows, on the reading page (#119).
  *
- * **`tiles` is a slot, and it exists because the page interleaves two fetches.** The spec's
- * order down the left column is verdict, then the four condition tiles, then the day list — and
- * the verdict and the day list come from `/api/conditions/forecast` while the tiles come from
- * `/api/conditions/current`. Something has to sit between two things this component owns.
+ * **Why it is not on the forecast page any more.** Spec §2 lists five things down the home
+ * column — the verdict, the four tiles, the days, the hours, and one line of track record — and
+ * this was a sixth. Its actionable half is already in the verdict, which names the window a Go
+ * Call falls inside; what is left is the enumeration of every window in range and the paragraph
+ * explaining what a window is, and the second of those is teaching material by #119's own rule.
+ * Ruled 2026-09-19 to move the panel whole rather than split it, so the list and the sentence
+ * that explains the list stay together.
+ *
+ * **It fetches the forecast itself**, which is the one cost of the move: this page otherwise
+ * reads only `/api/track-record`. Passing the days down from the forecast page is not available
+ * — they are different routes — and deriving windows from the track record would be a second
+ * answer to "which days is this swell", which is exactly the drift #85 was written to prevent.
+ */
+export function SwellWindowsSection() {
+  const [state, setState] = useState<LoadState>({ status: 'loading' });
+
+  useEffect(() => {
+    let active = true;
+    fetchForecast()
+      .then((forecast) => active && setState({ status: 'loaded', forecast }))
+      .catch(() => active && setState({ status: 'failed' }));
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (state.status === 'loading') {
+    return <p>Loading forecast...</p>;
+  }
+
+  // An alert rather than nothing. This page is reachable when the forecast service is down, and
+  // a section that silently disappears reads as a page that failed to load rather than as one
+  // part of it being unavailable.
+  if (state.status === 'failed') {
+    return (
+      <p role="alert" className="alert">
+        Could not load the forecast, so there is nothing to say about swell windows right now.
+      </p>
+    );
+  }
+
+  return <SwellWindows days={state.forecast.days} />;
+}
+
+/**
+ * The forecast section: the verdict, the days, and what a selected day opens into.
+ *
+ * **`belowVerdict` is a slot, and it exists because the page interleaves two fetches.** The
+ * spec's order down the left column is verdict, then the four condition tiles, then the day list
+ * — and the verdict and the day list come from `/api/conditions/forecast` while the tiles come
+ * from `/api/conditions/current`. Something has to sit between two things this component owns.
+ *
+ * It was called `tiles` while the tiles were the only thing in it, and the name now says where
+ * the slot is rather than what happens to be in it.
  *
  * A slot rather than lifting the fetch into `Home`: this component is rendered bare, as
- * `<ForecastRange />`, at 74 places across two suites (72 in `Forecast.test.tsx`, 2 in
- * `every-field-is-read.test.tsx`), with msw at the network boundary. That is the seam this repo tests at, and turning it into a presentational component
- * fed fixtures directly would trade a tested boundary for a prop. The slot is optional, so every
- * one of those call sites still renders what it always did.
+ * `<ForecastRange />`, at scores of places across two suites, with msw at the network boundary.
+ * That is the seam this repo tests at, and turning it into a presentational component fed
+ * fixtures directly would trade a tested boundary for a prop. The slot is optional, so every one
+ * of those call sites still renders what it always did.
+ *
+ * `rangeCalibration` is a prop rather than a third slot because it is not laid out here — it
+ * reaches `Verdict`, which renders it directly under the range it qualifies. `Home` fetches it
+ * once and passes it to both this and the line of track record below.
  */
-export function ForecastRange({ tiles }: { tiles?: ReactNode }) {
+export function ForecastRange({
+  belowVerdict,
+  rangeCalibration = null,
+}: {
+  belowVerdict?: ReactNode;
+  rangeCalibration?: RangeCalibration | null;
+}) {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const [openDate, setOpenDate] = useState<string | null>(null);
 
@@ -1479,15 +1555,13 @@ export function ForecastRange({ tiles }: { tiles?: ReactNode }) {
            rendered above the verdict while it labelled the section as a whole, which put a
            heading about a list over the answer the list exists to produce. It now sits with the
            list it names, which is also the order the spec sets out — verdict, tiles, days. */
-        <Verdict days={forecast.days} />
+        <Verdict days={forecast.days} rangeCalibration={rangeCalibration} />
       )}
 
-      {tiles}
+      {belowVerdict}
 
       {forecast && (
         <>
-          <SwellWindows days={forecast.days} />
-
           <h2 id="forecast-heading">The next {forecast.days.length} days</h2>
 
           <DayList
@@ -1507,11 +1581,23 @@ export function ForecastRange({ tiles }: { tiles?: ReactNode }) {
             <p className="hint">Select a day to see how it develops hour by hour.</p>
           )}
 
+          {/* **The limit stays; the explanation moved (#119).**
+
+              What these two sentences do is tell a reader what the calls above them rest on and
+              how far to trust them, which is a limit qualifying every call on the page. What
+              they used to also do is explain why the number of days is so small — that far more
+              giant days are on record than the swell measurements these calls are written in
+              reach back to cover. That is how it was computed rather than what it means, so it
+              is on the reading page now, under the same numbers.
+
+              All three counts stay here. They are what "how thin the basis is" is made of, and
+              a limit that said "fitted to a small number of days" without saying how small would
+              be the vaguer, more comfortable version of the same sentence. */}
           {!forecast.calibrated && (
             <p role="status" className="alert">
               These calls come from the surf community's rule of thumb, not from thresholds fitted
               to days Nazaré is known to have gone giant. Treat them as a starting point rather than
-              a forecast.
+              a forecast. <a href={ADDRESS['how-it-works']}>How the calls are made</a>.
             </p>
           )}
 
@@ -1519,10 +1605,9 @@ export function ForecastRange({ tiles }: { tiles?: ReactNode }) {
             <p role="status" className="alert">
               These thresholds were fitted to {forecast.calibration.gold_days_total} days Nazaré is
               known to have gone giant — {forecast.calibration.gold_days_fitted} to choose them and{' '}
-              {forecast.calibration.gold_days_validated} held back to check them. That is a very
-              small number of days: far more giant days are on record, but the swell measurements
-              these calls are written in do not reach back that far. Expect the calls to be roughly
-              right and individually uncertain.
+              {forecast.calibration.gold_days_validated} held back to check them. Expect the calls
+              to be roughly right and individually uncertain.{' '}
+              <a href={ADDRESS['how-it-works']}>How the thresholds were fitted</a>.
             </p>
           )}
 
