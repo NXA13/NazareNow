@@ -22,14 +22,12 @@ import json
 from pathlib import Path
 
 HERE = Path(__file__).parent
-import sys
-from pathlib import Path
 
-# `bathymetry.json` and `contours.py` were promoted into `frontend/scripts/map/` by #121, where
-# the build step that ships the map can own them. This prototype still reads them from there,
-# so there is one copy of the soundings and one tracer rather than two of each.
+# `bathymetry.json` was promoted into `frontend/scripts/map/` by #121, where the build step that
+# ships the map can own it, and the traced output now lands in `frontend/src/`. This script reads
+# both from there. It imports nothing from `contours`, so unlike `refraction.py` it needs no
+# `sys.path` entry — only the paths.
 PROMOTED = Path(__file__).resolve().parents[2] / "frontend" / "scripts" / "map"
-sys.path.insert(0, str(PROMOTED))
 
 DATA = json.loads((HERE.parents[1] / "frontend" / "src" / "map-geometry.json").read_text(encoding="utf-8"))
 CRESTS = json.loads((HERE / "crests.json").read_text(encoding="utf-8"))

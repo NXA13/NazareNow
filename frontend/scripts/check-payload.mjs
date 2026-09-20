@@ -66,7 +66,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/** Compressed kilobytes the whole first load may cost. Today it is about 117, of which 43 is
+/** Compressed kilobytes the whole first load may cost. Today it is about 128, of which 43 is
  * the two fonts. See the note above for why it moved. */
 const BUDGET_KB = 130;
 

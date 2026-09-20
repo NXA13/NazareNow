@@ -200,11 +200,6 @@ def simplify(points: list[tuple[float, float]], epsilon: float) -> list[tuple[fl
     return [p for p, k in zip(points, keep) if k]
 
 
-def to_path(points: list[tuple[float, float]], closed: bool) -> str:
-    body = " ".join(f"{x:.1f},{y:.1f}" for x, y in points)
-    return f"M{body.replace(' ', ' L', 1) if False else body}"
-
-
 def path_data(points: list[tuple[float, float]], closed: bool) -> str:
     head = f"M{points[0][0]:.1f},{points[0][1]:.1f}"
     rest = "".join(f"L{x:.1f},{y:.1f}" for x, y in points[1:])

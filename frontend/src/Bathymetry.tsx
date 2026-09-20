@@ -26,14 +26,17 @@ import geometry from './map-geometry.json';
  * happening.
  *
  * **The order is load-bearing and the first defect the prototype found.** Each level's path
- * fills everything *deeper* than it, so painting shallow-to-deep leaves the trench as the last
- * and darkest thing drawn. Reversed, the shallowest level floods the entire ocean with the
+ * fills everything *deeper* than it, so painting shallow-to-deep leaves the canyon floor as
+ * the last and darkest thing drawn. Reversed, the shallowest level floods the entire ocean with the
  * shelf tone and the canyon disappears completely — which looks like a palette problem and is
  * not.
  */
 const BANDS = [-20, -75, -155, -280, -460, -700, -1000, -1400] as const;
 
 const LEVELS: Record<string, string[]> = geometry.levels;
+
+/** Far enough outside the frame that the closing edge is never visible inside it. */
+const WEST = -60;
 
 /**
  * Close an open contour around the western edge of the frame.
@@ -49,9 +52,6 @@ function closeWest(path: string): string {
   const last = points[points.length - 1]!.split(',');
   return `${path}L${WEST},${last[1]}L${WEST},${first[1]}Z`;
 }
-
-/** Far enough outside the frame that the closing edge is never visible inside it. */
-const WEST = -60;
 
 function bandPath(level: number): string {
   return (LEVELS[String(level)] ?? []).map(closeWest).join('');

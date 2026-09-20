@@ -11,6 +11,9 @@
  * defects live in exactly those.
  */
 
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
@@ -132,6 +135,34 @@ describe('what the base map is allowed to be', () => {
 
     for (const banned of ['leaflet', 'mapbox', 'maplibre', 'openlayers', 'd3', 'chart.js']) {
       expect(dependencies.filter((name) => name.includes(banned))).toEqual([]);
+    }
+  });
+
+  it('never calls the canyon by a name CONTEXT.md forbids', () => {
+    /*
+     * ADR 0014: an avoid list forbids naming the thing. The review of this very ticket found it
+     * broken — "the trench" twice, once in a component comment and once in a token note — which
+     * is the second time a list has been broken silently in this repository.
+     *
+     * **The sweep reads source text, not rendered copy**, because that is where it happened and
+     * because a comment naming the canyon wrongly teaches the next person to name it wrongly.
+     * The terms are parsed out of `CONTEXT.md` rather than copied here, so the guard cannot
+     * drift from the list it enforces.
+     */
+    const read = (relative: string) =>
+      readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8');
+
+    const context = read('../../CONTEXT.md');
+    const entry = context.match(/\*\*Nazaré Canyon\*\*:[\s\S]*?_Avoid_: (.+)/)!;
+    const forbidden = entry[1]!.split(',').map((term) => term.trim().toLowerCase());
+    expect(forbidden).toContain('the trench');
+
+    const sources = ['./Bathymetry.tsx', './MapSlot.tsx', './tokens.css', './App.css'];
+    for (const source of sources) {
+      const text = read(source).toLowerCase();
+      for (const term of forbidden) {
+        expect(text, `${source} names the canyon as "${term}"`).not.toContain(term);
+      }
     }
   });
 

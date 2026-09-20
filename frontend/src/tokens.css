@@ -151,7 +151,7 @@
   --map-band-7: #060606;
 
   /* The contour lines over the bands. One step brighter than the shallowest band, so they read
-     as lines on the shelf and fade into the trench where the bands are darkest. */
+     as lines on the shelf and fade into the deepest water, where the bands are darkest. */
   --map-hairline: #4a4a4a;
 
   /* Land is the page's own ground, so the coastline reads as the edge of the instrument rather

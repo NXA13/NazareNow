@@ -649,9 +649,8 @@ footer p {
   stroke-width: 0.6;
 }
 
-/* Where the map goes, and visibly not a map. See `MapSlot.tsx` for why it refuses to resemble
-   one. Dashed, because a dashed edge is the one border convention that reads as "not finished"
-   without having to say so, and it says so as well. */
+/* Where the map goes. It held a placeholder from #115 until #121 and refused to resemble a map
+   for all of it; `MapSlot.tsx` records why. There is a real one in it now. */
 .map-slot {
   height: 100%;
   /* A floor, for the two cases where the column beside it is short or absent: stacked under the
@@ -661,16 +660,14 @@ footer p {
   min-height: 20rem;
   display: flex;
   flex-direction: column;
-  /* Top, not centre. The slot is as tall as the column beside it, and that column is currently
-     about twice a viewport — a label centred in it sits below the fold, so the page opens on
-     what looks like an empty panel. A placeholder nobody can see without scrolling is not
-     "visibly a placeholder", and it stays visible at the top once #117 brings the column down
-     to one viewport. */
+  /* Top, not centre — which mattered most while this was a placeholder whose label could
+     otherwise sit below the fold, and still matters: the map takes the room and the caption
+     takes the line under it, in that order. */
   justify-content: flex-start;
   gap: var(--space-2);
-  /* **Solid and quiet since #121.** It was dashed in `--ink-muted` while it was a placeholder,
-     because a dashed edge is the one border convention that reads as "not finished" without
-     having to say so. There is a map in it now, so the frame goes back to being a frame. */
+  /* **Solid since #121.** It was dashed in `--ink-muted` while it was a placeholder, because a
+     dashed edge is the one border convention that reads as "not finished" without having to say
+     so. There is a map in it now, so the frame goes back to being a frame. */
   border: var(--rule) solid var(--ink-border);
   border-radius: var(--radius);
   overflow: hidden;
@@ -682,19 +679,14 @@ footer p {
   min-height: 0;
 }
 
-.map-slot-what {
-  margin: 0;
-  color: var(--ink-muted);
-  font-size: var(--text-tiny);
-  font-weight: var(--weight-semibold);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-widest);
-}
-
 .map-slot-note {
   margin: 0;
   padding: var(--space-3) var(--space-4);
-  color: var(--ink-muted);
+  /* **Full text colour, not the muted tone.** This line is the caveat that stops a permanent
+     feature of the sea bed being read as today's sea, and #116's rule is that a limit is never
+     set quieter than the figure it qualifies. Muted-and-a-size-down is precisely the treatment
+     that turns a disclaimer into elegant grey fine print. */
+  color: var(--ink-text);
   font-size: var(--text-small);
 }
 
