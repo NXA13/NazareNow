@@ -17,19 +17,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
-import packed from './depth-grid.json';
-import { decodeDepthGrid } from './depth-grid';
-import { crestPaths, type DepthGrid, type Swell } from './refraction';
-
-/** Decoded once for the life of the page: the soundings do not change. */
-const GRID: DepthGrid = {
-  rows: packed.rows,
-  cols: packed.cols,
-  elevationMetres: decodeDepthGrid(packed),
-  viewWidth: packed.viewWidth,
-  viewHeight: packed.viewHeight,
-  metresPerUnit: packed.metresPerUnit,
-};
+import { SEA_FLOOR } from './depth-grid';
+import { crestPaths, type Swell } from './refraction';
 
 const FRAME_COUNT = 16;
 /** One loop of the animation is FRAME_COUNT × this, so about 1.8 s per crest interval. */
@@ -60,14 +49,18 @@ function useCrestPhase(frameCount: number): number {
 
 export function Crests({ swell }: { swell: Swell | null }) {
   // Keyed on the two numbers rather than the object, so a re-render with an equal-but-new
-  // conditions object does not re-run a 50 ms solve.
+  // conditions object does not re-run a 46 ms solve.
   const period = swell?.periodSeconds ?? null;
   const direction = swell?.fromDirectionDeg ?? null;
   const frames = useMemo(
     () =>
       period === null || direction === null
         ? []
-        : crestPaths(GRID, { periodSeconds: period, fromDirectionDeg: direction }, FRAME_COUNT),
+        : crestPaths(
+            SEA_FLOOR,
+            { periodSeconds: period, fromDirectionDeg: direction },
+            FRAME_COUNT,
+          ),
     [period, direction],
   );
 

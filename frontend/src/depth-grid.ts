@@ -13,14 +13,25 @@
  * a network to.
  */
 
+import packed from './depth-grid.json';
+import type { DepthGrid } from './refraction';
+
 export interface PackedDepthGrid {
   rows: number;
   cols: number;
+  /** The viewBox the grid maps onto, so the page and the tracer cannot disagree about it. */
+  viewWidth: number;
+  viewHeight: number;
+  /** Metres per view unit, derived by the build step from these same soundings. */
+  metresPerUnit: number;
   /** Little-endian int16 deltas, base64. */
   deltas: string;
 }
 
-export function decodeDepthGrid(packed: PackedDepthGrid): Int16Array {
+/** Takes only the three fields it reads, so a caller with soundings and nothing else can use it. */
+export function decodeDepthGrid(
+  packed: Pick<PackedDepthGrid, 'rows' | 'cols' | 'deltas'>,
+): Int16Array {
   const binary = atob(packed.deltas);
   const count = packed.rows * packed.cols;
   const bytes = new Uint8Array(binary.length);
@@ -35,3 +46,19 @@ export function decodeDepthGrid(packed: PackedDepthGrid): Int16Array {
   }
   return elevation;
 }
+
+/**
+ * The sea floor, decoded once for the life of the page.
+ *
+ * Assembled here rather than at each call site: the six-field literal was being written out in
+ * both `Crests.tsx` and `refraction.parity.test.ts`, which is two places for the page and its
+ * own parity check to start describing different seas.
+ */
+export const SEA_FLOOR: DepthGrid = {
+  rows: packed.rows,
+  cols: packed.cols,
+  elevationMetres: decodeDepthGrid(packed),
+  viewWidth: packed.viewWidth,
+  viewHeight: packed.viewHeight,
+  metresPerUnit: packed.metresPerUnit,
+};

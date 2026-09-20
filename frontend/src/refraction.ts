@@ -7,9 +7,13 @@
  * of it lag, the front wraps around the canyon head, and the energy that should have spread
  * along ten kilometres of beach arrives at one peak. That convergence *is* the wave.
  *
- * The model is the schoolbook one, and is named as such wherever it is shown:
+ * Celerity comes from the dispersion relation, and is named as such wherever it is shown:
  *
- *     celerity  c = min(c_deep, sqrt(g * depth))      c_deep = g * T / 2*pi
+ *     omega^2 = g * k * tanh(k * d)        c = omega / k        omega = 2*pi / T
+ *
+ * **It was `c = min(c_deep, sqrt(g*d))` and that could not draw this map** — see `celerity`
+ * below and ADR 0017. That law is exactly deep-water celerity for every depth below
+ * `c_deep^2/g`, so the shelf and the canyon ran at identical speed and nothing bent.
  *
  * Travel time from the open ocean is a shortest-path problem over the depth grid — Dijkstra
  * with eight neighbours, cost = distance / celerity — seeded with a straight plane wave on the
@@ -58,6 +62,18 @@ const NEWTON_STEPS = 4;
  */
 const SHOALING_FRACTION = 0.95;
 
+/** Bisection steps for `shoalingDepth`. Forty halvings of a 300 m bracket is well past a metre. */
+const BISECTION_STEPS = 40;
+
+/**
+ * How far a crest may be moved by simplification, in view units.
+ *
+ * Matches `refraction.py`, and the parity test fails if the two drift apart. It was a parameter
+ * with a default that nobody ever passed; measured, this tolerance moves a crest by 0.28 view
+ * units on average and 0.76 at worst, which is 0.63 px at 1440x900.
+ */
+const SIMPLIFY_TOLERANCE = 0.7;
+
 export interface DepthGrid {
   rows: number;
   cols: number;
@@ -87,8 +103,8 @@ export interface CrestFrame {
   shoaling: string[];
 }
 
-/** Deep-water celerity, which is also the ceiling on celerity anywhere. */
-export function deepCelerity(periodSeconds: number): number {
+/** Deep-water celerity, the speed the front keeps until it feels the bottom. */
+function deepCelerity(periodSeconds: number): number {
   return (G * periodSeconds) / (2 * Math.PI);
 }
 
@@ -133,16 +149,18 @@ export function celerity(depthMetres: number, periodSeconds: number): number {
  */
 export function shoalingDepth(periodSeconds: number): number {
   const deep = deepCelerity(periodSeconds);
-  let shallow = MIN_DEPTH_M;
-  let deepest = (G * periodSeconds * periodSeconds) / (2 * Math.PI);
-  // Bisection, because `celerity` rises monotonically with depth and a closed form for this
+  // Bracketed by two depths known to sit either side of the answer: at the 2 m floor the front
+  // has certainly slowed, and at a full deep-water wavelength it certainly has not.
+  let slowedBy = MIN_DEPTH_M;
+  let stillFast = (G * periodSeconds * periodSeconds) / (2 * Math.PI);
+  // Bisection, because `celerity` rises monotonically with depth and a closed form for its
   // inverse would be one more thing to keep in step with the line above.
-  for (let i = 0; i < 40; i++) {
-    const mid = (shallow + deepest) / 2;
-    if (celerity(mid, periodSeconds) < SHOALING_FRACTION * deep) shallow = mid;
-    else deepest = mid;
+  for (let i = 0; i < BISECTION_STEPS; i++) {
+    const mid = (slowedBy + stillFast) / 2;
+    if (celerity(mid, periodSeconds) < SHOALING_FRACTION * deep) slowedBy = mid;
+    else stillFast = mid;
   }
-  return (shallow + deepest) / 2;
+  return (slowedBy + stillFast) / 2;
 }
 
 /** A binary heap of (time, cell), because the solve is the hot path and an array sort is not. */
@@ -411,7 +429,7 @@ function join(segments: [Point, Point][]): Point[][] {
 }
 
 /** Ramer-Douglas-Peucker, iterative so a long front cannot blow the stack. */
-export function simplify(points: Point[], epsilon: number): Point[] {
+function simplify(points: Point[], epsilon: number): Point[] {
   if (points.length < 3) return points;
   const keep = new Array<boolean>(points.length).fill(false);
   keep[0] = keep[points.length - 1] = true;
@@ -452,12 +470,7 @@ export function simplify(points: Point[], epsilon: number): Point[] {
  * which over this frame would be about 160 crests and a moiré pattern. The interval here is
  * chosen so the fronts are legible; where each one bends is the honest part.
  */
-export function crestFrames(
-  grid: DepthGrid,
-  swell: Swell,
-  frameCount = 16,
-  tolerance = 0.7,
-): Crest[][] {
+export function crestFrames(grid: DepthGrid, swell: Swell, frameCount = 16): Crest[][] {
   const field = travelTime(grid, swell);
   let span = 0;
   for (let i = 0; i < field.length; i++) {
@@ -478,7 +491,7 @@ export function crestFrames(
     for (let level = (frame / frameCount) * interval; level < span; level += interval) {
       for (const chain of join(isochroneSegments(grid, field, level))) {
         if (chainLength(chain) < minCrestLength) continue;
-        const reduced = simplify(chain, tolerance);
+        const reduced = simplify(chain, SIMPLIFY_TOLERANCE);
         if (reduced.length < 2) continue;
         crests.push({ points: reduced });
       }
@@ -508,9 +521,10 @@ function pathData(points: Point[]): string {
 /**
  * The frames the map draws: every front, split where the swell starts to feel the bottom.
  *
- * **The split moves with the period**, because the shoaling zone is half the deep-water
- * wavelength and that is a function of period alone — 148 m for a 13.75 s swell, 28 m for a
+ * **The split moves with the period**, because it is the depth at which the front has slowed by
+ * 5% and that follows from the period — measured: 81.75 m for a 13.75 s swell, 15.57 m for a
  * 6 s one. It is not a fixed depth contour, and drawing it as one would be a different claim.
+ * See `shoalingDepth`, which says why this is not half the deep-water wavelength.
  *
  * A front crossing the boundary is cut at the crossing and appears in both lists, so the
  * bright part begins exactly where the bending does.

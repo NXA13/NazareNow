@@ -127,9 +127,9 @@ describe('shallow water lags the front', () => {
 });
 
 describe('crests are split where the swell starts to feel the bottom', () => {
-  // The map draws each front twice: dim out in deep water, bright inside the shoaling zone,
-  // which is exactly where the bending begins. The split is depth against half the
-  // deep-water wavelength, so it MOVES with the period rather than being a fixed contour.
+  // The map draws each front twice: dim out in deep water, bright where the front has begun
+  // to bend. The split is the depth at which it has slowed by 5%, so it MOVES with the period
+  // rather than being a fixed contour — 81.75 m at 13.75 s, 15.57 m at 6 s.
   const shallowShelfEast = (): DepthGrid => {
     const grid = flatSea(2000, 40, 40);
     const elevation = grid.elevationMetres as number[];

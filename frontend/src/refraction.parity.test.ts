@@ -11,9 +11,13 @@
  *
  * **The one licensed difference is the last printed decimal.** Python's `%.1f` rounds halves
  * to even and JavaScript's `toFixed` rounds them away from zero, so a coordinate landing
- * exactly on a half can differ by 0.1 view units — 0.08 px on a 1440×900 desktop. Nothing
- * else may differ, and the assertion below is tight enough that a genuine change in the
- * physics cannot hide inside it.
+ * exactly on a half can differ by 0.1 view units — 0.08 px on a 1440×900 desktop.
+ *
+ * **Both sides are rounded to one decimal before comparing, and that matters.** A review of
+ * #122 caught this test comparing unrounded TypeScript numbers against the fixture's already
+ * rounded text: the 0.1 then covered the fixture's own quantisation *plus* up to 0.05 of real
+ * drift, so the physics could move and the test would not say. Rounding this side the same way
+ * leaves the rounding mode as the only thing the slack can absorb.
  *
  * If this fails, do not update the fixture. Regenerate it with `python refraction.py` only
  * after deciding that the *model* should change, and say so in the commit.
@@ -24,9 +28,8 @@ import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import packed from './depth-grid.json';
-import { decodeDepthGrid } from './depth-grid';
-import { crestFrames, type DepthGrid } from './refraction';
+import { SEA_FLOOR } from './depth-grid';
+import { crestFrames } from './refraction';
 
 // Resolved from the working directory, not from `import.meta.url`, which under Vite is a
 // module-graph URL rather than a file path. Vitest is run from `frontend/` in this repo — from
@@ -45,17 +48,13 @@ const reference = JSON.parse(readFileSync(FIXTURE, 'utf-8')) as {
   frames: string[][];
 };
 
-const grid: DepthGrid = {
-  rows: packed.rows,
-  cols: packed.cols,
-  elevationMetres: decodeDepthGrid(packed),
-  viewWidth: packed.viewWidth,
-  viewHeight: packed.viewHeight,
-  metresPerUnit: packed.metresPerUnit,
-};
-
 /** The half-even / half-away rounding difference, and nothing more than it. */
 const ROUNDING_SLACK = 0.1 + 1e-9;
+
+/** One decimal, the way `path_data` writes the fixture, so like is compared with like. */
+function rounded(value: number): number {
+  return Number(value.toFixed(1));
+}
 
 function vertices(path: string): [number, number][] {
   return path
@@ -68,7 +67,7 @@ function vertices(path: string): [number, number][] {
 }
 
 describe('the browser solve matches refraction.py', () => {
-  const mine = crestFrames(grid, {
+  const mine = crestFrames(SEA_FLOOR, {
     periodSeconds: reference.period_s,
     fromDirectionDeg: reference.from_direction_deg,
   });
@@ -78,7 +77,7 @@ describe('the browser solve matches refraction.py', () => {
     // empty solve, which is how a port that had stopped working would read as identical.
     expect(reference.frames).toHaveLength(16);
     expect(reference.frames.flat().length).toBeGreaterThan(200);
-    expect(grid.rows * grid.cols).toBe(12826);
+    expect(SEA_FLOOR.rows * SEA_FLOOR.cols).toBe(12826);
   });
 
   it('draws the same number of frames', () => {
@@ -101,8 +100,8 @@ describe('the browser solve matches refraction.py', () => {
         for (let v = 0; v < theirs.length; v++) {
           worst = Math.max(
             worst,
-            Math.abs(ours[v]![0] - theirs[v]![0]),
-            Math.abs(ours[v]![1] - theirs[v]![1]),
+            Math.abs(rounded(ours[v]![0]) - theirs[v]![0]),
+            Math.abs(rounded(ours[v]![1]) - theirs[v]![1]),
           );
           compared++;
         }
