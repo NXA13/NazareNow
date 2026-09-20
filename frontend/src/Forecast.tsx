@@ -1528,9 +1528,13 @@ type SlotView = { view: 'list'; selected: string | null } | { view: 'day'; date:
  * panel included. Either one left outside would grow the column exactly as the hours did,
  * which is the defect rather than a tidier arrangement of it.
  *
- * The height is `--day-slot-height` and the overflow is the slot's own. That is also the
- * container the scoped no-scroll promise rests on (#132): the verdict, the tiles and their
- * provenance clear the fold, and the days scroll in here rather than taking the page with them.
+ * **The slot no longer sets its own height (#132).** It had one — and its own scrollbar — for
+ * exactly as long as it was the only thing holding the column steady. Once the column itself is
+ * capped to the viewport and `.column-scroll` absorbs everything below the fold, a fixed height
+ * here buys nothing and costs a scroller inside a scroller: the days would scroll in the slot,
+ * inside a box that also scrolls, with two bars a reader has to tell apart. The invariant this
+ * component exists for is stronger now than it was, because the column's height stopped
+ * depending on the slot's contents at all.
  */
 function DaySlot({
   days,
@@ -1627,9 +1631,15 @@ function DaySlot({
 
 export function ForecastRange({
   belowVerdict,
+  belowDays,
   rangeCalibration = null,
 }: {
+  /** The four gated tiles. They ride in the block that clears the fold. */
   belowVerdict?: ReactNode;
+  /** The column's tail — the track-record line and the freshness stamps. They ride in the
+   *  block that scrolls, because a limit stranded below a scrolling box is a limit the page
+   *  has to grow to hold, which is the whole of what #132 is about. */
+  belowDays?: ReactNode;
   rangeCalibration?: RangeCalibration | null;
 }) {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
@@ -1678,31 +1688,44 @@ export function ForecastRange({
    */
   return (
     <section className="forecast" aria-label="Forecast">
-      {state.status === 'loading' && <p>Loading forecast...</p>}
+      {/* **The block the scoped promise is about (#132).** Everything in here clears the fold at
+          1440x900: the answer, the four numbers it turns on, and where those numbers came from.
+          Nothing in here scrolls, and nothing may be added to it without measuring again. */}
+      <div className="column-head">
+        {forecast && (
+          /* First on the page, above everything including the heading that used to sit over it:
+             a reader who takes one sentence from here should take this one. "The next 16 days"
+             was rendered above the verdict while it labelled the section as a whole, which put a
+             heading about a list over the answer the list exists to produce. It now sits with
+             the list it names, which is also the order the spec sets out — verdict, tiles,
+             days. */
+          <Verdict days={forecast.days} rangeCalibration={rangeCalibration} />
+        )}
 
-      {state.status === 'failed' && (
-        <p role="alert" className="alert">
-          Could not load the forecast. The service may be unavailable, or no pipeline run has stored
-          one yet.
-        </p>
-      )}
+        {belowVerdict}
+      </div>
 
-      {forecast && (
-        /* First on the page, above everything including the heading that used to sit over it: a
-           reader who takes one sentence from here should take this one. "The next 16 days" was
-           rendered above the verdict while it labelled the section as a whole, which put a
-           heading about a list over the answer the list exists to produce. It now sits with the
-           list it names, which is also the order the spec sets out — verdict, tiles, days. */
-        <Verdict days={forecast.days} rangeCalibration={rangeCalibration} />
-      )}
+      {/* **And the block that scrolls.** The days, the limits that qualify them, and the page's
+          own tail — the track record and the freshness stamps, handed in by `Home` as
+          `belowDays` so that they scroll with the days rather than being stranded below a box
+          that scrolls without them. That stranding is exactly what the first attempt at this
+          promise did: a scroller around the day list alone left four blocks outside it and on
+          the page, and the arithmetic could not close. */}
+      <div className="column-scroll">
+        {state.status === 'loading' && <p>Loading forecast...</p>}
 
-      {belowVerdict}
+        {state.status === 'failed' && (
+          <p role="alert" className="alert">
+            Could not load the forecast. The service may be unavailable, or no pipeline run has
+            stored one yet.
+          </p>
+        )}
 
-      {forecast && (
-        <>
-          <DaySlot days={forecast.days} largest={largest} model={forecast.amplification_model} />
+        {forecast && (
+          <>
+            <DaySlot days={forecast.days} largest={largest} model={forecast.amplification_model} />
 
-          {/* **The limit stays; the explanation moved (#119).**
+            {/* **The limit stays; the explanation moved (#119).**
 
               What these two sentences do is tell a reader what the calls above them rest on and
               how far to trust them, which is a limit qualifying every call on the page. What
@@ -1714,30 +1737,36 @@ export function ForecastRange({
               All three counts stay here. They are what "how thin the basis is" is made of, and
               a limit that said "fitted to a small number of days" without saying how small would
               be the vaguer, more comfortable version of the same sentence. */}
-          {!forecast.calibrated && (
-            <p role="status" className="alert">
-              These calls come from the surf community's rule of thumb, not from thresholds fitted
-              to days Nazaré is known to have gone giant. Treat them as a starting point rather than
-              a forecast. <a href={ADDRESS['how-it-works']}>How the calls are made</a>.
-            </p>
-          )}
+            {!forecast.calibrated && (
+              <p role="status" className="alert">
+                These calls come from the surf community's rule of thumb, not from thresholds fitted
+                to days Nazaré is known to have gone giant. Treat them as a starting point rather
+                than a forecast. <a href={ADDRESS['how-it-works']}>How the calls are made</a>.
+              </p>
+            )}
 
-          {forecast.calibrated && forecast.calibration && (
-            <p role="status" className="alert">
-              These thresholds were fitted to {forecast.calibration.gold_days_total} days Nazaré is
-              known to have gone giant — {forecast.calibration.gold_days_fitted} to choose them and{' '}
-              {forecast.calibration.gold_days_validated} held back to check them. Expect the calls
-              to be roughly right and individually uncertain.{' '}
-              <a href={ADDRESS['how-it-works']}>How the thresholds were fitted</a>.
-            </p>
-          )}
+            {forecast.calibrated && forecast.calibration && (
+              <p role="status" className="alert">
+                These thresholds were fitted to {forecast.calibration.gold_days_total} days Nazaré
+                is known to have gone giant — {forecast.calibration.gold_days_fitted} to choose them
+                and {forecast.calibration.gold_days_validated} held back to check them. Expect the
+                calls to be roughly right and individually uncertain.{' '}
+                <a href={ADDRESS['how-it-works']}>How the thresholds were fitted</a>.
+              </p>
+            )}
 
-          <p className="provenance">
-            Forecast fetched {formatTimestamp(forecast.fetched_at)}. The range ends where the
-            provider stops modelling swell, which is sooner than its wind forecast.
-          </p>
-        </>
-      )}
+            <p className="provenance">
+              Forecast fetched {formatTimestamp(forecast.fetched_at)}. The range ends where the
+              provider stops modelling swell, which is sooner than its wind forecast.
+            </p>
+          </>
+        )}
+
+        {/* Outside the `forecast &&`, because ADR 0005's promise does not have a forecast as a
+            condition. A forecast endpoint that is slow or down must not take the track record
+            and the freshness stamps off the page with it. */}
+        {belowDays}
+      </div>
     </section>
   );
 }

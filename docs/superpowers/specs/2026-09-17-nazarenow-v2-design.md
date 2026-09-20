@@ -91,17 +91,40 @@ argue a field onto the "not read" list under test pressure.
 
 ## 3. Layout
 
-**Two columns, equal height, nothing scrolls on desktop.** The forecast column on the left, the
-map on the right, the map matching the column's height rather than being pinned or sticky.
+**Two columns, equal height, the page does not scroll on desktop.** The forecast column on the
+left, the map on the right, the map matching the column's height rather than being pinned or
+sticky.
 
-The map is not fixed and the left column is not independently scrollable. Both were considered
-and rejected: a fixed map with content sliding past it is Windy's solution, and it reads as two
-unrelated panels rather than one instrument.
+**The column's tail scrolls inside the column** — amended 2026-09-20, and the amendment is the
+substance of #132. What clears the fold at 1440x900 is the verdict, the four gated tiles and the
+provenance that qualifies them. Everything under that — the sixteen day rows, the calibration
+limit, the forecast provenance, the track-record line and the freshness stamps — scrolls within
+the column, which is capped to the height the chrome leaves it.
+
+This was originally written as "nothing scrolls", and that turned out to be unsatisfiable
+alongside the other two things this document insists on: **the promise holds at sixteen days**,
+and **every limit stays beside the figure it qualifies** (§2, and #116/#119 enforce it). At
+1440x900 the three together wanted a 46% reduction in page height. Measured, not estimated —
+the sequence of wrong estimates on #132 was 179 → 478 → 794 → 776, and every one of them
+guessed at what a ticket would remove without counting what the same ticket added.
+
+Of the three, the promise is the one that gave, because the other two are load-bearing: cutting
+the day count sacrifices the days carrying the most Lead Time, which is what this product is
+for, and moving a limit away from its figure is the overclaiming this project exists to avoid.
+
+The map is still not fixed, and the *page* still does not scroll. A fixed map with content
+sliding past it is Windy's solution and reads as two unrelated panels rather than one
+instrument; that remains rejected. What is allowed now is one scrolling region inside the left
+column, which keeps both columns level and the map's proportion constant.
 
 **The hour-by-hour panel takes the day list's slot** rather than opening beneath it. This is what
-makes "equal height, nothing scrolls" survive someone clicking something: the column's height
-never changes, so the map's aspect ratio never changes. The cost, accepted knowingly, is that
-the day list and the hours cannot be seen at once.
+makes "equal height, the page does not scroll" survive someone clicking something: the column's
+height never changes, so the map's aspect ratio never changes. The cost, accepted knowingly, is
+that the day list and the hours cannot be seen at once.
+
+The column's height is now held by the cap rather than by a fixed box around the day list, so
+the invariant is stronger than when #118 built it: the column cannot change height whatever is
+inside it.
 
 **No-scroll is a desktop promise only.** The phone layout is a separate design, not a
 consequence of this one. Story 26 (phone layout) has never been verified in this repository and

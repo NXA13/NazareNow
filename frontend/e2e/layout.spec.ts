@@ -454,7 +454,7 @@ test.describe(`the day slot, at ${DESKTOP.width}x${DESKTOP.height}`, () => {
     await deep.focus();
 
     const seen = await page.evaluate(() => {
-      const box = document.querySelector('.day-slot')!.getBoundingClientRect();
+      const box = document.querySelector('.column-scroll')!.getBoundingClientRect();
       const row = document.activeElement as HTMLElement;
       const rect = row.getBoundingClientRect();
       const style = getComputedStyle(row);
@@ -473,117 +473,180 @@ test.describe(`the day slot, at ${DESKTOP.width}x${DESKTOP.height}`, () => {
     expect(seen.roomForRing).toBe(true);
   });
 
-  test('is the same height at three days as at sixteen', async ({ page }) => {
-    // What the fixed slot actually buys, and the reason it is a length rather than a
-    // `max-content`. The design spec's warning is that "any layout that assumes a fixed count
-    // is a layout that breaks silently" — this is the assertion that the layout no longer has
-    // an opinion about the count at all.
+  test('absorbs the day count into the scroller rather than into the page', async ({ page }) => {
+    // The design spec's warning is that "any layout that assumes a fixed count is a layout that
+    // breaks silently", so this is the assertion that the page has no opinion about the count.
     //
-    // The slot rather than the page: the verdict above it summarises the days, so its wording
-    // and its wrapping can legitimately differ between two forecasts, and a page-height
-    // comparison would be measuring that sentence rather than this box.
+    // **Two halves, because either alone is worth nothing here.** Comparing the column's height
+    // at three days and at sixteen is what this test did first, and it could not fail: the
+    // column is pinned by the viewport whatever is inside it, so the assertion held even in the
+    // broken state where the flex chain was severed and the tail grew to 1020 inside a column
+    // of 818. What can fail is the page, and what proves the days are really there rather than
+    // dropped is the scroller's content growing with them.
     await loadHome(page);
-    const sixteen = (await page.locator('.day-slot').boundingBox())!.height;
+    const { height: viewportHeight } = await viewport(page);
+    const sixteen = await page.evaluate(() => ({
+      page: document.documentElement.scrollHeight,
+      content: document.querySelector('.column-scroll')!.scrollHeight,
+    }));
 
     // Added after the `beforeEach` stub, so it is matched first.
     await page.route('**/api/conditions/forecast', (route) =>
       route.fulfill({ json: { ...longForecast, days: longForecast.days.slice(0, 3) } }),
     );
     await loadHome(page);
+    const three = await page.evaluate(() => ({
+      page: document.documentElement.scrollHeight,
+      content: document.querySelector('.column-scroll')!.scrollHeight,
+    }));
 
-    expect((await page.locator('.day-slot').boundingBox())!.height).toBeCloseTo(sixteen, 1);
+    // The page fits at both counts, and measures the same at both.
+    expect(sixteen.page).toBeLessThanOrEqual(viewportHeight);
+    expect(three.page).toBeLessThanOrEqual(viewportHeight);
+    expect(three.page).toBe(sixteen.page);
+
+    // And the thirteen extra days went into the scroller, not into a page that grew or a list
+    // that quietly shortened.
+    expect(sixteen.content).toBeGreaterThan(three.content);
   });
 
-  test('scrolls the days inside itself rather than lengthening the page', async ({ page }) => {
-    // Sixteen rows do not fit in the slot and are not meant to. None is hidden, collapsed or
-    // trimmed — the days past the measured archive carry the most Lead Time and dropping them
-    // is what this layout exists not to do — so the overflow goes here, inside a box whose
-    // height the page does not feel.
+  test('scrolls the column tail rather than lengthening the page', async ({ page }) => {
+    // Sixteen rows and the limits under them do not fit below the fold, and are not meant to.
+    // None is hidden, collapsed or trimmed — the days past the measured archive carry the most
+    // Lead Time, and dropping them is what this layout exists not to do — so the overflow goes
+    // inside a box whose height the page does not feel.
+    //
+    // **The scroller is the column's whole tail, not the day list.** #118 scrolled the list
+    // alone, which left the calibration limit, the forecast provenance, the track-record line
+    // and the footer outside the scroller and on the page — 393px of it — and no slot height
+    // could close a gap those four were holding open.
     await loadHome(page);
-    const slot = page.locator('.day-slot');
+    const tail = page.locator('.column-scroll');
 
-    const overflow = await slot.evaluate((element) => element.scrollHeight - element.clientHeight);
+    const overflow = await tail.evaluate((element) => element.scrollHeight - element.clientHeight);
     expect(overflow).toBeGreaterThan(0);
-    expect(await slot.evaluate((element) => getComputedStyle(element).overflowY)).toBe('auto');
+    expect(await tail.evaluate((element) => getComputedStyle(element).overflowY)).toBe('auto');
 
     // Every row is still in the document, scrolled rather than dropped.
     await expect(page.locator('.day')).toHaveCount(longForecast.days.length);
+
+    // And every block that used to be stranded below it is inside it — named one by one,
+    // because a loop over three of the four is a guard with a hole exactly where the fourth is.
+    for (const inside of [
+      '.day-slot',
+      // Scoped to the scroller already, so these are bare: `.forecast .alert` would look for a
+      // `.forecast` *inside* it, and the section is its ancestor.
+      '.alert',
+      '.provenance',
+      '.track-record-line',
+      'footer',
+    ]) {
+      await expect(tail.locator(inside)).toHaveCount(1);
+    }
   });
 });
 
-test.describe('how tall the page is, which is the promise not yet kept', () => {
-  test('does not fit yet, and the day list is no longer what is left to find', async ({ page }) => {
+test.describe('how tall the page is, which is the promise', () => {
+  test('shows the verdict, the tiles and their provenance without scrolling', async ({ page }) => {
+    // **The first half of the promise, and the half a page-height assertion cannot see.**
+    // `.column-scroll` is a flex child, so anything added above the fold is paid for out of the
+    // scroller before it is paid for out of the page: the block below could squeeze to a slit
+    // while `scrollHeight` went on reporting exactly one viewport. That is the promise kept in
+    // the letter and lost in the substance, so it is asserted directly.
+    await loadHome(page);
+    const { height: viewportHeight } = await viewport(page);
+
+    const head = (await page.locator('.column-head').boundingBox())!;
+    expect(head.y + head.height).toBeLessThanOrEqual(viewportHeight);
+
+    // Each of the three the ruling names, by what a reader sees rather than by class.
+    for (const block of [
+      page.getByRole('heading', { level: 2 }).first(),
+      page.getByTestId('tiles'),
+      page.getByTestId('provenance'),
+    ]) {
+      const box = (await block.boundingBox())!;
+      expect(box.y + box.height).toBeLessThanOrEqual(viewportHeight);
+    }
+
+    // And the scroller still has room to be a list rather than a slit.
+    const tail = (await page.locator('.column-scroll').boundingBox())!;
+    expect(tail.height).toBeGreaterThan(150);
+  });
+
+  test('fits a viewport at sixteen days, which is the no-scroll promise entire', async ({
+    page,
+  }) => {
     await loadHome(page);
 
     const { height: viewportHeight } = await viewport(page);
     const height = await page.evaluate(() => document.documentElement.scrollHeight);
 
     /**
-     * **#115 builds the shell; it does not make the page fit**, and #117, #116, #119 and #118
-     * have each been through here without closing it. What is left in the left column is no
-     * longer v1's contents: it is the verdict, the four gated tiles, the slot, and the limits
-     * that qualify them.
+     * **The promise, kept (#132).** This assertion was `toBeGreaterThan` from #115 until here:
+     * a tripwire asserting the shortfall, written so that the ticket which closed the gap could
+     * not close it quietly. This is that ticket.
      *
-     * **Measured here, at 1440x900 against this fixture, rather than projected.** Every
-     * estimate written into this docstring before #116 was wrong, and so were the ones in PR
-     * #127's body; the browser was two minutes away each time.
+     * **Measured at 1440x900 against this fixture, never projected.** Every estimate written
+     * into this docstring before #116 was wrong, and so were the ones on #132 — the sequence
+     * there was 179 -> 478 -> 794 -> 776, and each wrong figure was an estimate of what a
+     * ticket would remove that did not account for what the same ticket added.
      *
      * ```
-     *                      #117    #128    #116    #119    #118
-     * page                 1945    1715    1642    1676    1430     viewport 900
-     *   chrome              238      88      88      88      32
-     *   .verdict              -       -     217     289     289     <- range admission (#119)
-     *   .tiles                -       -     123     123     123
-     *   .temperatures         -       -       -       -      17
-     *   .conditions-provenance -      -      96      96      96
-     *   ten condition cards 378     318       -       -       -
-     *   .windows            171     171     171       -       -     <- moved by #119
-     *   .days + divider     554     554     554     554       -     <- into the slot by #118
-     *   .day-slot             -       -       -       -     416     <- holds 650 of content
-     *   .hint                22      22      22      22       -     <- into the slot by #118
-     *   .alert               74      74      74      98      98
-     *   .forecast .provenance -       -      48      48      48
-     *   .track-record-line    -       -       -      98      98     <- owed back by #119
-     *   footer              107     107      59      41      41
+     *                       #117   #128   #116   #119   #118   #132
+     * page                  1945   1715   1642   1676   1430    900    viewport 900
+     *   chrome               238     88     88     88     32     26
+     *   .verdict               -      -    217    289    289    267
+     *   .tiles                 -      -    123    123    123    123
+     *   .conditions-provenance -      -     96     96     96     96
+     *   ten condition cards  378    318      -      -      -      -
+     *   .windows             171    171    171      -      -      -    <- moved by #119
+     *   .days + divider      554    554    554    554      -      -    <- into the slot, #118
+     *   .day-slot              -      -      -      -    416      *    <- * scrolls now
+     *   .alert                74     74     74     98     98      *
+     *   .forecast .provenance  -      -     48     48     48      *
+     *   .track-record-line     -      -      -     98     98      *
+     *   footer               107    107     59     41     41      *
      * ```
      *
-     * **#119 cost 34px net** — it removed the windows panel and its own acceptance criteria
-     * added the track-record line and the range admission back. #118 takes 246 by capping the
-     * slot, and that is the last of it that a slot height can take.
+     * `*` is the point. Everything marked with one is inside `.column-scroll`, so its height is
+     * no longer the page's business at all — the page is a viewport, and the tail scrolls in
+     * the space the fold leaves it.
      *
-     * **Everything outside the slot now measures 1014 against a 900 viewport.** That is the
-     * number #132 is actually holding: at a slot height of zero this page is still 114 over, so
-     * the scoped promise needs ~114px of tightening *before* the slot can be any height at all,
-     * and every pixel found past that is a row a reader sees without scrolling. The ~190 of
-     * tightening sized on #132 covers it, which is the first time the arithmetic on that ticket
-     * has closed.
+     * **What made the arithmetic close was widening the scroller, not finding 114px.** #118
+     * scrolled the day list alone. That left the calibration limit, the forecast provenance,
+     * the track-record line and the footer outside the scroller and on the page — 393px held
+     * open by four blocks no slot height could reach. Of the ~190px of tightening sized on
+     * #132, 128 was row padding, list gaps and divider margins, all of which #118 had moved
+     * *inside* the slot: tightening them buys rows inside the scroller and moves the page not
+     * at all. Only ~30 was ever outside it.
      *
-     * An earlier reading of this put the gap at 159 rather than 179. It hid the conditions
-     * provenance along with the footer it used to sit in — but that paragraph qualifies the tile
-     * figures, and the spec's rule is that limits qualifying a number stay beside that number
-     * while teaching material moves. #119 did not take it, so a measurement that assumed it
-     * would was flattering the result by exactly its height.
+     * The 22px this ticket does take out of the verdict is not what keeps the promise either.
+     * The promise is kept by construction — `.page-forecast` is `height: 100vh` and the column
+     * takes what the chrome leaves — and the 22px buys one more day row above the fold.
      *
-     * **This asserts the shortfall rather than a ceiling on it**, and the difference matters. A
-     * ceiling — "under two viewports" — was the first thing written here, and it was measuring
-     * the fixture rather than the page: three days of rows fit under it and sixteen do not, so
-     * the bound said more about how long the test's forecast was than about the layout. A count
-     * the page must never assume is exactly what the design spec warns against assuming.
+     * **This is asserted at the count the fixture carries**, sixteen, not the eleven the
+     * provider happens to send today: "any layout that assumes a fixed count is a layout that
+     * breaks silently" is the design spec's own warning. And the page now measures the same at
+     * three days as at sixteen, which `the day slot` above asserts directly — so this is a
+     * property of the page rather than of the response, which is the stronger thing to hold.
      *
-     * **"More days only make it more true" was the other half of that reasoning, and #118 has
-     * just made it false.** The days are in a slot of fixed height now, so the page measures the
-     * same at three days as at sixteen — `the day slot` above asserts exactly that. What is left
-     * is the plain fact that this page does not fit, which no longer depends on the fixture's
-     * length in either direction. That is the stronger position to assert from, not the weaker
-     * one: the shortfall is now a property of the page rather than of the response.
-     *
-     * So that is what is asserted, and it makes the test retire itself: the day any
-     * ticket brings the page under a viewport this fails, and whoever is holding it then
-     * replaces it with `toBeLessThanOrEqual(viewportHeight)` — which is the no-scroll promise,
-     * and the whole of it. **The promise is made at the count this fixture carries**, not at the
-     * shorter one the provider happens to send today. A note asking a later ticket to remember is
-     * a note nobody reads; a failing test is not.
+     * **Do not loosen this and do not delete it.** It is the whole promise, and the next thing
+     * that pushes the page over a viewport should fail here rather than ship.
      */
-    expect(height).toBeGreaterThan(viewportHeight);
+    expect(height).toBeLessThanOrEqual(viewportHeight);
+  });
+
+  test('keeps the promise with a day open, not only with the list showing', async ({ page }) => {
+    // The page has two states and the promise is about both. A page that fits until somebody
+    // clicks something is not a page that fits.
+    await loadHome(page);
+    await page.getByRole('button', { name: new RegExp(longForecast.days[3]!.date) }).click();
+    await expect(page.getByRole('table')).toBeVisible();
+
+    const { height: viewportHeight } = await viewport(page);
+    const height = await page.evaluate(() => document.documentElement.scrollHeight);
+
+    expect(height).toBeLessThanOrEqual(viewportHeight);
   });
 });

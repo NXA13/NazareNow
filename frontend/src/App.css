@@ -17,10 +17,12 @@
  * there too.
  *
  * What stays local is *layout dimension*: the narrowest a card may shrink to before the grid
- * drops a column, the flex basis that lines the history ladder's columns up, the height the day
- * table caps at. Those are decisions about this page's geometry rather than about the visual
- * system — a token named `--space-5` has no business being the answer to "how wide is a
- * readable card" — and #115-#118 are the tickets that will move them.
+ * drops a column, the flex basis that lines the history ladder's columns up, and the height the
+ * forecast page is capped to. Those are decisions about this page's geometry rather than about
+ * the visual system — a token named `--space-5` has no business being the answer to "how wide
+ * is a readable card", and `--day-slot-height` had no business being the answer to "how tall is
+ * the day list", which is why #132 deleted it from the visual-system sheet and put the geometry
+ * here.
  *
  * Three rules this sheet is held to, all three enforced by that test:
  *
@@ -77,8 +79,28 @@ main {
   min-height: 100vh;
 }
 
+/* **The forecast page is exactly a viewport tall (#132), and only this page is.**
+ *
+ * `min-height` is what every other page wants and is no use here: it sets a floor, and a floor
+ * leaves nothing for `flex: 1` below it to distribute, so the column simply grew to its content
+ * again. A definite height is what gives the chrome its share and the column the remainder, and
+ * `box-sizing: border-box` above means the padding is inside the viewport rather than added to
+ * it.
+ *
+ * The reading page keeps `min-height` and scrolls as long as it likes. The no-scroll promise is
+ * about the instrument, not about prose. */
 .page-forecast {
   max-width: var(--measure-instrument);
+  height: 100vh;
+  /* A column, so the forecast column can ask for "whatever height is left" rather than for a
+     number. The alternative was `calc(100vh - 5rem)`, which was wrong by 2px the day it was
+     written and would have been wrong by more the next time the chrome changed.
+
+     On this page only. It was on `main` first, where it also reached the reading page — which
+     has no cap, no second column and nothing to distribute, and quietly lost its margin
+     collapsing for the privilege. */
+  display: flex;
+  flex-direction: column;
 }
 
 .page-reading {
@@ -106,8 +128,8 @@ header {
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--space-2) var(--space-4);
-  padding-bottom: var(--space-4);
-  margin-bottom: var(--space-5);
+  padding-bottom: var(--space-3);
+  margin-bottom: var(--space-4);
   border-bottom: var(--rule) solid var(--ink-border);
 }
 
@@ -415,7 +437,9 @@ h2 {
 }
 
 footer {
-  margin-top: var(--space-8);
+  /* Was `--space-8`. That was the gap under a page; this now sits inside the column's scroller,
+     where 48px of air is a day row nobody can see (#132). */
+  margin-top: var(--space-5);
   padding-top: var(--space-5);
   border-top: var(--rule) solid var(--ink-border);
   color: var(--ink-muted);
@@ -453,6 +477,11 @@ footer p {
  * came to read.
  * ------------------------------------------------------------------------ */
 .home {
+  /* Takes the height the chrome leaves, which is what makes the no-scroll promise exact rather
+     than approximately right. `min-height: 0` because a flex item will not shrink below its
+     content without it, and the content here is deliberately taller than the space. */
+  flex: 1;
+  min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
   gap: var(--space-6);
@@ -468,6 +497,98 @@ footer p {
 .home-forecast,
 .home-map {
   min-width: 0;
+}
+
+/*
+ * The scoped no-scroll promise, in four declarations (#132).
+ *
+ * The column is capped to the viewport and its tail scrolls inside it, so the *page* never
+ * scrolls on a desktop. Three things follow, and each was a separate problem before:
+ *
+ * - The map holds its proportion. `.map-slot` is `height: 100%` of this column, so a column
+ *   that cannot change height cannot restretch it.
+ * - The left column's height is identical whether the day list or one day's detail is showing,
+ *   which is #118's invariant — held here now, by the cap, rather than by a fixed box inside.
+ * - The page measures the same at three days as at sixteen, which is what the design spec means
+ *   by refusing to assume a count.
+ *
+ * `min-height: 0` on the scrolling child is the whole trick and the usual omission: a flex item
+ * defaults to `min-height: auto`, which is its content's height, so without this the child
+ * refuses to shrink and the column grows exactly as it did before.
+ */
+.home-forecast {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.column-head {
+  /* Matching `.column-scroll`, so the fold is not a step in the left edge. */
+  padding: 0 var(--space-3);
+}
+
+/* The landmark between the column and its two blocks. It has no look of its own, but the cap
+   has to reach *through* it: a flex chain broken by one ordinary block is a scroller that never
+   scrolls. Measured before this rule existed — the scrolling block grew to 1020 inside a column
+   of 820, and the page grew with it. */
+.forecast {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.column-scroll {
+  flex: 1;
+  /*
+   * **A floor, not `0`, and the floor is what makes the tripwire honest.**
+   *
+   * `flex: 1; min-height: 0` alone means anything added above the fold is paid for out of this
+   * box first: the scroller squeezes toward nothing and the page goes on measuring exactly one
+   * viewport, so `layout.spec.ts`'s promise test would keep passing while the day list shrank
+   * to a slit. The promise would be kept in the letter and lost in the substance.
+   *
+   * With a floor, above-fold growth pushes the column past its cap instead, the page grows, and
+   * the promise test fails — which is the behaviour that test's docstring claims. Roughly five
+   * day rows; it is a floor rather than a target and nothing should be sized against it.
+   */
+  min-height: 12rem;
+  overflow-y: auto;
+  /* A scroller clips at its padding edge, so this is the room a focused row's ring needs in
+     order not to be cut in half by the box it scrolls in — `:focus-visible` is a 3px outline at
+     a 2px offset, and this is wider than the 5px that needs. `.column-head` carries the same
+     padding so that the two blocks stay aligned down the column rather than stepping. */
+  padding: 0 var(--space-3);
+  /* The rows already wrap; a horizontal bar inside a vertical scroller is the classic double
+     scrollbar and never what is wanted here. */
+  overflow-x: hidden;
+}
+
+/* Narrow widths keep no no-scroll promise and have no map beside the column, so nothing is
+   capped and nothing scrolls inside anything. The page scrolls, which on a phone is right. */
+@media (max-width: 60rem) {
+  main,
+  .home-forecast,
+  .forecast {
+    display: block;
+  }
+
+  .page-forecast {
+    height: auto;
+  }
+
+  .column-scroll {
+    /* **Both axes, because one is not enough.** `overflow-y: visible` beside an `overflow-x`
+       that is not visible computes to `auto`, so this stayed a scroll container on a phone
+       while the rule beside it claimed nothing scrolls inside anything down here. */
+    overflow: visible;
+    min-height: 0;
+    padding: 0;
+  }
+
+  .column-head {
+    padding: 0;
+  }
 }
 
 /* Where the map goes, and visibly not a map. See `MapSlot.tsx` for why it refuses to resemble
@@ -546,8 +667,11 @@ footer p {
  * `.earliest`, which was a paragraph of lead-sized prose saying most of the same thing.
  */
 .verdict {
-  margin: 0 0 var(--space-5);
-  padding: var(--space-5);
+  /* Tightened by #132: the scoped promise buys its rows out of whitespace above
+     the fold, and this panel is the largest block up there. Space only — no type size and
+     no colour changes, both of which `ink.test.ts` guards. */
+  margin: 0 0 var(--space-4);
+  padding: var(--space-4);
   border: var(--rule) solid var(--ink-border);
   border-radius: var(--radius);
   background: var(--ink-panel);
@@ -595,7 +719,7 @@ footer p {
 }
 
 .verdict-detail {
-  margin: var(--space-3) 0 0;
+  margin: var(--space-2) 0 0;
   color: var(--ink-muted);
 }
 
@@ -603,7 +727,7 @@ footer p {
    change that turns a disclaimer into elegant grey fine print, and this project exists to avoid
    overclaiming — so the limit is set brighter than the sentence around it, not dimmer. */
 .verdict-scope {
-  margin: var(--space-3) 0 0;
+  margin: var(--space-2) 0 0;
   color: var(--ink-text);
 }
 
@@ -871,40 +995,21 @@ footer p {
 /* --- the slot the days and one day's hours share (#118) ------------------- */
 
 /*
- * One box, two states, one height.
+ * One box, two states, and no height of its own.
  *
  * The detail used to open *beneath* the list. That grew the left column, and `.map-slot` is
  * `height: 100%` of it — so clicking a row changed the map's proportion and moved the page
- * under the reader's hands. Fixing the height here is what makes "equal columns, nothing
- * scrolls" survive somebody clicking something.
+ * under the reader's hands. Swapping the two states inside one box is what fixes that, and it
+ * is the whole of what this rule is for.
  *
- * `overflow-y` is the slot's own, which is the scoped no-scroll promise in one line: the days
- * scroll in here rather than taking the page with them. `overflow-x: hidden` because the rows
- * already wrap and a stray horizontal bar inside a vertical scroller is the classic double
- * scrollbar.
+ * **#118 gave this box a fixed height and its own scrollbar; #132 took both away.** They were
+ * right for as long as this was the only thing holding the column steady. Once
+ * `.column-scroll` caps the column's tail, a height here buys nothing and costs a scroller
+ * inside a scroller — and the room a focused row's ring needs belongs on the box that does the
+ * clipping, which is that one and not this.
  */
 .day-slot {
-  height: var(--day-slot-height);
-  overflow-y: auto;
-  overflow-x: hidden;
-  /* Room for the rows' focus rings and the scrollbar, so neither sits on the text. */
-  padding-right: var(--space-3);
-  /* The slot's own edge, so a reader can see what is scrolling rather than discovering it.
-     On the left only: a full box would draw a frame around half the page. */
-  border-left: var(--rule) solid var(--ink-border);
-  padding-left: var(--space-4);
-}
-
-/* Narrow widths have no no-scroll promise to keep and no map beside the column, so the slot
-   stops being a fixed box and simply holds whichever state is showing. A 26rem scroller on a
-   phone would be a small window onto a long list, for no benefit at all. */
-@media (max-width: 60rem) {
-  .day-slot {
-    height: auto;
-    overflow-y: visible;
-    border-left: none;
-    padding-left: 0;
-  }
+  min-width: 0;
 }
 
 /* The way back, and the first thing in the detail state. Styled as a control rather than as a

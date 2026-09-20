@@ -249,30 +249,40 @@ export function Home() {
               </p>
             )}
 
+            {/* **The column's tail is handed in rather than rendered beside (#132).**
+
+                These two used to be siblings of the forecast section, which put them below the
+                block that scrolls and outside it — so the page had to grow to hold them and the
+                no-scroll promise could not close however much the days were tightened. They
+                belong with the days: one is the forecast's own track record and the other is how
+                old these figures are. */}
             <ForecastRange
               belowVerdict={<ConditionTiles conditions={state.conditions} />}
+              belowDays={
+                <>
+                  {/* Item five of the five the spec puts down this column, and the one #113 took
+                      away on purpose: it used to assert the track record was on this page rather
+                      than behind a link, because a track record nobody navigates to is a
+                      limitation nobody reads. #119 owes it back, as a line. */}
+                  <TrackRecordLine record={record} />
+
+                  <footer>
+                    <p data-testid="freshness">
+                      Observed{' '}
+                      <time dateTime={state.conditions.observed_at}>
+                        {formatTimestamp(state.conditions.observed_at)}
+                      </time>
+                      , fetched{' '}
+                      <time dateTime={state.conditions.fetched_at}>
+                        {formatTimestamp(state.conditions.fetched_at)}
+                      </time>
+                      .
+                    </p>
+                  </footer>
+                </>
+              }
               rangeCalibration={record?.range_calibration ?? null}
             />
-
-            {/* Item five of the five the spec puts down this column, and the one #113 took away
-                on purpose: it used to assert the track record was on this page rather than
-                behind a link, because a track record nobody navigates to is a limitation nobody
-                reads. #119 owes it back, as a line. */}
-            <TrackRecordLine record={record} />
-
-            <footer>
-              <p data-testid="freshness">
-                Observed{' '}
-                <time dateTime={state.conditions.observed_at}>
-                  {formatTimestamp(state.conditions.observed_at)}
-                </time>
-                , fetched{' '}
-                <time dateTime={state.conditions.fetched_at}>
-                  {formatTimestamp(state.conditions.fetched_at)}
-                </time>
-                .
-              </p>
-            </footer>
           </>
         )}
       </div>

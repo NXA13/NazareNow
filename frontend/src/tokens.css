@@ -210,23 +210,6 @@
   --edge: 3px;
   --edge-bold: 4px;
 
-  /* How tall the slot the day list and one day's hours share is (#118).
-   *
-   * A length, not a `max-content`: the two states have wildly different natural heights — a
-   * day's detail is three panels and twenty-four rows — and the point of the slot is that the
-   * left column measures the same whichever one is in it, because the map beside it is
-   * `height: 100%` of that column.
-   *
-   * **This number is what the scoped no-scroll promise will be tuned on (#132), and it is not
-   * tuned yet.** The slot cannot buy that promise on its own at any height: what is left of the
-   * viewport once everything outside the slot has had its share is a negative number today, so
-   * #132 has to tighten before this token means anything.
-   *
-   * **The measurements are not repeated here.** They are in `e2e/layout.spec.ts`, against the
-   * assertions that keep them honest — this comment carrying its own copy of them is how a
-   * number goes stale in a place nothing can fail. */
-  --day-slot-height: 26rem;
-
   /* Three widths, because this site has two kinds of page.
    *
    * `--measure-instrument` is the home page: two columns side by side, a map in one of them,
