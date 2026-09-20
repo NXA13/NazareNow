@@ -8,8 +8,9 @@
  *
  * **What this measures, and what it does not.** It measures the compressed bytes a first-time
  * visitor downloads. It does not measure load time, which depends on a host, a network and a
- * device — and there is no host yet, so no field measurement is possible: deployment is #28 and
- * belongs to v3. Payload is the part of load time this repository actually controls, so it is
+ * device — and there is no host yet, so no field measurement is possible: deployment is #28,
+ * which is live work again rather than parked for v3. Payload is the part of load time this
+ * repository actually controls, so it is
  * the part this repository can honestly be held to. It is a proxy, and naming it a proxy here
  * is the same courtesy the track record extends to the Proxy Target.
  *
@@ -19,7 +20,7 @@
  *
  * The budget exists to make a regression visible, not to be a target to fill. It sits a little
  * above what the site costs today, so pulling in a charting or date library — the usual way a
- * page of this size doubles — fails here rather than being discovered after v3 puts it on a
+ * page of this size doubles — fails here rather than being discovered after the site is on a
  * Raspberry Pi.
  *
  * **Raised once, from 95 kB to 125 kB, by #114.** The Ink visual system costs 42.75 kB gzipped
@@ -38,6 +39,26 @@
  * - **The new ceiling is still tight.** 125 kB leaves about 7.7 kB of headroom over today's
  *   117.31 kB, so a charting or date library still fails here, which was the whole point of
  *   having a budget at all.
+ *
+ * **Raised again, from 125 kB to 130 kB, by #121** — the sea floor. The canyon is the one shape
+ * that makes Nazaré what it is and it has to come from soundings, so the geometry is not a
+ * dependency that can come back out either. Measured rather than projected: the map costs
+ * **6.41 kB gzipped**, taking the site from 121.31 kB to 127.72 kB.
+ *
+ * Two things were done before moving it rather than after:
+ *
+ * - **The geometry was simplified as far as the data allows, and no further.** The tracer's
+ *   tolerance went from 0.9 px to 2.0, which is 120 m across this frame against soundings that
+ *   are about 342 m apart — so it discards interpolation rather than measurement. Across the
+ *   whole sweep from 0.9 to 2.5 the traced path count is 33: no contour, seamount or canyon wall
+ *   is dropped at any tolerance, only vertex density changes. That saved 31% of the geometry,
+ *   7.46 kB gzipped down to 5.16.
+ * - **The headline figure was checked against the compressed one.** The geometry is ~20 kB of
+ *   path data raw, which reads as unaffordable against 3.7 kB of headroom and is not: path data
+ *   compresses hard, and the budget has always been measured gzipped.
+ *
+ * 130 kB leaves about 2.3 kB, which is deliberately not enough for a library. #122's crests and
+ * #123's wind will each need their own raise, measured the same way.
  */
 
 import { gzipSync } from 'node:zlib';
@@ -47,7 +68,7 @@ import { fileURLToPath } from 'node:url';
 
 /** Compressed kilobytes the whole first load may cost. Today it is about 117, of which 43 is
  * the two fonts. See the note above for why it moved. */
-const BUDGET_KB = 125;
+const BUDGET_KB = 130;
 
 // Through `fileURLToPath` rather than the URL's own `pathname`, which on Windows hands back
 // `/C:/...` — a string `fs` cannot open, so the check reported "no dist/" on a tree that had one.
