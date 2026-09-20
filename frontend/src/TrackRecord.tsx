@@ -499,6 +499,81 @@ function RangeCalibrationSection({ calibration }: { calibration: RangeCalibratio
 }
 
 /**
+ * How often the printed range has actually held — on the forecast page, beside the range (#119).
+ *
+ * **This is a limit, so it stays here; the table behind it is teaching, so that moved.** #119's
+ * rule is that limits qualifying a number stay beside that number, and it lists the
+ * range-runs-wide admission among the things staying on the forecast page. It was not on this
+ * page at all: the whole finding lived on the reading page, under the tables that produced it,
+ * which left the verdict printing "plausibly 2.5m to 4.6m" with nothing beside it saying how
+ * often a range like that has held.
+ *
+ * **Every direction is stated, including the flattering one.** A component that spoke up only
+ * when the range ran wide would be silent in the one case that matters most — a range holding
+ * *less* often than it claims is the dangerous direction, because it makes the system look surer
+ * than it is. Silence would also be unreadable: a reader cannot tell "measured and fine" from
+ * "never measured".
+ *
+ * **The verdict is derived here rather than read off a field**, using the same two functions the
+ * reading page's tables use. The backend sends the claim and the measurement and no verdict, for
+ * the reason `verdictAcross` gives: the verdict is the thing most likely to stop being true.
+ * Deriving it in one place and rendering it in two keeps the two pages from disagreeing.
+ *
+ * It renders nothing at all until the record has loaded. Unlike the track-record line below it,
+ * this sits directly under a figure and a placeholder there would read as a qualification of
+ * that figure rather than as a thing still arriving.
+ */
+export function RangeWidthAdmission() {
+  const [state, setState] = useState<LoadState>({ status: 'loading' });
+
+  useEffect(() => {
+    let active = true;
+    fetchTrackRecord()
+      .then((record) => active && setState({ status: 'loaded', record }))
+      .catch(() => active && setState({ status: 'failed' }));
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (state.status !== 'loaded') return null;
+
+  const calibration = state.record.range_calibration;
+  const verdict = verdictAcross(calibration.claimed, calibration.leads);
+  const claimed = percent(calibration.claimed);
+
+  return (
+    <p className="range-admission" data-testid="range-admission">
+      {verdict === 'narrow' ? (
+        <>
+          <strong>That range has held less often than it claims.</strong> It is drawn to cover{' '}
+          <Figure>{claimed}</Figure> of outcomes, and measured against what happened it covered less
+          — so treat it as the optimistic edge of the doubt rather than its width.
+        </>
+      ) : verdict === 'wide' ? (
+        <>
+          <strong>That range runs wider than the outcomes justify.</strong> It is drawn to cover{' '}
+          <Figure>{claimed}</Figure> of outcomes and has covered more, which is the error running in
+          the forgiving direction: the system claims less certainty than it turns out to have.
+        </>
+      ) : verdict === 'mixed' ? (
+        <>
+          <strong>How often that range holds depends on how far ahead it looks.</strong> It is drawn
+          to cover <Figure>{claimed}</Figure> of outcomes, and it holds more often than that at some
+          lead times and less often at others.
+        </>
+      ) : (
+        <>
+          That range is drawn to cover <Figure>{claimed}</Figure> of outcomes, and measured against
+          what happened it has covered about that.
+        </>
+      )}{' '}
+      <a href={ADDRESS['how-it-works']}>How that was measured, and what it rests on</a>.
+    </p>
+  );
+}
+
+/**
  * One line of track record, on the forecast page (#119).
  *
  * **This is a debt #113 took on knowingly and #119 repays.** `App.test.tsx` used to assert that

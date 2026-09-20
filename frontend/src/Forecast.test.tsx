@@ -1636,7 +1636,7 @@ describe('the slot the condition tiles sit in', () => {
       }),
     );
 
-    render(<ForecastRange tiles={TILES} />);
+    render(<ForecastRange belowVerdict={TILES} />);
 
     // Before the forecast lands, beside the loading line rather than instead of it.
     expect(screen.getByTestId('stand-in-tiles')).toBeVisible();
@@ -1651,7 +1651,7 @@ describe('the slot the condition tiles sit in', () => {
       http.get('*/api/conditions/forecast', () => new HttpResponse(null, { status: 503 })),
     );
 
-    render(<ForecastRange tiles={TILES} />);
+    render(<ForecastRange belowVerdict={TILES} />);
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/could not load the forecast/i);
     expect(screen.getByTestId('stand-in-tiles')).toBeVisible();
@@ -1669,7 +1669,7 @@ describe('the slot the condition tiles sit in', () => {
       }),
     );
 
-    render(<ForecastRange tiles={TILES} />);
+    render(<ForecastRange belowVerdict={TILES} />);
     const before = screen.getByTestId('stand-in-tiles');
 
     await screen.findByTestId('verdict');

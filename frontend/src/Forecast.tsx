@@ -1406,10 +1406,15 @@ function Verdict({ days }: { days: ForecastDay[] }) {
 /**
  * The forecast section: the verdict, the windows, the days, and what a selected day opens into.
  *
- * **`tiles` is a slot, and it exists because the page interleaves two fetches.** The spec's
+ * **`belowVerdict` is a slot, and it exists because the page interleaves three fetches.** The spec's
  * order down the left column is verdict, then the four condition tiles, then the day list — and
  * the verdict and the day list come from `/api/conditions/forecast` while the tiles come from
- * `/api/conditions/current`. Something has to sit between two things this component owns.
+ * `/api/conditions/current` and the range admission beside the verdict comes from
+ * `/api/track-record`. Something has to sit between two things this component owns.
+ *
+ * It was called `tiles` while the tiles were the only thing in it. #119 put the range-runs-wide
+ * admission in there too — a limit that has to sit beside the range the verdict prints — so the
+ * name now says where the slot is rather than what happens to be in it.
  *
  * A slot rather than lifting the fetch into `Home`: this component is rendered bare, as
  * `<ForecastRange />`, at 74 places across two suites (72 in `Forecast.test.tsx`, 2 in
@@ -1464,7 +1469,7 @@ export function SwellWindowsSection() {
   return <SwellWindows days={state.forecast.days} />;
 }
 
-export function ForecastRange({ tiles }: { tiles?: ReactNode }) {
+export function ForecastRange({ belowVerdict }: { belowVerdict?: ReactNode }) {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const [openDate, setOpenDate] = useState<string | null>(null);
 
@@ -1530,7 +1535,7 @@ export function ForecastRange({ tiles }: { tiles?: ReactNode }) {
         <Verdict days={forecast.days} />
       )}
 
-      {tiles}
+      {belowVerdict}
 
       {forecast && (
         <>

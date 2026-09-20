@@ -22,7 +22,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { fetchCurrentConditions, type CurrentConditions, type Reading } from './api';
 import { ForecastRange } from './Forecast';
 import { MapSlot } from './MapSlot';
-import { TrackRecordLine } from './TrackRecord';
+import { RangeWidthAdmission, TrackRecordLine } from './TrackRecord';
 import { compassPoint, formatTimestamp, formatValue } from './format';
 
 type LoadState =
@@ -218,7 +218,16 @@ export function Home() {
               </p>
             )}
 
-            <ForecastRange tiles={<ConditionTiles conditions={state.conditions} />} />
+            <ForecastRange
+              belowVerdict={
+                <>
+                  {/* Directly under the verdict, because it qualifies the range the verdict
+                      prints. #119: limits that qualify a number stay beside that number. */}
+                  <RangeWidthAdmission />
+                  <ConditionTiles conditions={state.conditions} />
+                </>
+              }
+            />
 
             {/* Item five of the five the spec puts down this column, and the one #113 took away
                 on purpose: it used to assert the track record was on this page rather than

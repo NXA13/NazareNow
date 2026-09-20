@@ -344,6 +344,110 @@ describe('current conditions', () => {
     expect(times[0]).toHaveAttribute('datetime', currentConditions.observed_at);
   });
 
+  describe('how often the printed range has held (#119)', () => {
+    /**
+     * #119 lists the range-runs-wide admission among the things that stay on the forecast page,
+     * "attached to the figures they qualify". It was not on this page at all: the whole finding
+     * lived on the reading page, under the tables that produced it, which left the verdict
+     * printing a plausible range with nothing beside it saying how often a range like that has
+     * held.
+     *
+     * The table stays on the reading page — that part is teaching. What belongs here is the one
+     * sentence a reader needs before acting on the range above it.
+     */
+    /** The record with its coverage forced to a given share at every lead time, which is what
+     * decides which way the admission reads. */
+    function recordCovering(covered: number) {
+      const range = trackRecord.range_calibration;
+      return {
+        ...trackRecord,
+        range_calibration: {
+          ...range,
+          leads: range.leads.map((lead) => ({
+            ...lead,
+            all_hours: { ...lead.all_hours, covered },
+          })),
+        },
+      };
+    }
+
+    async function admissionFor(covered: number) {
+      server.use(http.get('*/api/track-record', () => HttpResponse.json(recordCovering(covered))));
+      render(<App />);
+      return screen.findByTestId('range-admission');
+    }
+
+    it('sits under the verdict and above the days, beside the range it qualifies', async () => {
+      render(<App />);
+
+      const admission = await screen.findByTestId('range-admission');
+      const verdict = await screen.findByTestId('verdict');
+      const days = await screen.findByRole('heading', { name: /^The next \d+ days$/ });
+
+      expect(verdict.compareDocumentPosition(admission)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      expect(admission.compareDocumentPosition(days)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    });
+
+    it('says so when the range has held less often than it claims', async () => {
+      // The dangerous direction, and the reason this cannot be a component that only speaks up
+      // when the news is good: a range holding less often than it claims makes the system look
+      // surer than it is, which is the failure mode that costs someone a flight.
+      const admission = await admissionFor(0.7);
+
+      expect(admission).toHaveTextContent(/held less often than it claims/i);
+      expect(admission).toHaveTextContent(/optimistic edge of the doubt/i);
+    });
+
+    it('says so when it runs wider than the outcomes justify', async () => {
+      const admission = await admissionFor(0.98);
+
+      expect(admission).toHaveTextContent(/wider than the outcomes justify/i);
+      // Named as the forgiving direction rather than left to read as a fault of the same size.
+      expect(admission).toHaveTextContent(/forgiving direction/i);
+    });
+
+    it('refuses a single answer when the table disagrees with itself', async () => {
+      const range = trackRecord.range_calibration;
+      server.use(
+        http.get('*/api/track-record', () =>
+          HttpResponse.json({
+            ...trackRecord,
+            range_calibration: {
+              ...range,
+              leads: range.leads.map((lead, index) => ({
+                ...lead,
+                all_hours: { ...lead.all_hours, covered: index === 0 ? 0.7 : 0.98 },
+              })),
+            },
+          }),
+        ),
+      );
+      render(<App />);
+
+      const admission = await screen.findByTestId('range-admission');
+      expect(admission).toHaveTextContent(/depends on how far ahead it looks/i);
+    });
+
+    it('states the share the range claims, from the record rather than a literal', async () => {
+      const admission = await admissionFor(0.9);
+      expect(admission).toHaveTextContent(
+        `${Math.round(trackRecord.range_calibration.claimed * 100)}%`,
+      );
+    });
+
+    it('renders nothing at all until the record has arrived', async () => {
+      // Unlike the track-record line lower down, this sits directly under a figure. A
+      // placeholder here would read as a qualification of that figure rather than as something
+      // still on its way.
+      server.use(http.get('*/api/track-record', () => new HttpResponse(null, { status: 503 })));
+
+      render(<App />);
+
+      await screen.findByTestId('verdict');
+      expect(screen.queryByTestId('range-admission')).toBeNull();
+    });
+  });
+
   describe('the line of track record (#119)', () => {
     /**
      * The debt #113 took on knowingly. It removed an assertion that the track record was *on*
