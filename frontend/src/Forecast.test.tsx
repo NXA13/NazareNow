@@ -37,13 +37,16 @@ function serveDays(days: (typeof forecast)['days']) {
   server.use(http.get('*/api/conditions/forecast', () => HttpResponse.json({ ...forecast, days })));
 }
 
+/** The control that puts the day list back in the slot, named as a reader sees it. */
+const backControl = () => screen.getByRole('button', { name: /back to all \d+ days/i });
+
 /** Put the day list back in the slot.
  *
  * Since #118 the list and one day's detail share a slot, so a second day cannot be reached
  * from the first — its row is not on the screen to click. Every test that reads two days goes
  * through here, which is also the path a reader has. */
 async function backToTheList() {
-  await userEvent.click(screen.getByRole('button', { name: /back to all \d+ days/i }));
+  await userEvent.click(backControl());
 }
 
 describe('calls', () => {
@@ -1111,9 +1114,14 @@ describe('the forecast range', () => {
     // carry whatever attributes they had when React detached them.
     const big = screen.getByRole('button', { name: new RegExp(BIG.date) });
     const quiet = screen.getByRole('button', { name: new RegExp(QUIET.date) });
-    expect(big).toHaveAttribute('aria-pressed', 'true');
+    // `aria-current`, not `aria-pressed`: the row stopped being a toggle when the list and the
+    // open day started sharing a slot, and a control with no unpressed state should not be
+    // announced as pressed. Absent rather than "false" on the others, which is how
+    // `aria-current` marks one item of a set.
+    expect(big).toHaveAttribute('aria-current', 'true');
     expect(big.className).toContain('selected');
-    expect(quiet).toHaveAttribute('aria-pressed', 'false');
+    expect(quiet).not.toHaveAttribute('aria-current');
+    expect(quiet).not.toHaveAttribute('aria-pressed');
     expect(quiet.className).not.toContain('selected');
   });
 
@@ -2434,9 +2442,6 @@ describe('how the prediction has moved', () => {
  * has focus, which is the rest of the ticket.
  */
 describe('the hours take the day list’s slot', () => {
-  /** The control back to the list, named as a reader sees it rather than by test id. */
-  const backToList = () => screen.getByRole('button', { name: /back to all \d+ days/i });
-
   /** Open a day and settle on its detail. */
   async function open(date: string) {
     render(<ForecastRange />);
@@ -2470,7 +2475,7 @@ describe('the hours take the day list’s slot', () => {
   it('gives the list back, whole, from the back control', async () => {
     await open(BIG.date);
 
-    await userEvent.click(backToList());
+    await backToTheList();
 
     for (const day of forecast.days) {
       expect(screen.getByRole('button', { name: new RegExp(day.date) })).toBeInTheDocument();
@@ -2488,6 +2493,24 @@ describe('the hours take the day list’s slot', () => {
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
   });
 
+  it('takes Escape after a click on something that cannot hold focus', async () => {
+    // The handler rode on the slot element first, on the reasoning that focus is always inside
+    // it while a day is open. Chromium disagreed: clicking the day's heading or its table —
+    // neither focusable — leaves `document.activeElement` as `body`, and a keydown there never
+    // reaches a handler on a div. Escape did nothing at all, silently, which is the one thing
+    // a keyboard affordance must not do.
+    const slot = await open(BIG.date);
+    // The day's own heading, which is the first in the slot — the agreement panel below it
+    // brings one of its own.
+    await userEvent.click(within(slot).getAllByRole('heading')[0]!);
+    expect(document.activeElement).toBe(document.body);
+
+    await userEvent.keyboard('{Escape}');
+
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: new RegExp(QUIET.date) })).toBeInTheDocument();
+  });
+
   it('moves focus into the slot when a day opens, and back to that day on return', async () => {
     // "Works from the keyboard" is not the same as "the buttons are buttons". Without this,
     // opening a day leaves focus on a element that has just been unmounted, and the next Tab
@@ -2498,7 +2521,7 @@ describe('the hours take the day list’s slot', () => {
     big.focus();
     await userEvent.keyboard('{Enter}');
 
-    expect(backToList()).toHaveFocus();
+    expect(backControl()).toHaveFocus();
 
     await userEvent.keyboard('{Enter}');
 

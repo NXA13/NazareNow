@@ -908,7 +908,11 @@ footer p {
 }
 
 /* The way back, and the first thing in the detail state. Styled as a control rather than as a
-   link: it changes what this box is showing, it does not navigate anywhere. */
+   link: it changes what this box is showing, it does not navigate anywhere.
+ *
+ * **No arrow glyph on it.** `←` is not in `REPERTOIRE` — the subset carries `→` and not its
+ * mirror — so drawing one here would fall back to a system face for a single character, which
+ * is the defect #130 is open about elsewhere on this page. The words carry the direction. */
 .day-slot-back {
   display: inline-flex;
   align-items: center;
@@ -924,9 +928,6 @@ footer p {
   cursor: pointer;
 }
 
-/* No arrow glyph. `←` is not in `REPERTOIRE` — the subset carries `→` and not its mirror — so
-   drawing one here would fall back to a system face for a single character, which is the defect
-   #130 is open about elsewhere on this page. The words carry the direction on their own. */
 .day-slot-back:hover {
   border-color: var(--ink-muted);
 }

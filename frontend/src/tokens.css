@@ -218,14 +218,13 @@
    * `height: 100%` of that column.
    *
    * **This number is what the scoped no-scroll promise will be tuned on (#132), and it is not
-   * tuned yet.** Measured in Chromium at 1440x900 against the sixteen-day fixture: everything
-   * outside this slot comes to 1014, against a viewport of 900. So the slot cannot buy the
-   * promise on its own at any height — #132 has ~114px to find first, and every pixel past that
-   * is a row a reader sees without scrolling.
+   * tuned yet.** The slot cannot buy that promise on its own at any height: what is left of the
+   * viewport once everything outside the slot has had its share is a negative number today, so
+   * #132 has to tighten before this token means anything.
    *
-   * 26rem is 416px, which shows thirteen of the sixteen rows and leaves the verdict, the tiles
-   * and their provenance well clear of the fold. The measured table is in `e2e/layout.spec.ts`,
-   * where it can go stale in front of a test rather than quietly in a comment. */
+   * **The measurements are not repeated here.** They are in `e2e/layout.spec.ts`, against the
+   * assertions that keep them honest — this comment carrying its own copy of them is how a
+   * number goes stale in a place nothing can fail. */
   --day-slot-height: 26rem;
 
   /* Three widths, because this site has two kinds of page.

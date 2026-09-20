@@ -421,18 +421,56 @@ test.describe(`the day slot, at ${DESKTOP.width}x${DESKTOP.height}`, () => {
     expect(mapOpen.height).toBeCloseTo(mapBefore.height, 1);
   });
 
-  test('puts the column back exactly where it was on the way out', async ({ page }) => {
+  test('puts the column and the map back exactly where they were on the way out', async ({
+    page,
+  }) => {
     // Opening and closing are two chances to move the page, and only one of them is the one
-    // anybody thinks to measure.
-    const { left } = await loadHome(page);
-    const before = (await left.boundingBox())!;
+    // anybody thinks to measure. The map is measured on both for the same reason: a slot that
+    // came back a few pixels short would restretch it on the way out rather than the way in,
+    // which is the same defect arriving by the door nobody watched.
+    const { left, slot } = await loadHome(page);
+    const columnBefore = (await left.boundingBox())!;
+    const mapBefore = (await slot.boundingBox())!;
 
     await page.getByRole('button', { name: A_DAY }).click();
     await expect(page.getByRole('table')).toBeVisible();
     await page.getByRole('button', { name: /back to all \d+ days/i }).click();
     await expect(page.getByRole('table')).toHaveCount(0);
 
-    expect((await left.boundingBox())!.height).toBeCloseTo(before.height, 1);
+    const mapAfter = (await slot.boundingBox())!;
+    expect((await left.boundingBox())!.height).toBeCloseTo(columnBefore.height, 1);
+    expect(mapAfter.height).toBeCloseTo(mapBefore.height, 1);
+    expect(mapAfter.height / mapAfter.width).toBeCloseTo(mapBefore.height / mapBefore.width, 3);
+  });
+
+  test('keeps the keyboard cursor visible inside the slot it scrolls in', async ({ page }) => {
+    // "What is focused is visible" is the half of the keyboard criterion that a test asserting
+    // *where* focus went cannot reach. Two ways to fail it here, both introduced by putting the
+    // rows in a scroller: a row focused while scrolled out of sight, and a focus ring clipped
+    // by the box that is doing the scrolling.
+    await loadHome(page);
+    const deep = page.getByRole('button', { name: new RegExp(longForecast.days[14]!.date) });
+
+    await deep.focus();
+
+    const seen = await page.evaluate(() => {
+      const box = document.querySelector('.day-slot')!.getBoundingClientRect();
+      const row = document.activeElement as HTMLElement;
+      const rect = row.getBoundingClientRect();
+      const style = getComputedStyle(row);
+      // The ring is drawn outside the element: its width plus its offset is how much room it
+      // needs on each side before the scroller's edge cuts it off.
+      const ring = parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset);
+      return {
+        isRow: row.classList.contains('day'),
+        inView: rect.top >= box.top - 1 && rect.bottom <= box.bottom + 1,
+        roomForRing: Math.min(rect.left - box.left, box.right - rect.right) >= ring,
+      };
+    });
+
+    expect(seen.isRow).toBe(true);
+    expect(seen.inView).toBe(true);
+    expect(seen.roomForRing).toBe(true);
   });
 
   test('is the same height at three days as at sixteen', async ({ page }) => {

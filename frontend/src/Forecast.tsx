@@ -203,7 +203,7 @@ function DayRow({
   /** Handed up so the slot can put focus back on this row when a reader returns to the
    *  list (#118). The row it returns to is a *new* element — the list unmounts while a day
    *  is open — so the slot cannot hold a reference of its own across the swap. */
-  rowRef?: (element: HTMLButtonElement | null) => void;
+  rowRef: (element: HTMLButtonElement | null) => void;
 }) {
   const flag = agreementFlag(day);
   const status = day.call?.status ?? UNJUDGED;
@@ -213,10 +213,13 @@ function DayRow({
       type="button"
       ref={rowRef}
       className={`day day-${status}${selected ? ' selected' : ''}`}
-      // Pressed means "the day the slot is about", which outlives the detail being on screen:
-      // coming back from a day leaves its row marked, so sixteen near-identical rows still
-      // say which one was just read (#118).
-      aria-pressed={selected}
+      // `aria-current`, not `aria-pressed`. This row was a toggle until #118 — clicking the
+      // open day closed it — and it cannot be one now, because the row is not on screen while
+      // its day is. What the mark means is "the day the slot is about", which is the current
+      // item of a set and not a button anybody can unpress. A screen reader announcing
+      // "pressed" for a control with no unpressed state describes an interface that is not
+      // there.
+      aria-current={selected ? 'true' : undefined}
       // The label carries every summarised figure. An earlier version named only the
       // height, which overrode the row's content for screen readers and lost the
       // period and direction entirely — the two values that separate a groundswell
@@ -326,7 +329,7 @@ function DayList({
   largest: number;
   openDate: string | null;
   onSelect: (date: string) => void;
-  rowRef?: (date: string, element: HTMLButtonElement | null) => void;
+  rowRef: (date: string, element: HTMLButtonElement | null) => void;
 }) {
   const boundary = archiveBoundary(days);
   const measured = boundary === null ? days : days.slice(0, boundary);
@@ -340,7 +343,7 @@ function DayList({
       selected={day.date === openDate}
       onSelect={() => onSelect(day.date)}
       rowRef={(element) => {
-        rowRef?.(day.date, element);
+        rowRef(day.date, element);
       }}
     />
   );
@@ -1563,21 +1566,30 @@ function DaySlot({
 
   const toList = () => setSlot(slot.view === 'day' ? { view: 'list', selected: slot.date } : slot);
 
+  /*
+   * Escape as well as the control, so the way out is not one button wide.
+   *
+   * **On the document, and only while a day is open.** This rode on the slot element first, on
+   * the reasoning that focus is always inside it in the state where the key means anything.
+   * That reasoning was wrong and the browser said so: click the day's heading or its table —
+   * neither is focusable — and `document.activeElement` is `body`, from where a keydown never
+   * reaches a handler on a div. Escape silently did nothing, which is the failure mode a
+   * keyboard affordance can least afford.
+   *
+   * Listening on the document is safe here because the listener exists only in the day state
+   * and this page has nothing else Escape dismisses.
+   */
+  useEffect(() => {
+    if (slot.view !== 'day') return;
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSlot({ view: 'list', selected: slot.date });
+    };
+    document.addEventListener('keydown', dismiss);
+    return () => document.removeEventListener('keydown', dismiss);
+  }, [slot]);
+
   return (
-    <div
-      className="day-slot"
-      data-testid="day-slot"
-      /* Escape as well as the control, so the way out is not one button wide. Focus is inside
-         this element in the only state where the key means anything, so the handler rides here
-         rather than on the document — a global listener would also close this slot for a
-         reader dismissing something else entirely. */
-      onKeyDown={(event) => {
-        if (event.key === 'Escape' && slot.view === 'day') {
-          event.stopPropagation();
-          toList();
-        }
-      }}
-    >
+    <div className="day-slot" data-testid="day-slot">
       {open ? (
         <>
           {/* First, and focused: the way back is the thing a reader who arrived here by
