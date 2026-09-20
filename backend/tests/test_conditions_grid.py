@@ -11,11 +11,15 @@ this map could say. So the validation cases outnumber the happy path here on pur
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import httpx
 import pytest
 
+from helpers import forecast_provider, ingest, is_grid_request
+from nazarenow.pipeline import GRID_UNAVAILABLE, MINIMUM_FORECAST_HOURS
+from nazarenow.runs import FailureKind
 from nazarenow.sources.open_meteo import (
     GRID_EAST,
     GRID_NORTH,
@@ -62,6 +66,50 @@ def transport_for(payload: Any, status: int = 200) -> httpx.MockTransport:
         return httpx.Response(status, json=payload)
 
     return httpx.MockTransport(handle)
+
+
+def rewrite_grid(
+    transport: httpx.MockTransport, change: Any, marine: bool = True, weather: bool = True
+) -> httpx.MockTransport:
+    """The same provider, with its grid responses passed through `change` on the way out.
+
+    Wrapping rather than parametrising `forecast_provider`: the two cases below break the
+    grid in ways no real provider option describes, and a fixture growing a knob per
+    malformation ends up able to produce responses that could not happen.
+    """
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        response = transport.handler(request)
+        if not is_grid_request(request):
+            return response
+        if not (marine if "marine" in request.url.host else weather):
+            return response
+        return httpx.Response(200, json=change(json.loads(response.content)))
+
+    return httpx.MockTransport(handle)
+
+
+def weather_grid_observed_at(transport: httpx.MockTransport, at: str) -> httpx.MockTransport:
+    """A provider whose weather grid reports its own observation time, apart from the marine one.
+
+    Named for what it sets rather than for which of the two ends up older, so a test that
+    moves the time across the marine grid's does not have to fight the helper's name.
+    """
+
+    def restamp(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [{**block, "current": {**block["current"], "time": at}} for block in blocks]
+
+    return rewrite_grid(transport, restamp, marine=False)
+
+
+def malformed_grid(transport: httpx.MockTransport) -> httpx.MockTransport:
+    """A grid response that arrived and is not a grid: one object where an array was asked for.
+
+    The shape Open-Meteo returns for a *single* coordinate, which is why this is the
+    malformation worth pinning — it is the one a real contract change would most plausibly
+    produce, and the one that would quietly become a wind field of a single dart.
+    """
+    return rewrite_grid(transport, lambda blocks: blocks[0])
 
 
 class TestTheGridCoversTheMap:
@@ -345,3 +393,136 @@ class TestTheStoreHoldsOneGrid:
             assert point["observed_at"] == "2026-02-13T09:00"
             assert point["fetched_at"]
             assert point["readings"]["swell_height"] == {"value": 1.5, "unit": "m"}
+
+
+class TestARunFillsTheGrid:
+    """The Pipeline Run's side: two more requests, twenty-five more rows (#120)."""
+
+    def test_a_run_stores_the_whole_grid(self, store):
+        ingest(store, forecast_provider())
+
+        assert len(store.latest_conditions_grid()) == GRID_SIDE * GRID_SIDE
+
+    def test_the_points_are_the_coordinates_asked_for_not_the_ones_answered(self, store):
+        # **The guarantee lives on this test.** Open-Meteo answers with the centre of whichever
+        # of its own cells each coordinate fell in, which is up to a few kilometres from the
+        # one that was asked for. Storing the provider's would let a dart drift off the drawn
+        # map — the exact thing sharing the bathymetry's bounds exists to prevent — and it
+        # would do it invisibly, because a point a few kilometres out still looks like a point.
+        ingest(store, forecast_provider())
+
+        held = store.latest_conditions_grid()
+        assert [(p["latitude"], p["longitude"]) for p in held] == grid_points()
+
+    def test_every_point_carries_the_sea_and_the_air_together(self, store):
+        # A dart needs the weather endpoint and a crest needs the marine one, so a point
+        # holding only half the readings is a point the map cannot draw.
+        ingest(store, forecast_provider())
+
+        held = store.latest_conditions_grid()
+        # Without this the loop below is vacuous against an empty grid, which is exactly the
+        # state a broken pipeline leaves behind.
+        assert held
+        for point in held:
+            assert point["readings"]["swell_height"]["unit"] == "m"
+            assert point["readings"]["wind_speed"]["unit"] == "km/h"
+            assert point["readings"]["wind_direction"]["value"] is not None
+
+    def test_each_point_is_dated_by_the_older_of_its_two_endpoints(self, store):
+        # The same rule the single point follows: the two endpoints are separate products
+        # reporting their own observation times, and dating the pair by the fresher of them
+        # would overstate how current half of every dart is. The fixture's marine grid is
+        # observed at 00:00, so a weather grid an hour behind it is the one that dates a point.
+        ingest(store, weather_grid_observed_at(forecast_provider(), "2026-02-08T23:00"))
+
+        held = store.latest_conditions_grid()
+        assert held
+        for point in held:
+            assert point["observed_at"] == "2026-02-08T23:00"
+
+    def test_the_fresher_endpoint_is_not_the_one_that_dates_a_point(self, store):
+        # The other side of the same rule, and the reason it is a second test: "the older of
+        # the two" and "whatever the weather endpoint said" agree on the case above and
+        # disagree here, so one test alone cannot tell the rule from the coincidence.
+        ingest(store, weather_grid_observed_at(forecast_provider(), "2026-02-09T06:00"))
+
+        held = store.latest_conditions_grid()
+        assert held
+        for point in held:
+            assert point["observed_at"] == "2026-02-09T00:00"
+
+
+class TestAGridThatDoesNotArrive:
+    """Losing the map's wind must not cost a traveller the forecast (#120).
+
+    Nothing a Go Call is made of comes from the grid — it is drawn on the map and nowhere
+    else. So the trade the ensemble already makes under ADR 0003 applies here with more force:
+    a degraded map is worth less than a lost forecast, and losing the second to protect the
+    first would be the wrong way round in both directions.
+    """
+
+    def test_an_unreachable_grid_does_not_fail_the_run(self, store):
+        ingest(store, forecast_provider(grid_status=503))
+
+        assert store.failed_runs() == []
+
+    def test_a_run_that_lost_its_grid_still_stores_its_forecast(self, store):
+        ingest(store, forecast_provider(grid_status=503))
+
+        assert store.latest_conditions() is not None
+        assert len(store.forecast()) > MINIMUM_FORECAST_HOURS
+
+    def test_an_unreachable_grid_leaves_the_previous_grid_in_place(self, store):
+        ingest(store, forecast_provider())
+        ingest(store, forecast_provider(grid_status=503))
+
+        held = store.latest_conditions_grid()
+        assert len(held) == GRID_SIDE * GRID_SIDE
+        assert [(p["latitude"], p["longitude"]) for p in held] == grid_points()
+
+    def test_the_first_run_to_lose_its_grid_stores_no_grid_at_all(self, store):
+        # Not twenty-five zeroes, and not twenty-five points with nothing in them. An
+        # installation whose first run lost the grid has no wind to draw, and the endpoint
+        # above it has to be able to say so.
+        ingest(store, forecast_provider(grid_status=503))
+
+        assert store.latest_conditions_grid() == []
+
+    def test_the_lost_grid_is_recorded_under_its_own_source(self, store):
+        # #8 requires an unavailable provider to be recorded, and the absence of grid rows
+        # does not say what happened: a store with no grid looks identical whether the
+        # endpoint was unreachable or the installation has simply never run.
+        ingest(store, forecast_provider(grid_status=503))
+
+        lost = [row for row in store.raw_responses() if row["source"] == GRID_UNAVAILABLE]
+        assert lost
+        assert all(
+            json.loads(row["body"])["failure_kind"] == FailureKind.PROVIDER_UNAVAILABLE.value
+            for row in lost
+        )
+
+    def test_a_grid_that_arrives_malformed_does_not_fail_the_run_either(self, store):
+        # **Deliberately unlike the ensemble**, which lets a `ValueError` through because a
+        # changed payload must be loud. The grid can afford to be quieter for a specific
+        # reason: it rides the same two endpoints as the single offshore point, whose own
+        # `validate` still fails the run — so a provider that genuinely changed shape is
+        # caught there. What is left for the grid's validator alone is the multi-coordinate
+        # envelope, and losing the map over that would cost a forecast that arrived intact.
+        ingest(store, malformed_grid(forecast_provider()))
+
+        assert store.failed_runs() == []
+        assert store.latest_conditions_grid() == []
+
+    def test_a_malformed_grid_is_recorded_as_a_payload_we_did_not_recognise(self, store):
+        # Quieter than the ensemble is not the same as silent. The record has to distinguish
+        # a provider having a bad afternoon from one this system has stopped understanding —
+        # the first is waited out, the second means every run until someone looks will lose
+        # the map the same way.
+        ingest(store, malformed_grid(forecast_provider()))
+
+        lost = [row for row in store.raw_responses() if row["source"] == GRID_UNAVAILABLE]
+        assert lost
+        assert all(
+            json.loads(row["body"])["failure_kind"] == FailureKind.PAYLOAD_UNRECOGNISED.value
+            for row in lost
+        )

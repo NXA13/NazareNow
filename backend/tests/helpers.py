@@ -17,7 +17,7 @@ from typing import Any
 import httpx
 
 from nazarenow.pipeline import run_pipeline
-from nazarenow.sources.open_meteo import TIMEZONE
+from nazarenow.sources.open_meteo import TIMEZONE, grid_points
 
 SWELL_HEIGHT_BONUS_M = 0.9
 BONUS_HOUR = 4
@@ -122,6 +122,7 @@ def forecast_provider(
     ensemble_status: int = 200,
     ensemble_offsets: dict[str, float] | None = None,
     ensemble_sea_offsets: dict[str, float] | None = None,
+    grid_status: int = 200,
 ) -> httpx.MockTransport:
     """A provider returning `days` days from `today`, quiet except where overridden.
 
@@ -141,6 +142,13 @@ def forecast_provider(
     estimate rather than the run. `ensemble_offsets` moves the members apart or together, so
     agreement and disagreement can be driven from the transport rather than asserted on
     `spread.derive` in isolation.
+
+    It also answers the two grid requests the map is drawn from (#120), recognised by the
+    several coordinates in their `latitude`. Every stubbed provider in the suite needs to:
+    a transport that hands the single point's body back for a grid request is not
+    simulating a degraded provider but a contract change, and the grid's own validator
+    would rightly reject it. `grid_status` makes the endpoint fail instead, which #120
+    requires to degrade the map rather than the run.
     """
     by_date = by_date or {}
     only_hours = only_hours or {}
@@ -217,12 +225,19 @@ def forecast_provider(
         sea_offsets=ensemble_sea_offsets,
     )
 
+    marine_grid = grid_from(marine_body, MARINE_UNITS)
+    weather_grid = grid_from(weather_body, WEATHER_UNITS)
+
     def handle(request: httpx.Request) -> httpx.Response:
         if is_ensemble_request(request):
             if ensemble_status != 200:
                 return httpx.Response(ensemble_status, json={"reason": "unavailable"})
             return httpx.Response(200, json=ensemble_body)
         marine_request = "marine" in request.url.host
+        if is_grid_request(request):
+            if grid_status != 200:
+                return httpx.Response(grid_status, json={"reason": "unavailable"})
+            return httpx.Response(200, json=marine_grid if marine_request else weather_grid)
         return httpx.Response(200, json=marine_body if marine_request else weather_body)
 
     return httpx.MockTransport(handle)
@@ -238,6 +253,40 @@ def is_ensemble_request(request: httpx.Request) -> bool:
     it is simulating a contract change, which fails the run for a reason the test never meant.
     """
     return "models" in request.url.params
+
+
+def is_grid_request(request: httpx.Request) -> bool:
+    """Whether this is one of the two requests the map's wind field is drawn from.
+
+    The grid goes to the same two endpoints as the single offshore point, so the URL cannot
+    tell them apart. What can is that a grid asks for twenty-five coordinates in one request
+    and the single point asks for one -- so the comma is the whole distinction, the same way
+    `models` is for the ensemble.
+    """
+    return "," in request.url.params.get("latitude", "")
+
+
+def grid_from(body: dict[str, Any], units: dict[str, str]) -> list[dict[str, Any]]:
+    """One well-formed block per grid point, built from the single point's own `current`.
+
+    Open-Meteo answers a multi-coordinate request with an array in the order the coordinates
+    were sent, and every block repeats the whole envelope -- timezone and units included.
+
+    **The readings are deliberately identical across the twenty-five.** A fixture that varied
+    them would let a test pass while the pipeline zipped marine against weather in the wrong
+    order, because every point would still look plausible. Tests that need the points to
+    differ say so themselves rather than relying on the fixture to have made them differ.
+    """
+    return [
+        {
+            "latitude": body["latitude"],
+            "longitude": body["longitude"],
+            "timezone": body["timezone"],
+            "current_units": units,
+            "current": dict(body["current"]),
+        }
+        for _ in grid_points()
+    ]
 
 
 def ensemble_body_from(
