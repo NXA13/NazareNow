@@ -10,7 +10,7 @@
  * moved rather than the sea did, and no backend has to be running.
  */
 
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 import { DESKTOP, NARROW } from '../playwright.config';
 // The same reader the contrast script and `ink.test.ts` use, so a hex in the sheet and the
@@ -63,6 +63,63 @@ async function loadHome(page: Page) {
 /** Whether the page — not an element inside it — runs off the side of the screen. */
 async function scrollsSideways(page: Page) {
   return page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+}
+
+/**
+ * Where the map's *drawing* landed, beside the box the element was given.
+ *
+ * The two are different things and conflating them is the whole reason this measurement exists:
+ * under every `preserveAspectRatio` value the `<svg>` element fills its slot identically, and
+ * only the contents crop or letterbox. A reviewer of this very change read the slot's height as
+ * the element's and concluded the phone was letterboxing when it is not, which is the mistake
+ * made from the other side.
+ */
+async function measureFrame(map: Locator) {
+  return map.evaluate((svg: SVGSVGElement) => {
+    const ctm = svg.getScreenCTM()!;
+    const box = svg.getBoundingClientRect();
+    // `x` and `y` as well as the extent: the frame's origin is 0,0 today, and reading it rather
+    // than assuming it means a re-cut frame with an offset origin fails this loudly instead of
+    // quietly measuring the wrong corner. Both corners carry the full transform — an earlier
+    // draft applied the cross terms to one corner and not the other, which is harmless while
+    // `b` and `c` are zero and wrong the moment they are not.
+    const view = svg.viewBox.baseVal;
+    const at = (x: number, y: number) => ({
+      x: ctm.a * x + ctm.c * y + ctm.e - box.left,
+      y: ctm.b * x + ctm.d * y + ctm.f - box.top,
+    });
+    const origin = at(view.x, view.y);
+    const far = at(view.x + view.width, view.y + view.height);
+    // Named for what they are: the first four are the *drawing*, the last two the *element*.
+    // Read in one call, so no scroll or round trip comes between the two systems.
+    return {
+      left: origin.x,
+      top: origin.y,
+      right: far.x,
+      bottom: far.y,
+      boxWidth: box.width,
+      boxHeight: box.height,
+      viewWidth: view.width,
+      viewHeight: view.height,
+    };
+  });
+}
+
+/** That the whole frame is drawn, as large as it fits and undistorted — `meet`'s own law, so it
+ * holds at any viewport rather than at the one it was written against. */
+function expectWholeFrameDrawn(frame: Awaited<ReturnType<typeof measureFrame>>) {
+  const scale = Math.min(frame.boxWidth / frame.viewWidth, frame.boxHeight / frame.viewHeight);
+  // A pixel of tolerance: the browser rounds, and a fit this close is a fit.
+  expect(frame.right - frame.left).toBeCloseTo(frame.viewWidth * scale, 0);
+  expect(frame.bottom - frame.top).toBeCloseTo(frame.viewHeight * scale, 0);
+
+  // And where it sits horizontally. **This pins position, not alignment**: the width is the
+  // constraining axis at both viewports the suite runs, so there is no horizontal slack for
+  // `xMid` to centre and this line cannot tell `xMid` from `xMin` or `xMax`. It still fails
+  // under `slice`, which puts the left edge outside the box. Said plainly because an earlier
+  // comment here claimed it covered the narrow layout, and it did not — that is what the
+  // narrow test below is for.
+  expect(frame.left).toBeCloseTo((frame.boxWidth - frame.viewWidth * scale) / 2, 0);
 }
 
 /** The viewport the browser is really at, so an assertion cannot check one size while the
@@ -289,44 +346,17 @@ test.describe('the map slot', () => {
     const map = slot.locator('svg.bathymetry');
     await expect(map).toBeVisible();
 
-    const frame = await map.evaluate((svg: SVGSVGElement) => {
-      const ctm = svg.getScreenCTM()!;
-      const box = svg.getBoundingClientRect();
-      // `x` and `y` as well as the extent: the frame's origin is 0,0 today, and reading it
-      // rather than assuming it means a re-cut frame with an offset origin fails this loudly
-      // instead of quietly measuring the wrong corner.
-      const view = svg.viewBox.baseVal;
-      // Named for what they are. The first four are where the *drawing* landed; the last two are
-      // the *element's* box, and conflating the two is the mistake this whole test exists to
-      // catch. Read in one call, so no scroll or round trip comes between the two systems.
-      return {
-        left: ctm.a * view.x + ctm.c * view.y + ctm.e - box.left,
-        top: ctm.b * view.x + ctm.d * view.y + ctm.f - box.top,
-        right: ctm.a * (view.x + view.width) + ctm.e - box.left,
-        bottom: ctm.d * (view.y + view.height) + ctm.f - box.top,
-        boxWidth: box.width,
-        boxHeight: box.height,
-        viewWidth: view.width,
-        viewHeight: view.height,
-      };
-    });
+    const frame = await measureFrame(map);
 
     // **`meet` is `min`; `slice` is `max`. Asserting the law rather than the outcome is what
     // makes this test able to fail.** An earlier draft bounded the drawing inside the element
-    // box on all four sides, which reads like a crop test and is not one: at the only viewport
-    // this runs at the frame is always proportionally taller than the slot, so the overflow is
-    // always horizontal and the top and bottom bounds held under *every* `preserveAspectRatio`
-    // value, `slice` included. These two lines fail under `slice` (which would scale by 0.9616,
-    // not 0.8367), under a distorted `none`, and under anything that draws the frame smaller
-    // than the space allows.
-    const scale = Math.min(frame.boxWidth / frame.viewWidth, frame.boxHeight / frame.viewHeight);
-    // A pixel of tolerance: the browser rounds, and a fit this close is a fit.
-    expect(frame.right - frame.left).toBeCloseTo(frame.viewWidth * scale, 0);
-    expect(frame.bottom - frame.top).toBeCloseTo(frame.viewHeight * scale, 0);
-
-    // And where it sits. `xMid` centres whatever slack is on the horizontal axis — none, here,
-    // but stated as the rule so the narrow layout is covered by the same line.
-    expect(frame.left).toBeCloseTo((frame.boxWidth - frame.viewWidth * scale) / 2, 0);
+    // box on all four sides, which reads like a crop test and is not one: at this viewport the
+    // frame is always proportionally taller than the slot, so the overflow is always horizontal
+    // and the top and bottom bounds held under *every* `preserveAspectRatio` value, `slice`
+    // included. These two lines fail under `slice` (which would scale by 0.9616, not 0.8367),
+    // under a distorted `none`, and under anything that draws the frame smaller than the space
+    // allows.
+    expectWholeFrameDrawn(frame);
 
     // **`YMin`, not `YMid`, and this is the assertion that tells them apart.** The frame is
     // taller in proportion than the slot, so ~97 px of the panel goes unpainted whatever we do.
@@ -380,6 +410,30 @@ test.describe(`narrow widths, at ${NARROW.width}x${NARROW.height}`, () => {
     // Stacked, not squeezed: the map starts below where the forecast ends.
     expect(trackBox.y).toBeGreaterThanOrEqual(forecastBox.y + forecastBox.height - 1);
     expect(Math.round(trackBox.width)).toBe(Math.round(forecastBox.width));
+  });
+
+  test('give the map a panel shaped like the frame, so nothing is cropped or banded', async ({
+    page,
+  }) => {
+    // **Why the phone pays nothing for `meet`, asserted rather than claimed in prose.**
+    //
+    // The desktop panel's proportion follows the forecast column, so it disagrees with the
+    // frame's and something has to give. Here the slot's height is content-driven instead, so
+    // the `<svg>` takes its height from its own viewBox ratio — there is no slack on either
+    // axis, and `meet`, `slice` and `none` all draw the identical picture.
+    //
+    // **So this deliberately does not reuse `expectWholeFrameDrawn`.** That helper passes here
+    // under every `preserveAspectRatio` value, `slice` included — it was written as a narrow
+    // test first, and it could not fail. The falsifiable claim is the one underneath it: the box
+    // carries the frame's own proportion. If a phone design ever gives this panel a shape of its
+    // own, that stops being true and this fails, which is the moment somebody needs to decide
+    // whether the phone crops or bands.
+    const { slot } = await loadHome(page);
+    const map = slot.locator('svg.bathymetry');
+    await expect(map).toBeVisible();
+
+    const frame = await measureFrame(map);
+    expect(frame.boxWidth / frame.boxHeight).toBeCloseTo(frame.viewWidth / frame.viewHeight, 2);
   });
 
   test('render every element, with nothing off the side of the screen', async ({ page }) => {
