@@ -266,3 +266,82 @@ class TestATransportThatMisbehaves:
         assert len(blocks) == 25
         assert url.startswith(URL)
         assert all(block["current"]["swell_wave_height"] == 1.5 for block in blocks)
+
+
+class TestTheStoreHoldsOneGrid:
+    """Storage: twenty-five rows, replaced whole, and honest when there is nothing."""
+
+    def _point(self, latitude: float, longitude: float, height: float = 1.5):
+        return {
+            "latitude": latitude,
+            "longitude": longitude,
+            "observed_at": "2026-02-13T09:00",
+            "readings": {"swell_height": {"value": height, "unit": "m"}},
+        }
+
+    def _grid(self, height: float = 1.5):
+        return [self._point(lat, lon, height) for lat, lon in grid_points()]
+
+    def test_a_store_that_never_fetched_a_grid_says_so(self, store):
+        # **Not twenty-five zeroes.** A grid of zeroes on a wind field reads as a dead calm,
+        # which is a claim about the sea; an empty grid is a claim about the installation.
+        assert store.latest_conditions_grid() == []
+
+    def test_a_stored_grid_comes_back_whole(self, store):
+        store.replace_conditions_grid(self._grid())
+
+        held = store.latest_conditions_grid()
+        assert len(held) == 25
+        assert {(p["latitude"], p["longitude"]) for p in held} == set(grid_points())
+
+    def test_a_second_run_replaces_the_grid_rather_than_appending(self, store):
+        # The table is bounded by its own key. A run that appended would grow it forever and
+        # leave the reader picking between two moments.
+        store.replace_conditions_grid(self._grid(1.5))
+        store.replace_conditions_grid(self._grid(4.2))
+
+        held = store.latest_conditions_grid()
+        assert len(held) == 25
+        assert {p["readings"]["swell_height"]["value"] for p in held} == {4.2}
+
+    def test_it_refuses_to_clear_the_grid(self, store):
+        # A failed fetch leaves the previous grid in place, and the way it does that is by not
+        # calling this at all. Clearing by accident is the one thing a caller must not be able
+        # to do — an empty grid is indistinguishable from an installation that never ran.
+        store.replace_conditions_grid(self._grid())
+
+        with pytest.raises(ValueError, match="leave the previous grid in place"):
+            store.replace_conditions_grid([])
+
+        assert len(store.latest_conditions_grid()) == 25
+
+    def test_a_failed_write_leaves_the_old_grid_untouched(self, store):
+        # Wholesale in one transaction: a half-written grid would draw some squares from this
+        # run and some from the last, and nothing on the page could say which.
+        store.replace_conditions_grid(self._grid(1.5))
+
+        broken = self._grid(4.2)
+        del broken[17]["observed_at"]
+        with pytest.raises(KeyError):
+            store.replace_conditions_grid(broken)
+
+        held = store.latest_conditions_grid()
+        assert len(held) == 25
+        assert {p["readings"]["swell_height"]["value"] for p in held} == {1.5}
+
+    def test_the_rows_come_back_north_to_south_then_west_to_east(self, store):
+        # The order `grid_points()` generates, so a reader can lay them out without sorting
+        # and two callers cannot disagree about which corner comes first.
+        store.replace_conditions_grid(self._grid())
+
+        held = store.latest_conditions_grid()
+        assert (held[0]["latitude"], held[0]["longitude"]) == (GRID_NORTH, GRID_WEST)
+        assert (held[-1]["latitude"], held[-1]["longitude"]) == (GRID_SOUTH, GRID_EAST)
+
+    def test_every_point_carries_its_own_stamps_and_readings(self, store):
+        store.replace_conditions_grid(self._grid())
+
+        for point in store.latest_conditions_grid():
+            assert point["observed_at"] == "2026-02-13T09:00"
+            assert point["fetched_at"]
+            assert point["readings"]["swell_height"] == {"value": 1.5, "unit": "m"}
