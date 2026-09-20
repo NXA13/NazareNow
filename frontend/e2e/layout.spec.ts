@@ -292,23 +292,41 @@ test.describe('the map slot', () => {
     const frame = await map.evaluate((svg: SVGSVGElement) => {
       const ctm = svg.getScreenCTM()!;
       const box = svg.getBoundingClientRect();
-      const { width, height } = svg.viewBox.baseVal;
-      // Relative to the element's own box, and read in the same call, so no scroll position or
-      // round trip can come between the two coordinate systems being compared.
+      // `x` and `y` as well as the extent: the frame's origin is 0,0 today, and reading it
+      // rather than assuming it means a re-cut frame with an offset origin fails this loudly
+      // instead of quietly measuring the wrong corner.
+      const view = svg.viewBox.baseVal;
+      // Named for what they are. The first four are where the *drawing* landed; the last two are
+      // the *element's* box, and conflating the two is the mistake this whole test exists to
+      // catch. Read in one call, so no scroll or round trip comes between the two systems.
       return {
-        left: ctm.e - box.left,
-        top: ctm.f - box.top,
-        right: ctm.a * width + ctm.e - box.left,
-        bottom: ctm.d * height + ctm.f - box.top,
-        width: box.width,
-        height: box.height,
+        left: ctm.a * view.x + ctm.c * view.y + ctm.e - box.left,
+        top: ctm.b * view.x + ctm.d * view.y + ctm.f - box.top,
+        right: ctm.a * (view.x + view.width) + ctm.e - box.left,
+        bottom: ctm.d * (view.y + view.height) + ctm.f - box.top,
+        boxWidth: box.width,
+        boxHeight: box.height,
+        viewWidth: view.width,
+        viewHeight: view.height,
       };
     });
 
-    // A pixel of tolerance each way: the browser rounds, and a fit this close is a fit.
-    expect(frame.left).toBeGreaterThanOrEqual(-1);
-    expect(frame.right).toBeLessThanOrEqual(frame.width + 1);
-    expect(frame.bottom).toBeLessThanOrEqual(frame.height + 1);
+    // **`meet` is `min`; `slice` is `max`. Asserting the law rather than the outcome is what
+    // makes this test able to fail.** An earlier draft bounded the drawing inside the element
+    // box on all four sides, which reads like a crop test and is not one: at the only viewport
+    // this runs at the frame is always proportionally taller than the slot, so the overflow is
+    // always horizontal and the top and bottom bounds held under *every* `preserveAspectRatio`
+    // value, `slice` included. These two lines fail under `slice` (which would scale by 0.9616,
+    // not 0.8367), under a distorted `none`, and under anything that draws the frame smaller
+    // than the space allows.
+    const scale = Math.min(frame.boxWidth / frame.viewWidth, frame.boxHeight / frame.viewHeight);
+    // A pixel of tolerance: the browser rounds, and a fit this close is a fit.
+    expect(frame.right - frame.left).toBeCloseTo(frame.viewWidth * scale, 0);
+    expect(frame.bottom - frame.top).toBeCloseTo(frame.viewHeight * scale, 0);
+
+    // And where it sits. `xMid` centres whatever slack is on the horizontal axis — none, here,
+    // but stated as the rule so the narrow layout is covered by the same line.
+    expect(frame.left).toBeCloseTo((frame.boxWidth - frame.viewWidth * scale) / 2, 0);
 
     // **`YMin`, not `YMid`, and this is the assertion that tells them apart.** The frame is
     // taller in proportion than the slot, so ~97 px of the panel goes unpainted whatever we do.
@@ -316,6 +334,13 @@ test.describe('the map slot', () => {
     // puts the map flush to the top and collects the space into one band above the caption,
     // where it reads as caption spacing.
     expect(frame.top).toBeCloseTo(0, 0);
+
+    // **The band is the panel showing through, and must stay that way.** ADR 0015 records this
+    // as the part most likely to be "fixed" later: a background on the SVG would paint the
+    // unsurveyed strip at the frame's north and south edges in the deepest tone, drawing sea
+    // floor nobody measured. The `<rect>` inside cannot do it — its 100% resolves against the
+    // viewBox, so it stops where the frame stops — which leaves a stylesheet as the way in.
+    await expect(map).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
   });
 
   test('says under the map that it is depth and not today', async ({ page }) => {

@@ -35,12 +35,11 @@ export function Bathymetry() {
     <svg
       className="bathymetry"
       viewBox={geometry.viewBox}
-      /* **`meet`, so the whole frame is drawn.** `slice` crops 6.49% of the width off each side,
-         and #120 puts the outer wind columns on the bounds themselves rather than at cell
-         centres — so that crop took two of five columns, 10 of 25 darts, with it. See
-         `docs/adr/0015-the-whole-frame-is-drawn.md`. `YMin` rather than `YMid`: the space the
-         letterbox leaves goes below the map in one band, not split into two that read as a
-         rendering fault. */
+      /* **`meet`, so the whole frame is drawn, and `YMin`, so the space it leaves is one band
+         below the map rather than two around it.** This was `xMidYMid slice` and the crop took
+         two of the five wind columns with it. The measurement and the argument are in
+         `docs/adr/0015-the-whole-frame-is-drawn.md`; they are not repeated here, because a
+         figure copied to a fourth place is a figure that can go stale in three. */
       preserveAspectRatio="xMidYMin meet"
       role="img"
       aria-label="The sea floor off Praia do Norte, drawn from soundings: the Nazaré Canyon reaching the coast, the shelf either side of it, and the coastline"

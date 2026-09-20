@@ -81,11 +81,16 @@ illustrated. Unpainted panel is honest; invented bathymetry is not.
   covering the frame. The bounds are shared with the bathymetry on purpose, and #120's extent
   decision would have to be reopened to buy back 12.98% of a panel.
 
-## What this does not decide
+## The narrow layout pays nothing, and that was measured rather than assumed
 
-The narrow layout. At a slot wider in proportion than 0.8805 the letterbox flips to horizontal,
-where `xMid` centres it — that is the correct behaviour and is not what the phone design, which
-is separate and unbuilt, will necessarily want.
+A first draft of this ADR reasoned that at a slot proportionally wider than 0.8805 the letterbox
+would flip to horizontal. Measured at 390×844, it does not flip, because there is nothing to
+flip: the map's box is **356 × 404.30 px, a ratio of 0.8805 — the frame's own** — and the drawing
+fills it corner to corner. The panel's height is content-driven there rather than set by a column
+beside it, so it takes the frame's proportion instead of imposing one.
+
+So the letterbox is a desktop cost only, and the phone layout — which #115 explicitly does not
+design — is unaffected by this decision in either direction.
 
 ## Consequences
 
