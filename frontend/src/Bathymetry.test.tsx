@@ -90,10 +90,18 @@ describe('the four defects the prototype already found', () => {
     expect(land.endsWith('Z')).toBe(true);
     expect(Math.max(...xs)).toBeGreaterThan(width);
 
-    // And the bands close around the western edge, for the same reason on the other side.
-    const band = map.querySelector('.bathymetry-band-0')!.getAttribute('d')!;
-    const bandXs = [...band.matchAll(/[ML](-?[\d.]+),/g)].map((match) => Number(match[1]));
-    expect(Math.min(...bandXs)).toBeLessThan(0);
+    // **And the bands close by walking the frame, which is the same defect one level up.**
+    // Closing every open contour westward was the first attempt here and it is wrong for two of
+    // the eight: at −20 the contour enters on the east edge and leaves on the south, so a
+    // straight westward closure cuts a chord across the frame and drops the whole top strip out
+    // of the band. A band is "everything deeper than this level", and deep water is west across
+    // this frame, so the closure has to go round the western side — through three corners.
+    const height = Number(geometry.viewBox.split(' ')[3]);
+    const shallowest = map.querySelector('.bathymetry-band-0')!.getAttribute('d')!;
+
+    for (const corner of [`0.0,${height.toFixed(1)}`, '0.0,0.0', `${width.toFixed(1)},0.0`]) {
+      expect(shallowest, `the shallowest band does not reach ${corner}`).toContain(corner);
+    }
   });
 
   it('4. carries no wind glyph yet, so the one that flies tail-first cannot be here', () => {
@@ -109,10 +117,21 @@ describe('the four defects the prototype already found', () => {
 });
 
 describe('what the base map is allowed to be', () => {
+  const read = (relative: string) =>
+    readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8');
+
   it('carries no colour of its own, because on this map colour means live data', () => {
-    // Every tone is a class resolving to a token in `tokens.css`, which `ink.test.ts` holds to
-    // greyscale. What this asserts is the other half: that no fill or stroke is written into
-    // the markup here, where that guard cannot see it.
+    /*
+     * Two halves, and the review found the second one missing.
+     *
+     * `ink.test.ts` forbids a colour *literal* outside `tokens.css` — it does not check that
+     * anything in `tokens.css` is grey. So the map's tones could have been made blue and every
+     * test would have passed, while the one rule this base map has is that colour on it means
+     * live data and the sea floor is not live data.
+     *
+     * The first half is here: no fill or stroke written into the markup, where that guard
+     * cannot see it. The second is below: every map token is a true grey.
+     */
     const map = draw();
 
     for (const node of map.querySelectorAll('*')) {
@@ -121,6 +140,19 @@ describe('what the base map is allowed to be', () => {
         if (value === null || value === 'none') continue;
         expect(value, `${node.nodeName} sets ${attribute}="${value}"`).toMatch(/^var\(--/);
       }
+    }
+  });
+
+  it('draws every tone in a true grey, so nothing on the base map can read as data', () => {
+    const tokens = read('./tokens.css');
+    const greys = [...tokens.matchAll(/(--map-[a-z0-9-]+):\s*#([0-9a-f]{6})/g)];
+
+    // All of them, by count: a regex that matched nothing would pass every assertion below.
+    expect(greys.length).toBeGreaterThanOrEqual(10);
+
+    for (const [, name, hex] of greys) {
+      const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex!.slice(i, i + 2), 16));
+      expect([name, r, g, b].join(' '), `${name} is not a grey`).toBe([name, r, r, r].join(' '));
     }
   });
 

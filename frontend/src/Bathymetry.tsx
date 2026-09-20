@@ -19,47 +19,16 @@
 import geometry from './map-geometry.json';
 
 /**
- * The levels that become filled bands, shallow to deep.
+ * The bands and the hairlines, exactly as the build step emitted them.
  *
- * Fewer than were traced, and deliberately uneven: the steps that matter are the ones the
- * canyon walls cross, and an even ramp spends its contrast on open shelf where nothing is
- * happening.
- *
- * **The order is load-bearing and the first defect the prototype found.** Each level's path
- * fills everything *deeper* than it, so painting shallow-to-deep leaves the canyon floor as
- * the last and darkest thing drawn. Reversed, the shallowest level floods the entire ocean with the
- * shelf tone and the canyon disappears completely — which looks like a palette problem and is
- * not.
+ * **Nothing about the geometry is decided here.** The levels, their order and the closure of
+ * every open contour against the frame are `scripts/map/contours.py`'s, because they are
+ * questions about the soundings rather than about the page. This file had a `closeWest` of its
+ * own and it was wrong for two of the eight bands — the same path-closing rule living in two
+ * languages, which is one more place than it can be right in.
  */
-const BANDS = [-20, -75, -155, -280, -460, -700, -1000, -1400] as const;
-
+const BANDS: { level: number; d: string }[] = geometry.bands;
 const LEVELS: Record<string, string[]> = geometry.levels;
-
-/** Far enough outside the frame that the closing edge is never visible inside it. */
-const WEST = -60;
-
-/**
- * Close an open contour around the western edge of the frame.
- *
- * A band is "everything deeper than this level". A contour that leaves the frame has to be
- * closed against the edge it leaves through, or the fill takes a short cut across open water.
- * Closed contours already end in `Z` and are left alone.
- */
-function closeWest(path: string): string {
-  if (path.endsWith('Z')) return path;
-  const points = path.slice(1).replace(/L/g, ' ').split(/\s+/).filter(Boolean);
-  const first = points[0]!.split(',');
-  const last = points[points.length - 1]!.split(',');
-  return `${path}L${WEST},${last[1]}L${WEST},${first[1]}Z`;
-}
-
-function bandPath(level: number): string {
-  return (LEVELS[String(level)] ?? []).map(closeWest).join('');
-}
-
-function hairlinePath(level: number): string {
-  return (LEVELS[String(level)] ?? []).join('');
-}
 
 export function Bathymetry() {
   return (
@@ -73,11 +42,11 @@ export function Bathymetry() {
       {/* The deepest tone, behind everything. Every band is painted on top of it. */}
       <rect className="bathymetry-deep" x="0" y="0" width="100%" height="100%" />
 
-      {BANDS.map((level, index) => (
+      {BANDS.map((band, index) => (
         <path
-          key={`band-${level}`}
+          key={`band-${band.level}`}
           className={`bathymetry-band bathymetry-band-${index}`}
-          d={bandPath(level)}
+          d={band.d}
           /* **Even-odd, not the default non-zero, and the second defect the prototype found.**
              A closed loop inside a band is a rise — a seamount, or the shoulder between the
              canyon and the shelf — not a hole in the sea floor. Under the non-zero rule it
@@ -87,8 +56,12 @@ export function Bathymetry() {
         />
       ))}
 
-      {BANDS.map((level) => (
-        <path key={`hairline-${level}`} className="bathymetry-hairline" d={hairlinePath(level)} />
+      {BANDS.map((band) => (
+        <path
+          key={`hairline-${band.level}`}
+          className="bathymetry-hairline"
+          d={(LEVELS[String(band.level)] ?? []).join('')}
+        />
       ))}
 
       {/* Land last, over the water it borders.

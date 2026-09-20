@@ -43,9 +43,9 @@
  * **Raised again, from 125 kB to 130 kB, by #121** — the sea floor. The canyon is the one shape
  * that makes Nazaré what it is and it has to come from soundings, so the geometry is not a
  * dependency that can come back out either. Measured rather than projected: the map costs
- * **6.41 kB gzipped**, taking the site from 121.31 kB to 127.72 kB.
+ * **4.30 kB gzipped**, taking the site from 121.31 kB to 125.61 kB.
  *
- * Two things were done before moving it rather than after:
+ * Three things were done before moving it rather than after:
  *
  * - **The geometry was simplified as far as the data allows, and no further.** The tracer's
  *   tolerance went from 0.9 px to 2.0, which is 120 m across this frame against soundings that
@@ -57,7 +57,13 @@
  *   path data raw, which reads as unaffordable against 3.7 kB of headroom and is not: path data
  *   compresses hard, and the budget has always been measured gzipped.
  *
- * 130 kB leaves about 2.3 kB, which is deliberately not enough for a library. #122's crests and
+ * - **Only what is drawn is shipped.** The tracer knows seventeen depth levels and the page
+ *   draws eight of them as bands; the other nine were being emitted, downloaded and never
+ *   rendered. That was 2.11 kB — a third of what the map cost before it was noticed, and 42% of
+ *   the geometry — found by the review of the same ticket rather than by the measurement, which
+ *   had no way to see it.
+ *
+ * 130 kB leaves about 4.4 kB, which is deliberately not enough for a library. #122's crests and
  * #123's wind will each need their own raise, measured the same way.
  */
 
@@ -66,7 +72,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/** Compressed kilobytes the whole first load may cost. Today it is about 128, of which 43 is
+/** Compressed kilobytes the whole first load may cost. Today it is about 126, of which 43 is
  * the two fonts. See the note above for why it moved. */
 const BUDGET_KB = 130;
 
