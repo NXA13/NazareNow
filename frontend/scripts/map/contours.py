@@ -1,8 +1,13 @@
 """Trace the sampled bathymetry into simplified SVG contour paths.
 
+**This is the map's build step (#121), promoted out of `prototypes/v2-map/`.** Run it with
+`npm run map`, which writes `src/map-geometry.json` for the page to import. It is manual and
+its output is committed, exactly like `npm run fonts` -- the difference being that this one
+needs no network at all, only the soundings committed beside it.
+
 Marching squares over the grid, one pass per depth level, then Ramer-Douglas-Peucker to
-cut the point count down to something a 140 kB payload budget can carry. No numpy: the
-grid is 82 x 96, and plain Python traces the whole thing in well under a second.
+cut the point count down. No numpy: the grid is 106 x 121, and plain Python traces the whole
+thing in well under a second.
 
 The output is deliberately coordinates-in-a-viewBox rather than lon/lat, because nothing
 downstream reprojects anything -- the map is one fixed frame of one fixed place. The
@@ -35,7 +40,22 @@ VIEW_H = 780.0
 LEVELS = [-1800, -1600, -1400, -1200, -1000, -850, -700, -575, -460,
           -360, -280, -210, -155, -110, -75, -45, -20]
 
-SIMPLIFY_PX = 0.9
+# How far a simplified contour may sit from the traced one, in viewBox pixels.
+#
+# **Raised from 0.9 to 2.0 by #121, and it costs no accuracy at all.** One pixel is 59.9 m
+# across this frame, so 0.9 px is a 54 m tolerance -- asserted over soundings that are
+# 0.004 degrees apart, which at this latitude is about 342 m. A contour's position between two
+# samples 342 m apart is interpolation; holding it to 54 m is precision the data does not have.
+#
+# 2.0 px is 120 m, roughly a third of a grid cell, so nothing true is discarded. Measured
+# across the whole sweep, the traced path count is **33 at every tolerance from 0.9 to 2.5** --
+# no contour, no seamount and no canyon wall is ever dropped, only vertex density changes. What
+# it buys is 31% of the bytes: 7.46 kB gzipped at 0.9, 5.16 kB at 2.0.
+#
+# So this is not a fidelity-for-bytes trade. It is declining to ship false precision, and being
+# paid for it. Anything past ~2.9 px would exceed half a grid cell and should not be taken
+# without re-measuring against the soundings.
+SIMPLIFY_PX = 2.0
 MIN_POINTS = 4
 MIN_SPAN_PX = 9.0
 
@@ -180,11 +200,6 @@ def simplify(points: list[tuple[float, float]], epsilon: float) -> list[tuple[fl
     return [p for p, k in zip(points, keep) if k]
 
 
-def to_path(points: list[tuple[float, float]], closed: bool) -> str:
-    body = " ".join(f"{x:.1f},{y:.1f}" for x, y in points)
-    return f"M{body.replace(' ', ' L', 1) if False else body}"
-
-
 def path_data(points: list[tuple[float, float]], closed: bool) -> str:
     head = f"M{points[0][0]:.1f},{points[0][1]:.1f}"
     rest = "".join(f"L{x:.1f},{y:.1f}" for x, y in points[1:])
@@ -240,14 +255,101 @@ def land_path() -> str:
     return "".join(pieces)
 
 
+# The levels that become filled bands, shallow to deep, and the only ones the page draws.
+#
+# **This list is what ships.** The tracer knows seventeen levels; eight of them become bands and
+# the other nine were emitted, downloaded and never drawn — 42% of the geometry's bytes, against
+# a payload budget this ticket had to raise. `LEVELS` stays as it is because the spacing is what
+# makes the canyon read as a canyon, and a band list cut from it is cheaper than re-cutting the
+# trace every time the design wants a different eight.
+BANDS = [-20, -75, -155, -280, -460, -700, -1000, -1400]
+
+
+def perimeter_t(point: tuple[float, float]) -> float | None:
+    """Where a point sits on the frame's edge, as a number from 0 to 4 going clockwise from
+    the north-west corner, or None if it is not on the edge at all."""
+    x, y = point
+    if abs(y) <= 0.6:
+        return x / VIEW_W
+    if abs(x - VIEW_W) <= 0.6:
+        return 1 + y / VIEW_H
+    if abs(y - VIEW_H) <= 0.6:
+        return 2 + (VIEW_W - x) / VIEW_W
+    if abs(x) <= 0.6:
+        return 3 + (VIEW_H - y) / VIEW_H
+    return None
+
+
+def corner(t: int) -> tuple[float, float]:
+    return [(0.0, 0.0), (VIEW_W, 0.0), (VIEW_W, VIEW_H), (0.0, VIEW_H)][t % 4]
+
+
+def _between(start: float, end: float, point: float, forward: bool) -> bool:
+    reach = (end - start) % 4 if forward else (start - end) % 4
+    here = (point - start) % 4 if forward else (start - point) % 4
+    return 0 < here < reach
+
+
+def close_on_frame(points: list[tuple[float, float]]) -> str:
+    """Close an open contour by walking the frame's edge, on the deep side.
+
+    **A band is "everything deeper than this level", so the closure has to enclose the deep
+    water** — and which way round the frame that is depends on where the contour leaves it.
+    Closing every open contour westward was the first attempt and it is wrong for two of the
+    eight bands: at -20 the contour enters on the east edge and leaves on the south, and a
+    straight closure cuts a chord across the frame at y=14.9 that drops the whole top strip out
+    of the band. At -75 it enters on the north edge.
+
+    This is prototype defect 3 in its other form. That one was about the coastline closing
+    end-to-start and drawing a teardrop out at sea; this is the same mistake one level up — a
+    closure that assumes it knows which edge a line left through.
+
+    Deep water is west across this whole frame: the canyon opens seaward and the shelf is against
+    the coast in the east. So of the two ways round the perimeter, the correct one is whichever
+    passes along the western edge.
+    """
+    start, end = perimeter_t(points[0]), perimeter_t(points[-1])
+    if start is None or end is None:
+        # Not an edge-to-edge contour. Nothing sensible to walk, so close it as it lies.
+        return path_data(points, True)
+
+    forward = _between(end, start, 3.5, True)
+    walked = [
+        corner(c) for c in range(4) if _between(end, start, float(c), forward)
+    ] if forward else [
+        corner(c) for c in range(3, -1, -1) if _between(end, start, float(c), forward)
+    ]
+    return path_data(points + walked, True)
+
+
+def band(level: float) -> str:
+    """One level's contours, each closed against the frame, as a single filled path."""
+    pieces = []
+    for chain in join(segments_at(level)):
+        reduced = simplify(chain, SIMPLIFY_PX)
+        if len(reduced) < MIN_POINTS or span(reduced) < MIN_SPAN_PX:
+            continue
+        pieces.append(
+            path_data(reduced, True) if is_closed(reduced) else close_on_frame(reduced)
+        )
+    return "".join(pieces)
+
+
 def main() -> None:
     flat = [v for row in GRID["elevation_m"] for v in row if v is not None]
     print(f"viewBox 0 0 {VIEW_W:.0f} {VIEW_H:.0f}")
     print(f"depth range {min(flat):.0f} m to {max(flat):.0f} m")
 
-    out = {"viewBox": f"0 0 {VIEW_W:.1f} {VIEW_H:.1f}", "levels": {}, "land": land_path()}
-    total = 0
-    for level in LEVELS:
+    out = {
+        "viewBox": f"0 0 {VIEW_W:.1f} {VIEW_H:.1f}",
+        # Shallow to deep, and the order is load-bearing: each band fills everything deeper than
+        # its level, so painted in this order the deepest water is the last thing drawn.
+        "bands": [{"level": level, "d": band(level)} for level in BANDS],
+        "levels": {},
+        "land": land_path(),
+    }
+    total = sum(len(b["d"]) for b in out["bands"])
+    for level in BANDS:
         paths = trace(level)
         out["levels"][str(level)] = paths
         size = sum(len(p) for p in paths)
@@ -256,7 +358,11 @@ def main() -> None:
     print(f"land path {len(out['land'])} chars")
     print(f"total {total + len(out['land'])} chars of path data")
 
-    (HERE / "contours.json").write_text(json.dumps(out), encoding="utf-8")
+    # Into the app, not beside this script. The page imports it; nothing regenerates it at
+    # build time and nothing needs a network to.
+    destination = HERE.parents[1] / "src" / "map-geometry.json"
+    destination.write_text(json.dumps(out, separators=(",", ":")), encoding="utf-8")
+    print(f"wrote {destination.relative_to(HERE.parents[2])}")
 
 
 if __name__ == "__main__":

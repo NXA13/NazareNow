@@ -129,6 +129,35 @@
    * size on the Go row, not more saturation** — saturating it collapses the distinction
    * between these three systems, which is the whole point of having them.
    * ---------------------------------------------------------------------- */
+  /* -------------------------------------------------------------------------
+   * The sea floor (#121).
+   *
+   * **Greyscale, and named apart from `--ink-*` on purpose.** On this map colour means live
+   * data — swell, wind, a call — so the base it is read against carries none. These are not
+   * foregrounds and no text is ever set on them, which is why they sit outside the contrast
+   * pairing `ink.test.ts` enforces over the `--ink-*` ramp.
+   *
+   * Eight bands, shallow to deep, on a gamma-bent ramp from the shelf tone down to the deepest
+   * ground. Bent rather than linear because an even ramp spends its contrast on open shelf
+   * where nothing is happening; the steps want to crowd where the canyon walls cross them.
+   * ---------------------------------------------------------------------- */
+  --map-band-0: #3f3f3f;
+  --map-band-1: #393939;
+  --map-band-2: #333333;
+  --map-band-3: #2c2c2c;
+  --map-band-4: #252525;
+  --map-band-5: #1d1d1d;
+  --map-band-6: #141414;
+  --map-band-7: #060606;
+
+  /* The contour lines over the bands. One step brighter than the shallowest band, so they read
+     as lines on the shelf and fade into the deepest water, where the bands are darkest. */
+  --map-hairline: #4a4a4a;
+
+  /* Land is the page's own ground, so the coastline reads as the edge of the instrument rather
+     than as another depth band. */
+  --map-land: #0b0b0b;
+
   --ink-go: #a6dfae;
   --ink-go-dim: rgba(166, 223, 174, 0.14);
   --ink-watch: #ecdc9a;

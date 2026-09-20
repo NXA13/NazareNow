@@ -12,9 +12,15 @@ of them.
 
 ## Order of operations
 
+**Two of these files now live in the application** (#121). `bathymetry.json` and `contours.py`
+were promoted to `frontend/scripts/map/`, where the build step that ships the map owns them, and
+the traced output is `frontend/src/map-geometry.json`. The scripts here read them from there, so
+there is one copy of the soundings and one tracer rather than two of each. The tolerance changed
+with the move — 0.9 px to 2.0 — and `contours.py` explains why it costs no accuracy.
+
 ```
-fetch_bathymetry.py   ->  bathymetry.json     12,826 GEBCO 2020 soundings, 15 arc-seconds
-contours.py           ->  contours.json       marching squares + Douglas-Peucker, ~20 kB of paths
+fetch_bathymetry.py   ->  frontend/scripts/map/bathymetry.json    12,826 GEBCO 2020 soundings
+contours.py           ->  frontend/src/map-geometry.json          marching squares + Douglas-Peucker
 refraction.py         ->  crests.json         16 phases of a refracting wave front
 build_map.py          ->  preview.html        palette comparison, and the shared map markup
 build_artboards.py    ->  artboards/*.dc.html the design-canvas artboards

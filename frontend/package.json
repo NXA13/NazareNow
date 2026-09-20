@@ -10,6 +10,7 @@
     "check:payload": "node scripts/check-payload.mjs",
     "check:contrast": "node scripts/check-contrast.mjs",
     "fonts": "node scripts/fetch-fonts.mjs",
+    "map": "python scripts/map/contours.py",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:layout": "playwright test",
