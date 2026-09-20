@@ -207,11 +207,19 @@ const EASING = forecast.days[2]!;
 const BIG_CALL = BIG.call!;
 
 /**
- * Everything the forecast range draws with one day open, as markup.
+ * Everything the forecast range draws, in **both** of the states it has, as markup.
  *
  * The comparison is the whole rendered subtree rather than a chosen element, because the
  * question is whether the value reaches a reader *anywhere* — pinning it to the hourly table
  * would let a field that moved to a caption or an `aria-label` read as dropped.
+ *
+ * **Both states, because since #118 the page has two and neither is the whole of it.** The day
+ * rows and one day's hours share a slot and never appear together, so a snapshot taken with a
+ * day open cannot see `peak_swell_height` at all. Four fields on the row read as dropped the
+ * moment that swap landed, and every one of them was still on the page — one click away. The
+ * two snapshots are concatenated rather than compared separately: what is asserted is that the
+ * value reaches a reader somewhere in the page, and which face of the slot carries it is a
+ * question for the tests that name it, not for this guard.
  */
 async function pageFor(day: ForecastDay): Promise<string> {
   server.use(
@@ -221,14 +229,17 @@ async function pageFor(day: ForecastDay): Promise<string> {
   );
 
   const view = render(<ForecastRange />);
-  await userEvent.click(await screen.findByRole('button', { name: new RegExp(day.date) }));
+  const row = await screen.findByRole('button', { name: new RegExp(day.date) });
+  const list = view.container.innerHTML;
+
+  await userEvent.click(row);
   // The table itself, and nothing inside it. Waiting on a testid that one of these tickets
   // introduced would couple the harness to the defect it guards: reverting #98 as shipped —
   // the wind cell *and* the note under the table — timed out all sixteen tests instead of
   // failing `wind_direction` alone, which is a broken suite rather than a caught bug.
   await screen.findByRole('table');
 
-  const html = view.container.innerHTML;
+  const html = `${list}${view.container.innerHTML}`;
   view.unmount();
   return html;
 }

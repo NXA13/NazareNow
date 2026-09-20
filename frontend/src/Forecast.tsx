@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import {
   fetchForecast,
@@ -194,11 +194,16 @@ function DayRow({
   largest,
   selected,
   onSelect,
+  rowRef,
 }: {
   day: ForecastDay;
   largest: number;
   selected: boolean;
   onSelect: () => void;
+  /** Handed up so the slot can put focus back on this row when a reader returns to the
+   *  list (#118). The row it returns to is a *new* element — the list unmounts while a day
+   *  is open — so the slot cannot hold a reference of its own across the swap. */
+  rowRef: (element: HTMLButtonElement | null) => void;
 }) {
   const flag = agreementFlag(day);
   const status = day.call?.status ?? UNJUDGED;
@@ -206,8 +211,15 @@ function DayRow({
   return (
     <button
       type="button"
+      ref={rowRef}
       className={`day day-${status}${selected ? ' selected' : ''}`}
-      aria-pressed={selected}
+      // `aria-current`, not `aria-pressed`. This row was a toggle until #118 — clicking the
+      // open day closed it — and it cannot be one now, because the row is not on screen while
+      // its day is. What the mark means is "the day the slot is about", which is the current
+      // item of a set and not a button anybody can unpress. A screen reader announcing
+      // "pressed" for a control with no unpressed state describes an interface that is not
+      // there.
+      aria-current={selected ? 'true' : undefined}
       // The label carries every summarised figure. An earlier version named only the
       // height, which overrode the row's content for screen readers and lost the
       // period and direction entirely — the two values that separate a groundswell
@@ -311,11 +323,13 @@ function DayList({
   largest,
   openDate,
   onSelect,
+  rowRef,
 }: {
   days: ForecastDay[];
   largest: number;
   openDate: string | null;
   onSelect: (date: string) => void;
+  rowRef: (date: string, element: HTMLButtonElement | null) => void;
 }) {
   const boundary = archiveBoundary(days);
   const measured = boundary === null ? days : days.slice(0, boundary);
@@ -328,6 +342,9 @@ function DayList({
       largest={largest}
       selected={day.date === openDate}
       onSelect={() => onSelect(day.date)}
+      rowRef={(element) => {
+        rowRef(day.date, element);
+      }}
     />
   );
 
@@ -1486,6 +1503,128 @@ export function SwellWindowsSection() {
  * reaches `Verdict`, which renders it directly under the range it qualifies. `Home` fetches it
  * once and passes it to both this and the line of track record below.
  */
+/**
+ * Which face the slot is showing, and which day it is about.
+ *
+ * One value rather than two fields, so "showing a day" cannot be true while the date it would
+ * show is null — the same shape as `LoadState` above, for the same reason.
+ *
+ * **`selected` survives the return to the list on purpose.** It is the day a reader has just
+ * come back from, still marked; together with the focus `DaySlot` restores, it is how somebody
+ * keeps their place among sixteen near-identical rows.
+ */
+type SlotView = { view: 'list'; selected: string | null } | { view: 'day'; date: string };
+
+/**
+ * The day list and one day's detail, sharing one slot of fixed height (#118).
+ *
+ * **Neither state ever sits under the other.** The detail used to render *beneath* the list,
+ * which grew the left column — and `.map-slot` is `height: 100%` of that column, so opening a
+ * day changed the map's proportion and moved the page under the reader at the moment they
+ * clicked. The cost, accepted knowingly when the spec chose this, is that the list and the
+ * hours cannot be read at once.
+ *
+ * **Everything a selection reveals is inside the slot**, the call detail and the agreement
+ * panel included. Either one left outside would grow the column exactly as the hours did,
+ * which is the defect rather than a tidier arrangement of it.
+ *
+ * The height is `--day-slot-height` and the overflow is the slot's own. That is also the
+ * container the scoped no-scroll promise rests on (#132): the verdict, the tiles and their
+ * provenance clear the fold, and the days scroll in here rather than taking the page with them.
+ */
+function DaySlot({
+  days,
+  largest,
+  model,
+}: {
+  days: ForecastDay[];
+  largest: number;
+  model: string | null;
+}) {
+  const [slot, setSlot] = useState<SlotView>({ view: 'list', selected: null });
+  const back = useRef<HTMLButtonElement | null>(null);
+  const rows = useRef(new Map<string, HTMLButtonElement>());
+  const previous = useRef<SlotView>(slot);
+
+  const open = slot.view === 'day' ? (days.find((day) => day.date === slot.date) ?? null) : null;
+
+  /*
+   * Focus follows the swap, because the element that had it has just been unmounted.
+   *
+   * Without this, clicking a day leaves focus on nothing at all and the next Tab starts again
+   * from the top of the document — which on this page is the site header, a whole landmark
+   * away from what just appeared. Returning is the same problem mirrored: the row a reader
+   * came from is a new element by then, so the slot looks it up by date rather than holding a
+   * reference across the swap.
+   */
+  useEffect(() => {
+    const was = previous.current;
+    previous.current = slot;
+    if (slot.view === 'day') back.current?.focus();
+    else if (was.view === 'day') rows.current.get(was.date)?.focus();
+  }, [slot]);
+
+  const toList = () => setSlot(slot.view === 'day' ? { view: 'list', selected: slot.date } : slot);
+
+  /*
+   * Escape as well as the control, so the way out is not one button wide.
+   *
+   * **On the document, and only while a day is open.** This rode on the slot element first, on
+   * the reasoning that focus is always inside it in the state where the key means anything.
+   * That reasoning was wrong and the browser said so: click the day's heading or its table —
+   * neither is focusable — and `document.activeElement` is `body`, from where a keydown never
+   * reaches a handler on a div. Escape silently did nothing, which is the failure mode a
+   * keyboard affordance can least afford.
+   *
+   * Listening on the document is safe here because the listener exists only in the day state
+   * and this page has nothing else Escape dismisses.
+   */
+  useEffect(() => {
+    if (slot.view !== 'day') return;
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSlot({ view: 'list', selected: slot.date });
+    };
+    document.addEventListener('keydown', dismiss);
+    return () => document.removeEventListener('keydown', dismiss);
+  }, [slot]);
+
+  return (
+    <div className="day-slot" data-testid="day-slot">
+      {open ? (
+        <>
+          {/* First, and focused: the way back is the thing a reader who arrived here by
+              keyboard needs before they need the table. */}
+          <button type="button" className="day-slot-back" ref={back} onClick={toList}>
+            Back to all {days.length} days
+          </button>
+          <h2 className="day-slot-heading">{dayLabel(open.date)}</h2>
+          <CallDetail day={open} model={model} />
+          <Agreement day={open} />
+          <HourTable day={open} />
+        </>
+      ) : (
+        <>
+          {/* The count travels with the list it counts. Left outside the slot it would stand
+              over one day's hour table saying "the next 16 days", naming something no longer
+              on screen. */}
+          <h2>The next {days.length} days</h2>
+          <p className="hint">Select a day to see how it develops hour by hour.</p>
+          <DayList
+            days={days}
+            largest={largest}
+            openDate={slot.view === 'list' ? slot.selected : null}
+            onSelect={(date) => setSlot({ view: 'day', date })}
+            rowRef={(date, element) => {
+              if (element) rows.current.set(date, element);
+              else rows.current.delete(date);
+            }}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
 export function ForecastRange({
   belowVerdict,
   rangeCalibration = null,
@@ -1494,7 +1633,6 @@ export function ForecastRange({
   rangeCalibration?: RangeCalibration | null;
 }) {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
-  const [openDate, setOpenDate] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -1513,7 +1651,6 @@ export function ForecastRange({
   // and a page that answered "could not load the forecast" while silently also dropping ten
   // readings it *had* would be neither.
   const forecast = state.status === 'loaded' ? state.forecast : null;
-  const open = forecast?.days.find((day) => day.date === openDate) ?? null;
   const largest = forecast
     ? Math.max(...forecast.days.map((day) => day.peak_swell_height.value))
     : 0;
@@ -1533,13 +1670,14 @@ export function ForecastRange({
    * slow or down must not take the sea's present state off the page with it, and a page saying
    * "could not load the forecast" while silently also dropping ten readings it *had* would be
    * neither up nor honest.
+   *
+   * **The section is named outright rather than by its heading.** The heading that used to
+   * label it is the day count, which now travels into the slot with the list it counts and is
+   * gone while a day is open — and a region whose accessible name disappears the moment a
+   * reader opens something is worse than one named for what it is.
    */
   return (
-    <section
-      className="forecast"
-      aria-labelledby={forecast ? 'forecast-heading' : undefined}
-      aria-label={forecast ? undefined : 'Forecast'}
-    >
+    <section className="forecast" aria-label="Forecast">
       {state.status === 'loading' && <p>Loading forecast...</p>}
 
       {state.status === 'failed' && (
@@ -1562,24 +1700,7 @@ export function ForecastRange({
 
       {forecast && (
         <>
-          <h2 id="forecast-heading">The next {forecast.days.length} days</h2>
-
-          <DayList
-            days={forecast.days}
-            largest={largest}
-            openDate={openDate}
-            onSelect={(date) => setOpenDate(date === openDate ? null : date)}
-          />
-
-          {open ? (
-            <>
-              <CallDetail day={open} model={forecast.amplification_model} />
-              <Agreement day={open} />
-              <HourTable day={open} />
-            </>
-          ) : (
-            <p className="hint">Select a day to see how it develops hour by hour.</p>
-          )}
+          <DaySlot days={forecast.days} largest={largest} model={forecast.amplification_model} />
 
           {/* **The limit stays; the explanation moved (#119).**
 

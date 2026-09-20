@@ -868,6 +868,74 @@ footer p {
   font-size: var(--text-meta);
 }
 
+/* --- the slot the days and one day's hours share (#118) ------------------- */
+
+/*
+ * One box, two states, one height.
+ *
+ * The detail used to open *beneath* the list. That grew the left column, and `.map-slot` is
+ * `height: 100%` of it — so clicking a row changed the map's proportion and moved the page
+ * under the reader's hands. Fixing the height here is what makes "equal columns, nothing
+ * scrolls" survive somebody clicking something.
+ *
+ * `overflow-y` is the slot's own, which is the scoped no-scroll promise in one line: the days
+ * scroll in here rather than taking the page with them. `overflow-x: hidden` because the rows
+ * already wrap and a stray horizontal bar inside a vertical scroller is the classic double
+ * scrollbar.
+ */
+.day-slot {
+  height: var(--day-slot-height);
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* Room for the rows' focus rings and the scrollbar, so neither sits on the text. */
+  padding-right: var(--space-3);
+  /* The slot's own edge, so a reader can see what is scrolling rather than discovering it.
+     On the left only: a full box would draw a frame around half the page. */
+  border-left: var(--rule) solid var(--ink-border);
+  padding-left: var(--space-4);
+}
+
+/* Narrow widths have no no-scroll promise to keep and no map beside the column, so the slot
+   stops being a fixed box and simply holds whichever state is showing. A 26rem scroller on a
+   phone would be a small window onto a long list, for no benefit at all. */
+@media (max-width: 60rem) {
+  .day-slot {
+    height: auto;
+    overflow-y: visible;
+    border-left: none;
+    padding-left: 0;
+  }
+}
+
+/* The way back, and the first thing in the detail state. Styled as a control rather than as a
+   link: it changes what this box is showing, it does not navigate anywhere.
+ *
+ * **No arrow glyph on it.** `←` is not in `REPERTOIRE` — the subset carries `→` and not its
+ * mirror — so drawing one here would fall back to a system face for a single character, which
+ * is the defect #130 is open about elsewhere on this page. The words carry the direction. */
+.day-slot-back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  padding: var(--space-1) var(--space-3);
+  font: inherit;
+  font-size: var(--text-meta);
+  color: var(--ink-text);
+  background: var(--ink-panel);
+  border: var(--rule) solid var(--ink-border);
+  border-radius: var(--radius-badge);
+  cursor: pointer;
+}
+
+.day-slot-back:hover {
+  border-color: var(--ink-muted);
+}
+
+.day-slot-heading {
+  margin-top: 0;
+}
+
 /* The table is wider than a phone. It scrolls inside its own box so the page itself
    never does — a horizontally scrolling page is the thing that makes a site feel
    broken on mobile. */
