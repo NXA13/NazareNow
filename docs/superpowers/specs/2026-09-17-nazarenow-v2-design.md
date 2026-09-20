@@ -211,7 +211,7 @@ same reason real ones do: the canyon stays deep and fast while the shelf either 
 wave, and the energy converges on one stretch of beach.
 
 Crests are drawn twice — dim over deep water, bright inside the shoaling zone (shallower than
-half the deep-water wavelength, about 155 m for a 13.75 s swell), which is exactly where the
+half the deep-water wavelength, about 148 m for a 13.75 s swell), which is exactly where the
 bending begins.
 
 **What must always be stated where this is shown:** the *shape* is computed; the *spacing* is
@@ -220,13 +220,27 @@ is 160 crests and a moiré pattern. And the model is refraction alone — it ign
 reflection, currents and non-linearity, and a real swell is a spread of periods and directions
 rather than one. **It is not a spectral wave model and must not be described as one.**
 
-**Where the solve happens, settled 2026-09-18 while the tickets were written.** The refraction
-solve is too heavy to run per request, so the crest fields are precomputed at build time for
-binned swell period and direction, and the page picks the bin nearest the latest conditions.
-This keeps v2 to a single backend ticket. The honest cost is that the crests are quantised, so
-the bin resolution is written down beside the bytes it costs — and at this scale a 13 s swell
-and a 13.75 s swell bend indistinguishably, which is what makes the quantisation acceptable
-rather than merely convenient.
+**Where the solve happens — amended 2026-09-20, and it is now the browser.** This section
+previously settled (2026-09-18, while the tickets were written) that the solve is too heavy to
+run per request, so crest fields would be precomputed at build time for binned swell period and
+direction with the page picking the nearest bin. **That is reversed. ADR 0016 carries the full
+argument**; the measurement that decided it is that the two binning axes behave nothing alike:
+
+```
+direction + 5 deg -> fronts rotate 4.74 deg      period +2 s -> fronts rotate 1.23 deg
+direction +10 deg -> fronts rotate 9.35 deg      period +4 s -> fronts rotate 2.56 deg
+```
+
+A four-second period error bends the swell less than a three-degree direction error does. So the
+direction bins cannot be coarse, and fine ones do not fit: 54 fields at 5.60 kB each is 302 kB
+against a 130 kB site, which forces lazy fetching, which forces `check-payload.mjs` to stop
+counting `dist/` — the one guard that stops a charting library arriving unnoticed.
+
+Instead the **depth grid ships once, at 9.35 kB gzipped, and the page solves the refraction
+itself** for the exact period and direction the conditions report: 52.9 ms for the whole pipeline,
+2.7 ms of it the Dijkstra. There are no bins and **no quantisation at all**. The solve is still
+far too heavy to run *per request on the host*, which is what the original sentence ruled out and
+what remains ruled out — v2 stays at a single backend ticket.
 
 ### Wind
 
