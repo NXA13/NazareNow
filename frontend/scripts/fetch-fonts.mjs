@@ -96,6 +96,24 @@ export const REPERTOIRE = [
   'ó',
   'ú',
   'à',
+  // The same nine in capitals (#130). Not because any source string spells them: because
+  // `App.css` uppercases at paint time, and a subset that carries a letter in one case only
+  // renders half a word in a system face the moment a rule is told to capitalise it. That is
+  // what the hour table did — NAZAR, then a fallback É, mid-word, in the caption and the first
+  // column header.
+  //
+  // **Listed rather than derived on purpose.** `REPERTOIRE.map(toUpperCase)` would make this
+  // closed by construction and would also make `ink.test.ts`'s check of it unable to fail.
+  // Written out, adding a tenth accent fails a test that names the capital it wants.
+  'É',
+  'Ç',
+  'Ã',
+  'Õ',
+  'Á',
+  'Í',
+  'Ó',
+  'Ú',
+  'À',
 ].join('');
 
 /**
