@@ -95,10 +95,19 @@ systemctl --no-pager --lines=0 status \
 
 # Straight at uvicorn, past nginx, so this proves the API is alive rather than that the
 # password prompt is.
-if curl -fsS --max-time 10 http://127.0.0.1:8000/api/conditions/current >/dev/null; then
+#
+# Polled rather than asked once. `systemctl restart` returns when systemd has forked the
+# process, not when uvicorn has bound its socket — measured a second apart on the Pi — so a
+# single request here raced the restart above and reported a healthy deploy as a failed one.
+# `--max-time` was no defence: the socket was not yet listening, so curl did not wait for a
+# timeout, it was refused immediately.
+#
+# The deadline is what makes this a check rather than a longer sleep: a restart that never
+# comes up still fails, just after 30 seconds instead of after 0.
+if wait_for_api; then
   echo "API is serving."
 else
-  echo "API is NOT serving. journalctl -u nazarenow-api -n 50" >&2
+  echo "API is NOT serving after ${API_WAIT_SECONDS}s. journalctl -u nazarenow-api -n 50" >&2
   exit 1
 fi
 

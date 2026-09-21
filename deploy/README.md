@@ -337,6 +337,13 @@ payload and same-origin checks against the actual artefact, publishes it, restar
 services in the right order, and then verifies both that the API is serving and that an
 unauthenticated `/api` request is refused. It exits non-zero if either is wrong.
 
+That first verification waits rather than asking once. `systemctl restart` returns when
+systemd has forked the process, not when uvicorn has bound its socket — about a second apart
+on this host, which was enough for a deploy where everything worked to report the API as
+down. It polls until `API_WAIT_SECONDS` (30 by default) has passed, so an API that is
+genuinely failing to start still fails the deploy, just later.
+`deploy/bin/test-api-wait.sh` covers both halves of that, with no server and no port.
+
 ## Backups, and the restore rehearsal
 
 The timer snapshots daily with SQLite's online backup API — not `cp`, which on a live
