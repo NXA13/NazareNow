@@ -69,6 +69,7 @@ Run:
 from __future__ import annotations
 
 import csv
+import json
 import math
 import sys
 from dataclasses import dataclass
@@ -210,13 +211,35 @@ def shipped_input(budget: ErrorBudget, lead: int, big: bool, amplification: floa
     return math.hypot(band.drift, budget.translation_rmse) * amplification
 
 
+AMPLIFICATION_IS_FITTED_BY = "learned-amplification"
+"""The one Amplification Model whose response `amplification_of` can read.
+
+`amplification.json` holds *that* model's fitted coefficients. No other implementation has a
+linear coefficient to read — the Heuristic Baseline carries its input through unchanged — so
+the file answers for one model by name, not for whichever one the run is using.
+"""
+
+
 def amplification_of(model: AmplificationModel) -> float:
     """The model's linear response to the Combined Sea — how a metre of input error leaves.
 
     Read off the fitted coefficient rather than assumed, because it is the factor that turns
     an input-side term into the output-side quantity every row here is measured in.
+
+    Refuses any other model rather than answering for it. `amplification_model()` picks its
+    implementation from `NAZARENOW_MODEL`, so this function can be handed the Heuristic
+    Baseline — and reading the learned coefficients regardless would print a plausible number
+    from the wrong source beside a header naming the model it did not come from. That is the
+    failure `pipeline.amplification_model` refuses a typo to prevent, and the one this whole
+    module was written to correct: see `settled.py` on the merge that lost the forecast.
     """
-    import json
+    if model.name != AMPLIFICATION_IS_FITTED_BY:
+        raise SystemExit(
+            f"decompose.py measures against {AMPLIFICATION_IS_FITTED_BY!r}, and "
+            f"NAZARENOW_MODEL selected {model.name!r}. amplification.json holds no "
+            f"coefficient for it, and the run would report one model's error at another's "
+            f"amplification. Unset NAZARENOW_MODEL to use the shipped default."
+        )
 
     body = json.loads((ROOT / "backend" / "src" / "nazarenow" / "amplification.json").read_text())
     features = body["features"]

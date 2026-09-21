@@ -29,10 +29,22 @@ was an artefact of the defect the correction above names.
 .venv/Scripts/python.exe analysis/distribution_coverage/sensitivity.py # what the one caveat costs
 .venv/Scripts/python.exe analysis/distribution_coverage/gate_cost.py   # finding 2, in days (#96)
 .venv/Scripts/python.exe analysis/distribution_coverage/ablation.py   # finding 4 (#82)
+.venv/Scripts/python.exe analysis/distribution_coverage/decompose.py  # what a Lead Time costs
 .venv/Scripts/python.exe analysis/distribution_coverage/coverage.py --check   # offline
 .venv/Scripts/python.exe analysis/distribution_coverage/gate_cost.py --check  # offline
 .venv/Scripts/python.exe analysis/distribution_coverage/ablation.py --check  # offline
+.venv/Scripts/python.exe analysis/distribution_coverage/decompose.py --check # offline
 ```
+
+`decompose.py` is the odd one out: it makes point predictions rather than sampling a
+distribution, so it runs in about a second and was what exposed the defect below. It writes
+`output/lead_time_cost.csv` — per Lead Time and subset, the hours scored, the raw RMSE against
+the Proxy Target before the bias correction, the corrected RMSE, and the mean signed error.
+Lead 0 is the settled analysis, the floor the rest are read against. What the Lead Time adds in
+quadrature over that floor, and what the shipped budget claims it is worth, are printed to the
+terminal rather than written to the file. **It supports no published finding here.** It is kept
+as the instrument: a flat `rmse_m` column across Lead Time is the signature the defect showed,
+and the cheapest way to see it again.
 
 Same honest qualification as `analysis/forecast_error/README.md`: only `--check` runs from a
 clean checkout. The rest needs `data/raw/forecast_runs/` (free, no credentials) and the
@@ -295,16 +307,21 @@ it appeared to calibrate the distribution. That reversal is the whole correction
 coverage at one day all hours and 59.0% on big swell. This is the one conclusion the defect did
 not touch, because at one day the forecast and the settled analysis nearly coincide.
 
-**`translation_rmse` is inert**, also unchanged: removing it moves the factor by at most 0.07,
-and by 0.01 at seven days. At 0.130 m it is swamped in quadrature. It is neither the problem nor
-worth touching.
+**`translation_rmse` is inert**, also unchanged: removing it moves the factor by at most 0.07
+(big swell at one day), and by under 0.02 at seven days — 0.015 all hours and 0.012 on big
+swell, which is the 1.00 → 1.02 the table above rounds to. At 0.130 m it is swamped in
+quadrature. It is neither the problem nor worth touching.
 
 ### So what is left to repair
 
 A real but modest over-width in the **middle of the range**, and nothing at the far end. The
 shipped factor dips to 0.73 all hours at four days and 0.82 on big swell — a range about a third
-wider than the outcomes justify — then climbs back to 1.00 and 1.07 by seven. Big swell at seven
-days is the one place the range runs *narrow*: 88.8% coverage against the 90% it claims.
+wider than the outcomes justify — then climbs back to 1.00 and 1.07 by seven. Seven days is the
+one Lead Time where the range runs *narrow*, and it does so in **both** subsets: 88.8% coverage
+on big swell against the 90% it claims, and 89.96% all hours. The second is a hair under rather
+than a miss — it is the row the table rounds to 1.00, at a true factor of 1.0032 — but it is on
+the wrong side of nominal, and `analysis/track_record/publish.py --check` fails on both rows
+rather than only the big-swell one.
 
 That is a different ticket from the one #82 was written as. There is no dominant oversized term
 to re-measure and no growth rate to refit; there is a mid-range bulge and a long-lead edge that

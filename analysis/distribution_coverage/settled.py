@@ -79,7 +79,9 @@ Narrowing this to the three Swell readings would remove the hazard at the source
 better fix; it is not made here because the cached responses under `settled_swell_*` were
 retrieved against this variable set, and re-deriving them is a network round trip this
 analysis is deliberately able to run without. Until then the collision is held by
-`coverage.py --check`, which fails if the merge order is ever put back.
+`coverage.py --check`, which fails if the merge order is ever put back — but only for someone
+who runs it. CI's `Analysis scripts` job is lint and format only and executes no script, so this
+guard protects a person at a terminal, not the branch.
 """
 
 
