@@ -573,6 +573,48 @@ class TestServingTheGrid:
     def freeze(self, monkeypatch, moment: str) -> None:
         monkeypatch.setattr("nazarenow.api.utc_now", lambda: datetime.fromisoformat(moment))
 
+    def test_a_grid_whose_refresh_was_lost_says_so_within_one_cycle(self, store, client):
+        """#139: the system knows the moment a refresh fails, and never told anybody.
+
+        `stale` answers "how old is this?" by arithmetic on a timestamp, and it is right to
+        wait two whole cycles before crying out -- one missed run is a blip, and a warning
+        that fires on blips is a warning nobody reads. But "did the last refresh fail?" is a
+        **different question**, and the run already recorded the answer in `raw_responses`
+        under `GRID_UNAVAILABLE`. Nothing in production read it back, so a lost grid presented
+        as current for up to six hours.
+
+        This is that fact reaching the endpoint: reported, not inferred, and beside `stale`
+        rather than folded into it.
+        """
+        ingest(store, forecast_provider())
+        ingest(store, malformed_grid(forecast_provider()))
+
+        body = client.get("/api/conditions/grid").json()
+
+        assert body["refresh_failed"] is True
+        # And the six-hour rule is untouched: this grid is minutes old by the clock.
+        assert body["stale"] is False
+
+    def test_a_grid_that_refreshed_cleanly_reports_no_failure(self, store, client):
+        # Without this the field above could be hardcoded true and the suite would not notice.
+        ingest(store, forecast_provider())
+
+        body = client.get("/api/conditions/grid").json()
+
+        assert body["refresh_failed"] is False
+        assert body["stale"] is False
+
+    def test_a_failure_older_than_the_grid_it_holds_is_not_reported(self, store, client):
+        # A run that lost the grid and a LATER run that fetched one is a recovery, not a
+        # degradation. Reporting the old failure would make the endpoint say the wind is
+        # doubtful for as long as that row sits in the table -- which is forever.
+        ingest(store, malformed_grid(forecast_provider()))
+        ingest(store, forecast_provider())
+
+        body = client.get("/api/conditions/grid").json()
+
+        assert body["refresh_failed"] is False
+
     def test_an_installation_that_never_fetched_a_grid_says_so(self, store, client):
         # 503, on the same terms as the two endpoints beside it. Two hundred with an empty
         # list would be a map with nothing on it, which a reader cannot tell from a map of a
