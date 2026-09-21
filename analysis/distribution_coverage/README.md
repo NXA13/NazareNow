@@ -1,10 +1,11 @@
 # Does the Predictive Distribution contain the sea that turned up?
 
-> **Correction (#82).** Findings 1 and 2 were measured through a defect in `readings_at` that
-> replaced every Lead Time's forecast with the settled analysis. **Finding 1's table is wrong
-> from two days out** and its headline — the range being nearly twice too wide at seven days —
-> does not survive. Finding 4 has the defect, the corrected numbers and what is actually left
-> to repair. Findings 2 and 3 rest on the same call and have not yet been re-derived.
+> **Correction (#82).** Findings 1, 2 and 3 were measured through a defect in `readings_at`
+> that replaced every Lead Time's forecast with the settled analysis. **Finding 1's table is
+> wrong from two days out** and its headline — the range being nearly twice too wide at seven
+> days — does not survive. Finding 4 has the defect, the corrected numbers and what is actually
+> left to repair. Findings 2 and 3 have since been re-derived on the fixed code and each
+> section says what changed; finding 2's correction is the largest on this page.
 
 
 Ticket [#80](https://github.com/NXA13/NazareNow/issues/80). Every term in the Predictive
@@ -98,53 +99,71 @@ per day of Lead Time — the term ADR 0004 is built on.
 0.58. So the range is nearly honest at one day on the days that matter, and drifts wide the same
 way. That is the subset a Go Call is issued on, and it is the more forgiving of the two.
 
-## Finding 2 — NOT YET RE-DERIVED — the gate's probability is under-confident, and only some of that is by construction
+## Finding 2 — re-derived on the fixed code — the gate is mildly under-confident in the middle of its range
 
-> Built by the same `score()` call as finding 1 and so measured through the same defect. **The
-> prose below is wrong and `output/gate_reliability.csv` has already been regenerated without
-> it** — the file and this section no longer agree, and the file is the one to believe.
+> **What this section used to say, and why it is gone.** Built by the same `score()` call as
+> finding 1, it was measured through the defect #144 fixed. Its central claim was that the
+> reliability table is a *step*: every bin under 0.5 landing on 0.000 and every bin over 0.6 on
+> 1.000, with 0.5–0.6 "the only bin that is ever strictly between 0 and 1". That is false.
+> 136 of 140 bins are strictly between 0 and 1.
 >
-> The correction is large. This section's central claim is that the table is a *step*: every
-> bin under 0.5 landing on 0.000 and every bin over 0.6 on 1.000, with "0.5–0.6 the only bin
-> that is ever strictly between 0 and 1". Regenerated, one day out, shipped terms:
->
-> | Predicted | 0.003 | 0.151 | 0.243 | 0.336 | 0.424 | 0.545 | 0.658 | 0.743 | 0.844 | 0.991 |
-> |---|---|---|---|---|---|---|---|---|---|---|
-> | Happened | 0.001 | 0.108 | 0.157 | 0.342 | 0.414 | 0.667 | 0.887 | 1.000 | 0.989 | 0.997 |
->
-> **Nine** of the ten bins are strictly between 0 and 1, and the column tracks the diagonal. What is left
-> is mild under-confidence between 0.5 and 0.7, which is a far smaller claim than the one this
-> section makes. Rewriting it is its own piece of work; nothing below should be quoted meanwhile.
+> The consequence ran further than the table. The step was the premise of the day-level cost
+> argument below — "every hour in the 0.6–0.7 bin cleared the bar, at every Lead Time" — and
+> that bin in fact never reaches 1.000 at any Lead Time. The re-derived gate cost is two days
+> rather than one, spread over two dates and three Lead Times.
 
 `output/gate_reliability.csv`. `decide` withholds a Go Call unless `height_bar_probability`
 reaches `GO_CALL_MINIMUM_HEIGHT_PROBABILITY`, 0.70. That is a probability of an event that either happened or
 did not — the sea clearing the calibrated height bar — so it can be scored the way any
 probability is: group the hours by what was predicted, and count what happened.
 
-A calibrated forecast puts the two columns on the diagonal. This one is a step. At one day out,
+A calibrated forecast puts the two columns on the diagonal. This one mostly is. At one day out,
 over 6,152 archived hours:
 
 | Predicted | Hours | Mean predicted | Actually cleared the bar |
 |---|---|---|---|
-| 0.0–0.1 | 3,765 | 0.003 | **0.000** |
-| 0.1–0.2 | 164 | 0.153 | **0.000** |
-| 0.2–0.3 | 75 | 0.241 | **0.000** |
-| 0.3–0.4 | 86 | 0.334 | **0.000** |
-| 0.4–0.5 | 25 | 0.424 | **0.000** |
-| 0.5–0.6 | 108 | 0.550 | 0.694 |
-| 0.6–0.7 | 59 | 0.666 | **1.000** |
-| 0.7–0.8 | 70 | 0.745 | **1.000** |
-| 0.8–0.9 | 113 | 0.842 | **1.000** |
-| 0.9–1.0 | 1,687 | 0.991 | **1.000** |
+| 0.0–0.1 | 3,793 | 0.003 | 0.001 |
+| 0.1–0.2 | 185 | 0.151 | 0.108 |
+| 0.2–0.3 | 70 | 0.243 | 0.157 |
+| 0.3–0.4 | 111 | 0.336 | 0.342 |
+| 0.4–0.5 | 29 | 0.424 | 0.414 |
+| 0.5–0.6 | 93 | 0.545 | 0.667 |
+| 0.6–0.7 | 62 | 0.658 | 0.887 |
+| 0.7–0.8 | 44 | 0.743 | **1.000** |
+| 0.8–0.9 | 89 | 0.844 | 0.989 |
+| 0.9–1.0 | 1,676 | 0.991 | 0.997 |
 
-The system says 0.42 where the answer is always no, and 0.67 where the answer is always yes.
-**Across all seven Lead Times and both term sets, 0.5–0.6 is the only bin that is ever strictly
-between 0 and 1.** Everything below it never happened; everything above it always did.
+Nine of the ten bins are strictly between 0 and 1, and the column tracks the diagonal. Across
+all seven Lead Times and both term sets, **136 of 140 bins** are strictly between 0 and 1: the
+four that are not are a single 44-hour bin at one day under each term set, and the empty-end
+0.0–0.1 bin at four days.
 
-That is the same fact finding 1 reports, seen from the input side: a distribution wider than the
-outcomes justify pulls every probability toward the middle. Sharpness is not the complaint —
-a good forecast of a nearly-determined event *should* be sharp. The complaint is that the
-predictions are less sharp than the outcomes, in one direction, everywhere.
+What is left is a real but mild **under-confidence through the middle of the range**. Averaged
+over the seven Lead Times, weighting each bin by its hours:
+
+| Predicted | Hours | Mean predicted | Cleared | Gap |
+|---|---|---|---|---|
+| 0.0–0.1 | 23,118 | 0.008 | 0.003 | −0.006 |
+| 0.1–0.2 | 2,492 | 0.147 | 0.100 | −0.047 |
+| 0.2–0.3 | 1,375 | 0.242 | 0.205 | −0.037 |
+| 0.3–0.4 | 1,063 | 0.345 | 0.357 | +0.013 |
+| 0.4–0.5 | 687 | 0.439 | 0.483 | +0.044 |
+| 0.5–0.6 | 895 | 0.547 | 0.598 | +0.050 |
+| 0.6–0.7 | 907 | 0.652 | 0.722 | **+0.070** |
+| 0.7–0.8 | 1,163 | 0.756 | 0.800 | +0.044 |
+| 0.8–0.9 | 1,490 | 0.846 | 0.903 | +0.057 |
+| 0.9–1.0 | 9,370 | 0.989 | 0.988 | −0.002 |
+
+Both ends are calibrated — the two bins holding 32,488 of the 42,560 scored hours sit within
+0.006 of their own predictions. The middle leans under-confident, worst at 0.6–0.7 and by seven
+points, and 16 of the 21 lead × bin cells between 0.5 and 0.8 lean that way. The low-middle
+leans the *other* way, by about four points at 0.1–0.3. The mean signed gap across every shipped
+cell is +0.023.
+
+That is a far smaller claim than a step, and it points at the same place finding 4 does: the
+range is modestly too wide in the middle and calibrated at the extremes. A distribution wider
+than the outcomes justify pulls a probability toward the middle, and this is that effect seen
+from the input side — at the size finding 4 measures, not the size finding 1 appeared to show.
 
 ### The by-construction explanation, and why it is not the explanation
 
@@ -159,37 +178,63 @@ term is largest relative to drift (0.130 m against 0.095 m):
 
 | Predicted | Shipped: hours → cleared | Drift only: hours → cleared |
 |---|---|---|
-| 0.4–0.5 | 25 → 0.000 | 33 → 0.000 |
-| 0.5–0.6 | 108 → 0.694 | 36 → **1.000** |
-| 0.6–0.7 | 59 → 1.000 | 39 → 1.000 |
-| 0.9–1.0 | 1,687 → 1.000 | 1,800 → 1.000 |
+| 0.4–0.5 | 29 → 0.414 | 33 → 0.576 |
+| 0.5–0.6 | 93 → 0.667 | 31 → 0.613 |
+| 0.6–0.7 | 62 → 0.887 | 29 → 0.828 |
+| 0.9–1.0 | 1,676 → 0.997 | 1,765 → 0.997 |
 
-Removing the term **sharpens the predictions without fixing them**: the top bin gains 113 hours,
-the 0.5–0.6 bin loses two thirds of its own, and what is left of it stops being graded. The step
-survives. Whatever is making the gate under-confident, it is not the bar's own translation
-uncertainty.
+Removing the term **sharpens the predictions without straightening them**: the top bin gains 89
+hours and the 0.5–0.6 bin loses two thirds of its own, but every bin that is left still lands
+where it did. Across all seven Lead Times the hour-weighted absolute gap falls only from 0.0176
+to 0.0142, while the mean *signed* gap moves the wrong way, from +0.023 to +0.030 — the
+predictions concentrate at the ends without the middle's lean going anywhere. Whatever is making
+the gate under-confident, it is not the bar's own translation uncertainty.
 
 ### What that costs the tier it gates
 
-`GO_CALL_MINIMUM_HEIGHT_PROBABILITY` is 0.70, so the 0.6–0.7 bin is withheld. Every hour in it, at every Lead
-Time, cleared the bar: 59 hours at one day, 163 at five, 254 at seven. Those are hours where the
-height condition refused a Go Call and the sea did what the bar asks.
+`GO_CALL_MINIMUM_HEIGHT_PROBABILITY` is 0.70, so the 0.6–0.7 bin is withheld. Most of it cleared
+the bar — 0.887 at one day, then 0.703, 0.641, 0.730, 0.774, 0.650 and 0.761 out to seven, over
+62 to 209 hours a Lead Time. Those are hours where the height condition refused a Go Call and
+the sea mostly did what the bar asks.
+
+The stale version of this section said *every* hour in the bin cleared it, at every Lead Time.
+That was the defect talking, and it is the single largest correction on this page: the bin never
+reaches 1.000 at any Lead Time, and at three and six days it is barely above the 0.65 it
+predicts.
 
 **This is not a count of lost Go Calls and must not be read as one.** The height condition is
 one of several a Go Call rests on — swell period is the one the calibration found actually binds
 — and hours are not days.
 
 **#96 did the conversion, and it is much smaller than the hours suggest.** `gate_cost.py` runs
-the full Go Call rule at every Lead Time, once with the gate and once without, and the gate
-withholds **1 of 15 Go Call days**: 2026-02-21, at every Lead Time from two days out to seven. It
-does not take 2025-12-13, the only Gold Day in the span.
+the full Go Call rule at every Lead Time, once with the gate and once without. Re-derived on the
+fixed code, the gate takes **at most 2 of 14 Go Call days**, and only at three Lead Times:
+
+| Lead | Go Call days, ungated | gated | withheld |
+|---|---|---|---|
+| 2 d | 14 | 14 | 0 |
+| 3 d | 14 | 12 | **2** |
+| 4 d | 15 | 14 | **1** |
+| 5 d | 15 | 15 | 0 |
+| 6 d | 15 | 14 | **1** |
+| 7 d | 14 | 14 | 0 |
+
+Two dates account for all of it — **2026-02-21** and **2026-03-29** — and neither is
+2025-12-13, the only Gold Day in the span. The Gold Day survives the gate at every Lead Time.
+
+This is a larger cost than the stale version claimed (it said one day, 2026-02-21, at every Lead
+Time from two out to seven) and a differently shaped one: the withholding is intermittent rather
+than uniform, which is what a probability sitting near a threshold looks like rather than a
+systematic refusal.
 
 **It runs over a wider archive than the tables above.** Those are joined to the Proxy Target and
 so stop at 2026-02-20; `gate_cost.py` needs no outcome, only a forecast, so it spans the whole
 run archive — **2025-11-16 to 2026-07-31**. That is a partial Big-Wave Season plus four months of
-summer, which is why every row is reported twice, `all` and `Oct-Mar only`. The Go Call days are
-identical under both (15 and 14); only the denominator moves, 257 days against 135. The withheld
-date, 2026-02-21, falls *outside* the window the tables above cover.
+summer, which is why every row is reported twice, `all` and `Oct-Mar only`. Every Go Call count
+and every withheld count is identical under both scopes — each Go Call day falls inside Oct-Mar
+anyway — and only the denominator moves, 251–257 days against 129–135. Both withheld dates,
+2026-02-21 and 2026-03-29, fall *outside* the window the tables above cover, which stops at
+2026-02-20.
 
 The shortest Lead Time shows no Go Calls to withhold, and the reason is availability rather than
 the gate: `go_call_is_available` requires `CONFIRMED_THROUGH < lead_time_days`, so at one day out
@@ -197,15 +242,19 @@ the tier does not exist and those fifteen days are Confirmed instead. Separately
 never reduce a Confirmed at any Lead Time, because `decide` assigns that status in a branch that
 does not read the probability.
 
-So the alarming shape of the bin table — a whole band in which every hour cleared the bar — costs
-one day. That is worth knowing before spending #82's repair on it.
+So what is left of the bin table's alarming shape — a band leaning seven points under-confident
+rather than a band in which every hour cleared the bar — costs two days out of fourteen, at the
+worst Lead Time, and never the day that mattered. That is worth knowing before spending #82's
+repair on it.
 
-## Finding 3 — NOT YET RE-DERIVED — what the one flattering approximation actually costs
+## Finding 3 — re-derived on the fixed code — what the one flattering approximation actually costs
 
-> `sensitivity.py` calls `readings_at` too, so `output/settled_feature_cost.csv` carries the
-> same defect. This section measured what the settled-feature approximation costs — and the
-> defect *was* that approximation, applied to the one feature the section assumed was exempt.
-> It needs re-running before any of it is read.
+> Re-derived after #144. This section measured what the settled-feature approximation costs,
+> and the defect *was* that approximation, applied to the one feature the section assumed was
+> exempt — so its premise was the thing most at risk. It survived: the centre shifts are
+> unchanged to three decimals, because they depend on the size of the perturbation rather than
+> on where the centre sits. What moved is the coverage column, which was finding 1's and is now
+> finding 4's.
 
 `output/settled_feature_cost.csv`. Seven of the model's eight features go unperturbed by
 `distribution`, because the Swell partition is not archived at any Lead Time (ADR 0004's #14
@@ -216,13 +265,22 @@ It is. Perturbing them by the Combined Sea partition's own measured drift, over 
 
 | Lead | Median centre shift | p95 | Median, as share of half-width | Coverage, settled | Coverage, perturbed |
 |---|---|---|---|---|---|
-| 1 d | 0.006 m | 0.017 m | 0.9% | 94.0% | 93.9% |
-| 4 d | 0.015 m | 0.047 m | 1.7% | 98.5% | 98.5% |
-| 7 d | 0.030 m | 0.098 m | 2.4% | 99.4% | 99.3% |
+| 1 d | 0.006 m | 0.017 m | 0.9% | 94.5% | 94.4% |
+| 2 d | 0.010 m | 0.031 m | 1.4% | 94.6% | 94.6% |
+| 3 d | 0.013 m | 0.039 m | 1.5% | 95.5% | 95.5% |
+| 4 d | 0.015 m | 0.047 m | 1.7% | 96.1% | 96.0% |
+| 5 d | 0.019 m | 0.059 m | 1.8% | 94.5% | 94.4% |
+| 6 d | 0.024 m | 0.076 m | 2.1% | 92.3% | 92.5% |
+| 7 d | 0.030 m | 0.098 m | 2.4% | 90.0% | 89.9% |
 
-**The whole approximation is worth at most 0.12 points of coverage**, at the Lead Time where it
-should bite hardest. It cannot account for a gap of nine points, and finding 1 does not depend
-on it.
+**The whole approximation is worth at most 0.23 points of coverage**, at six days, and it does
+not have a consistent sign: at three and six days perturbing the features *raises* coverage
+rather than lowering it. A stand-in whose effect changes direction across Lead Time is at the
+noise level of this sample, which is the strongest form the conclusion can take here.
+
+It cannot account for what finding 4 does report. The shipped range is about a third wider than
+the outcomes justify in the middle — a factor of 0.73 at four days — and a fifth of a point of
+coverage is not that.
 
 The stand-in errs upward: the Combined Sea is Swell plus locally-raised wind sea, and the wind
 sea is the component that appears and disappears within a forecast cycle, so its drift is at
@@ -406,6 +464,13 @@ says.
 
 The interesting part is that the repair is not obviously in the user's favour. A range that is
 too wide is a system claiming less than it knows — honest in one direction, and the direction
-that costs a Traveller a trip they would have taken rather than one they should not have. Both
-findings say the same thing about the Watch and Go tiers: the system currently errs toward
-silence.
+that costs a Traveller a trip they would have taken rather than one they should not have. That
+is what findings 2 and 4 both report through the middle of the range: the system errs toward
+silence there.
+
+**It does not err that way everywhere, and that is the correction #82 leaves behind.** At seven
+days both subsets run marginally *narrow* — 89.96% all hours and 88.8% on big swell, against the
+90% claimed — so at the longest Lead Time the system claims slightly more than it knows, on the
+days it exists for. That edge has no slack in it, and any narrowing aimed at the middle has to
+leave it alone. Finding 1's old headline pointed the opposite way at exactly this Lead Time,
+which is the clearest measure of how far the defect moved the conclusion.
