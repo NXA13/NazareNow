@@ -1,5 +1,12 @@
 # Does the Predictive Distribution contain the sea that turned up?
 
+> **Correction (#82).** Findings 1 and 2 were measured through a defect in `readings_at` that
+> replaced every Lead Time's forecast with the settled analysis. **Finding 1's table is wrong
+> from two days out** and its headline — the range being nearly twice too wide at seven days —
+> does not survive. Finding 4 has the defect, the corrected numbers and what is actually left
+> to repair. Findings 2 and 3 rest on the same call and have not yet been re-derived.
+
+
 Ticket [#80](https://github.com/NXA13/NazareNow/issues/80). Every term in the Predictive
 Distribution had been measured. Their sum had not.
 
@@ -10,7 +17,9 @@ by [#52](https://github.com/NXA13/NazareNow/issues/52) and
 [#13](https://github.com/NXA13/NazareNow/issues/13). Nothing ever asked whether the range the
 site prints holds the outcome as often as it claims to.
 
-It does not. **It holds it more often**, and the excess grows with Lead Time.
+It does not. **It holds it more often** — but only modestly, and only out to about five days.
+The sentence that stood here until #82 said the excess *grows* with Lead Time, and that growth
+was an artefact of the defect the correction above names.
 
 ## Running it
 
@@ -19,15 +28,22 @@ It does not. **It holds it more often**, and the excess grows with Lead Time.
 .venv/Scripts/python.exe analysis/distribution_coverage/coverage.py    # findings 1 and 2
 .venv/Scripts/python.exe analysis/distribution_coverage/sensitivity.py # what the one caveat costs
 .venv/Scripts/python.exe analysis/distribution_coverage/gate_cost.py   # finding 2, in days (#96)
+.venv/Scripts/python.exe analysis/distribution_coverage/ablation.py   # finding 4 (#82)
 .venv/Scripts/python.exe analysis/distribution_coverage/coverage.py --check   # offline
 .venv/Scripts/python.exe analysis/distribution_coverage/gate_cost.py --check  # offline
+.venv/Scripts/python.exe analysis/distribution_coverage/ablation.py --check  # offline
 ```
 
 Same honest qualification as `analysis/forecast_error/README.md`: only `--check` runs from a
 clean checkout. The rest needs `data/raw/forecast_runs/` (free, no credentials) and the
 training dataset (Copernicus, and only for the interval table's outcomes).
 
-## Finding 1 — the range is too wide, and the excess grows with Lead Time
+## Finding 1 — SUPERSEDED BY FINDING 4 — the range is too wide, and the excess grows with Lead Time
+
+> Every number in this section was measured through the `readings_at` defect and **the table is
+> wrong from two days out**. It is preserved unedited because finding 4 quotes it, and because
+> a measurement this project published and then withdrew is part of the record. Read finding 4
+> first; nothing below has been corrected in place.
 
 `output/interval_coverage.csv`. `PredictiveDistribution.range_m` is the 5th to 95th percentile
 of the draws, so it claims to hold the outcome **90%** of the time. Over the 1,593 hours
@@ -70,7 +86,23 @@ per day of Lead Time — the term ADR 0004 is built on.
 0.58. So the range is nearly honest at one day on the days that matter, and drifts wide the same
 way. That is the subset a Go Call is issued on, and it is the more forgiving of the two.
 
-## Finding 2 — the gate's probability is under-confident, and only some of that is by construction
+## Finding 2 — NOT YET RE-DERIVED — the gate's probability is under-confident, and only some of that is by construction
+
+> Built by the same `score()` call as finding 1 and so measured through the same defect. **The
+> prose below is wrong and `output/gate_reliability.csv` has already been regenerated without
+> it** — the file and this section no longer agree, and the file is the one to believe.
+>
+> The correction is large. This section's central claim is that the table is a *step*: every
+> bin under 0.5 landing on 0.000 and every bin over 0.6 on 1.000, with "0.5–0.6 the only bin
+> that is ever strictly between 0 and 1". Regenerated, one day out, shipped terms:
+>
+> | Predicted | 0.003 | 0.151 | 0.243 | 0.336 | 0.424 | 0.545 | 0.658 | 0.743 | 0.844 | 0.991 |
+> |---|---|---|---|---|---|---|---|---|---|---|
+> | Happened | 0.001 | 0.108 | 0.157 | 0.342 | 0.414 | 0.667 | 0.887 | 1.000 | 0.989 | 0.997 |
+>
+> **Nine** of the ten bins are strictly between 0 and 1, and the column tracks the diagonal. What is left
+> is mild under-confidence between 0.5 and 0.7, which is a far smaller claim than the one this
+> section makes. Rewriting it is its own piece of work; nothing below should be quoted meanwhile.
 
 `output/gate_reliability.csv`. `decide` withholds a Go Call unless `height_bar_probability`
 reaches `GO_CALL_MINIMUM_HEIGHT_PROBABILITY`, 0.70. That is a probability of an event that either happened or
@@ -156,7 +188,12 @@ does not read the probability.
 So the alarming shape of the bin table — a whole band in which every hour cleared the bar — costs
 one day. That is worth knowing before spending #82's repair on it.
 
-## Finding 3 — what the one flattering approximation actually costs
+## Finding 3 — NOT YET RE-DERIVED — what the one flattering approximation actually costs
+
+> `sensitivity.py` calls `readings_at` too, so `output/settled_feature_cost.csv` carries the
+> same defect. This section measured what the settled-feature approximation costs — and the
+> defect *was* that approximation, applied to the one feature the section assumed was exempt.
+> It needs re-running before any of it is read.
 
 `output/settled_feature_cost.csv`. Seven of the model's eight features go unperturbed by
 `distribution`, because the Swell partition is not archived at any Lead Time (ADR 0004's #14
@@ -178,6 +215,128 @@ on it.
 The stand-in errs upward: the Combined Sea is Swell plus locally-raised wind sea, and the wind
 sea is the component that appears and disappears within a forecast cycle, so its drift is at
 least the travelled component's. `sensitivity.py` carries the argument.
+
+## Finding 4 — finding 1 was measuring a defect, and the budget is close to right (#82)
+
+[#82](https://github.com/NXA13/NazareNow/issues/82) asked which of the three terms is
+oversized. The answer is **none of them by much**, and getting there meant finding out why the
+question looked so easy.
+
+### The defect
+
+`readings_at` built its feature dictionary with the lead-N Combined Sea first and `**partition`
+spread **last**. `partition` comes from `settled()`, whose `SETTLED_READINGS` is
+`MARINE_READINGS` — and that map carries `"significant_wave_height": "wave_height"` beside the
+Swell fields. So the settled Combined Sea overwrote the forecast on every row this module ever
+built.
+
+**Every distribution in finding 1 was centred on the settled analysis at every Lead Time**,
+while its width went on growing with one. Coverage then rises with Lead Time *by construction*:
+the centre never degrades, and the interval around it keeps widening. That is the shape finding
+1 reported as a result about the error budget.
+
+Nothing failed, and nothing could have. The key is spelled identically in both dictionaries,
+the type matches, and the value left behind is a plausible sea for the hour. Every row
+validated, every join matched, every share summed to one. `settled.py`'s own header asserted
+that the Combined Sea *is not fetched here*, which is false and is what made the collision
+invisible to anyone reading the caller.
+
+The only question that separates a correct row from a wrong one is whether lead 7 differs from
+lead 0 at all. `coverage.py --check` now asks exactly that, on a synthetic partition built to
+collide, and fails on both halves if the merge order is ever restored.
+
+### What finding 1 actually is
+
+The table in finding 1 above is **wrong from two days out** and is kept only so this correction
+has something to point at. At one day the defect barely bites — a lead-1 forecast and the
+settled analysis are nearly the same reading — which is why that row survives almost unchanged.
+The divergence grows with Lead Time, exactly as the mechanism predicts.
+
+| Lead | coverage, as published | coverage, corrected | widening, published | widening, corrected |
+|---|---|---|---|---|
+| 1 d | 94.0% | 94.5% | 0.82 | 0.83 |
+| 4 d | 98.5% | 96.1% | 0.60 | 0.73 |
+| 7 d | 99.4% | **90.0%** | 0.53 | **1.00** |
+
+The headline — *"nearly twice the width the outcomes justify"* at seven days — was manufactured
+entirely by the defect. The range is calibrated there.
+
+### The corrected ablation
+
+Widening factor, all hours. 1.00 is calibrated, below 1 is too wide, above 1 is too narrow:
+
+| Lead | shipped | no drift | no translation | no own_error |
+|---|---|---|---|---|
+| 1 d | 0.83 | 0.86 | 0.90 | 1.79 |
+| 2 d | 0.80 | 0.95 | 0.86 | 1.28 |
+| 3 d | 0.76 | 0.98 | 0.83 | 1.14 |
+| 4 d | 0.73 | 1.07 | 0.77 | 1.01 |
+| 5 d | 0.81 | 1.37 | 0.83 | 1.02 |
+| 6 d | 0.89 | 1.60 | 0.91 | 1.06 |
+| 7 d | **1.00** | 2.05 | 1.02 | 1.15 |
+
+And on big swell:
+
+| Lead | shipped | no drift | no translation | no own_error |
+|---|---|---|---|---|
+| 1 d | 0.93 | 0.99 | 1.00 | 2.20 |
+| 2 d | 0.94 | 1.10 | 0.99 | 1.53 |
+| 3 d | 0.87 | 1.13 | 0.90 | 1.29 |
+| 4 d | 0.82 | 1.24 | 0.86 | 1.11 |
+| 5 d | 0.95 | 1.61 | 0.97 | 1.17 |
+| 6 d | 0.88 | 1.64 | 0.89 | 1.07 |
+| 7 d | **1.07** | 2.18 | 1.08 | 1.22 |
+
+**The drift term is essential and about the right size.** Removing it now *under*-covers hard —
+67.2% at seven days all hours and 64.1% on big swell, a factor above 2 — where under the defect
+it appeared to calibrate the distribution. That reversal is the whole correction in one column.
+
+**`own_error` is load-bearing at short Lead Time**, exactly as before: removing it leaves 67.2%
+coverage at one day all hours and 59.0% on big swell. This is the one conclusion the defect did
+not touch, because at one day the forecast and the settled analysis nearly coincide.
+
+**`translation_rmse` is inert**, also unchanged: removing it moves the factor by at most 0.07,
+and by 0.01 at seven days. At 0.130 m it is swamped in quadrature. It is neither the problem nor
+worth touching.
+
+### So what is left to repair
+
+A real but modest over-width in the **middle of the range**, and nothing at the far end. The
+shipped factor dips to 0.73 all hours at four days and 0.82 on big swell — a range about a third
+wider than the outcomes justify — then climbs back to 1.00 and 1.07 by seven. Big swell at seven
+days is the one place the range runs *narrow*: 88.8% coverage against the 90% it claims.
+
+That is a different ticket from the one #82 was written as. There is no dominant oversized term
+to re-measure and no growth rate to refit; there is a mid-range bulge and a long-lead edge that
+has no slack left in it. **Whether it is worth touching at all is a judgement**, and the
+direction matters: a range that runs wide costs a Traveller a trip they would have taken, while
+the seven-day big-swell row is the opposite error on the days the system exists to call.
+
+**`GO_CALL_MINIMUM_HEIGHT_PROBABILITY` still moves with any change**, for the reason "What
+follows" gives below — and that reason is now stronger, not weaker, because the distribution
+turns out to be close to calibrated and a correction to it is a smaller, sharper change to every
+`height_bar_probability` than a near-halving would have been.
+
+### A second defect, unrelated and still open
+
+The Proxy Target carries an **instrument fault on 2026-01-24, 25 and 26**. The seven largest
+hour-to-hour changes in the whole 14-year record — 4.17 m to 6.99 m — all fall on those three
+days, against a median hourly change of 0.103 m and a 99th percentile of 0.791 m over 73,396
+consecutive-hour pairs; the eighth largest is 2.33 m, in 2014. The buoy oscillates between 4.5 m
+and 13.8 m hour to hour while the independent Hindcast decays smoothly through the same hours,
+and it reports intermittently across all three days. Significant Wave Height is a sea-state
+statistic over tens of minutes and cannot do that.
+
+It is 46 hours, 2.89% of this module's evaluation window, and it is **not** in the Amplification
+Model's residual: those rows carry no wind in the training dataset (`wind_present` is false), so
+the held-out fit already drops them. Recomputing the shipped residual from
+`amplification.json`'s own coefficients over the held-out seasons reproduces 0.2820 and 0.4653
+exactly, with none of these hours in it.
+
+The percentile figures above are robust to it — 2.89% sits inside the tail the widening factor
+is read at, so it can only make the range look *narrower* than it is, which is the conservative
+direction for every "too wide" reading here. It has not been filtered out, and doing so needs
+its own ticket: the fault is in `analysis/training_dataset/`, upstream of everything.
 
 ## What this cannot settle
 

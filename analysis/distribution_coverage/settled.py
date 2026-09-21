@@ -18,10 +18,16 @@ The plain variables are served for past dates where the `_previous_dayN` suffixe
 back null — the negative result `download_runs.probe_archive` records. This module is the
 positive half of the same probe.
 
-**Wind and Combined Sea are not fetched here.** Both are already in the forecast archive at
-Lead Time 0, which is the same settled reading: `waves()` carries `wave_height` and `wind()`
-carries both wind variables. Re-retrieving them would put a second copy of the same hour in
-a second cache, and the two could disagree.
+**Wind is not fetched here.** It is already in the forecast archive at Lead Time 0, which is
+the same settled reading: `wind()` carries both wind variables. Re-retrieving it would put a
+second copy of the same hour in a second cache, and the two could disagree.
+
+**The Combined Sea *is* fetched here, and that is a trap — see `SETTLED_READINGS`.** This
+paragraph claimed for the whole of #80 that it was not, on the same reasoning as the wind. It
+is, because `SETTLED_READINGS` is `MARINE_READINGS` and that map carries `wave_height`. The
+false claim is what made #82's defect invisible: a caller reading this would never think to
+check whether the dictionary it returns could overwrite a forecast, and in `coverage.readings_at`
+it did, silently, on every row. `coverage.py --check` now proves it cannot.
 
 `_get` is imported rather than reimplemented. It is thirty lines of retry, backoff and
 cache policy toward a free provider the whole project depends on, and a second copy would be
@@ -56,12 +62,24 @@ from nazarenow.sources.open_meteo import (  # noqa: E402
 )
 
 SETTLED_READINGS = MARINE_READINGS
-"""The Swell partition, under the reading names the model consumes.
+"""Every marine reading, under the names the model consumes — **not only the Swell partition**.
 
 Imported from the running system rather than retyped. `heuristic.predict` reads
 `readings["swell_period"]` and the learned model's feature map reads `readings["swell_height"]`
 — so a local spelling here would be a second name for the same thing, and the failure would be
 a `KeyError` in the middle of a nine-month scoring run rather than at the boundary.
+
+**It also carries `significant_wave_height`, and a caller must assume it does.** That is the
+Combined Sea, settled — the one quantity a Lead Time is supposed to change. Merge this dict
+over a forecast and the forecast is gone, with no error, no type mismatch and a wholly
+plausible number left behind. #82 found exactly that in `coverage.readings_at`, where it had
+centred every distribution in #80 on the settled analysis at every Lead Time.
+
+Narrowing this to the three Swell readings would remove the hazard at the source and is the
+better fix; it is not made here because the cached responses under `settled_swell_*` were
+retrieved against this variable set, and re-deriving them is a network round trip this
+analysis is deliberately able to run without. Until then the collision is held by
+`coverage.py --check`, which fails if the merge order is ever put back.
 """
 
 
