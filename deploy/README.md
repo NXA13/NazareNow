@@ -184,8 +184,9 @@ A tunnel hostname is a CNAME to `<tunnel-id>.cfargotunnel.com`, and only Cloudfl
 will issue one — so the zone has to live there. The domain stays registered at Fasthosts;
 only the nameservers change.
 
-1. Add `nazarenow.com` as a site in the Cloudflare dashboard and let it scan the existing
-   records.
+1. **Create a new Cloudflare account for this site** (see 6b for why the separation is free
+   at runtime and what it costs at the terminal), then add `nazarenow.com` to it and let the
+   dashboard scan the existing records.
 2. **Check the imported records before continuing, MX especially.** Anything the scan missed
    stops working the moment the nameservers change, and email is the usual casualty.
 3. Change the nameservers at Fasthosts to the pair Cloudflare gives you.
@@ -193,10 +194,36 @@ only the nameservers change.
 
 #### 6b. Create the tunnel
 
+**NazaréNow gets its own Cloudflare account**, separate from the ones the neighbouring sites
+use, matching how those are already kept apart from each other.
+
+That separation is **invisible at runtime.** A tunnel authenticates with its credentials JSON,
+which is self-contained, so `cloudflared tunnel run`, `nazarenow.yml` and the systemd unit
+never know or care which account issued it. Three tunnels from three accounts coexist on this
+host with no special handling.
+
+It is *not* invisible to the management commands. `tunnel login`, `tunnel create` and
+`tunnel route dns` authenticate with **`~/.cloudflared/cert.pem`, of which there is exactly
+one**, and a login overwrites it with whichever account was just authorised. Overwriting it
+does not disturb a running tunnel — nothing at runtime reads it. What it does mean is that the
+account logged in last is the only one whose tunnels can be *managed* until someone logs in
+again, which on a host with three accounts is a trap worth stepping around:
+
 ```bash
-# Authorises this machine for the zone. It prints a URL to open in a browser — the Pi does
-# not need one. This refreshes ~/.cloudflared/cert.pem, which is safe: the tunnels already
-# running authenticate with their own credentials JSON at runtime, not with cert.pem.
+# Confirm the installed cloudflared supports pointing at a specific cert. This host runs an
+# older build than current, and its update timer belongs to the other sites, not to us.
+cloudflared tunnel --help | grep -i origincert
+```
+
+If it does, keep one cert per account and no login ever clobbers another. The environment
+variable is used in preference to the flag only because it avoids any question of where the
+flag sits relative to the subcommand:
+
+```bash
+export TUNNEL_ORIGIN_CERT=~/.cloudflared/cert-nazarenow.pem
+
+# Authorises this machine for the new account's zone. Prints a URL to open in a browser —
+# the Pi does not need one. Select nazarenow.com.
 cloudflared tunnel login
 
 # Prints the tunnel id and writes ~/.cloudflared/<tunnel-id>.json. That file is the secret.
@@ -205,10 +232,17 @@ cloudflared tunnel create nazarenow
 # Match how the existing tunnels are stored: root-owned, unreadable by anyone else.
 sudo install -m 400 -o root -g root ~/.cloudflared/<tunnel-id>.json /etc/cloudflared/
 
-# The CNAMEs. This is what makes the names resolve to the tunnel.
+# The CNAMEs. This is what makes the names resolve to the tunnel. Same shell, so still
+# under TUNNEL_ORIGIN_CERT above — in a new shell, export it again or these authenticate as
+# whichever account owns the default cert.pem and fail to find the zone.
 cloudflared tunnel route dns nazarenow nazarenow.com
 cloudflared tunnel route dns nazarenow www.nazarenow.com
 ```
+
+If `--origincert` turns out not to be supported, the fallback is simply to run the three
+commands above without it and accept that `cert.pem` now belongs to the NazaréNow account.
+Nothing breaks: the other two tunnels keep running untouched, and managing them again is
+another `cloudflared tunnel login`.
 
 Then the config, with both `<tunnel-id>` placeholders replaced:
 
