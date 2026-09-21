@@ -159,11 +159,25 @@ def readings_at(
         return None
     if "wind_speed_10m" not in settled_wind or "wind_direction_10m" not in settled_wind:
         return None
+    # `partition` is spread **first**, and the Combined Sea is written after it. That order is
+    # load-bearing and was the other way round until #82.
+    #
+    # `settled.SETTLED_READINGS` is `MARINE_READINGS`, which carries
+    # `"significant_wave_height": "wave_height"` alongside the Swell partition — so a settled
+    # Combined Sea arrives in `partition` whatever this function intends. Spread last, it
+    # overwrote `forecast` on every row, and every distribution this module built was centred
+    # on the settled analysis at *every* Lead Time while its width went on growing with one.
+    # Coverage then rose with Lead Time by construction, which is exactly the shape #80
+    # reported as a finding about the error budget.
+    #
+    # Nothing failed. The key is spelled identically in both dicts, the types match, and the
+    # value is a plausible sea — the defect is invisible at every point except the one test
+    # that asks whether a lead-7 row differs from a lead-0 row at all.
     return {
+        **partition,
         "significant_wave_height": float(forecast),
         "wind_speed": float(settled_wind["wind_speed_10m"]),
         "wind_direction": float(settled_wind["wind_direction_10m"]),
-        **partition,
     }
 
 
@@ -515,6 +529,60 @@ def main() -> int:
     return 0
 
 
+def _check_readings_at(expect) -> None:
+    """`readings_at` must return the **lead-N** Combined Sea, on synthetic readings.
+
+    This is the guard #82 added after finding that it did not. `settled()` returns the Swell
+    partition under the names the model consumes, and `SETTLED_READINGS` is `MARINE_READINGS`
+    — which carries `significant_wave_height` too. Spread after the forecast, it replaced it,
+    and every distribution this module built was centred on the settled analysis at every Lead
+    Time. The measured widths still grew, so coverage rose with Lead Time by construction and
+    the result read as a finding about the error budget.
+
+    **Nothing else could have caught it.** The collision is same-key, same-type and
+    same-plausible-magnitude; every row validated, every join matched, every total summed. The
+    one question that separates a correct row from a wrong one is whether lead 7 differs from
+    lead 0 — so that is what this asks, on a partition deliberately built to collide.
+
+    It runs on invented readings rather than the archive, which is what lets it live in the
+    offline `--check` alongside the table guards.
+    """
+    hour = "2026-01-01T00:00"
+    sea = Runs(
+        name="sea",
+        readings={hour: {lead: {"wave_height": 2.0 + lead} for lead in (0, *LEAD_TIMES)}},
+    )
+    winds = Runs(
+        name="wind", readings={hour: {0: {"wind_speed_10m": 11.0, "wind_direction_10m": 300.0}}}
+    )
+    # The collision, reproduced on purpose: a partition carrying its own Combined Sea, which
+    # is exactly what `settled()` supplies.
+    swell = {
+        hour: {
+            "swell_height": 1.5,
+            "swell_period": 12.0,
+            "swell_direction": 300.0,
+            "significant_wave_height": 999.0,
+        }
+    }
+
+    seen = {}
+    for lead in (0, *LEAD_TIMES):
+        features = readings_at(hour, lead, sea, winds, swell)
+        seen[lead] = None if features is None else features["significant_wave_height"]
+
+    expect(
+        "readings_at takes the Combined Sea from the Lead Time",
+        all(seen[lead] == 2.0 + lead for lead in (0, *LEAD_TIMES)),
+        f"the settled partition overwrote the forecast — got {seen}",
+    )
+    expect(
+        "readings_at varies with Lead Time",
+        len(set(seen.values())) == len(seen),
+        f"every Lead Time returned the same Combined Sea: {seen}",
+    )
+
+
 def check() -> int:
     """Re-check the committed tables offline: the arithmetic, and the joins that would lie.
 
@@ -528,6 +596,8 @@ def check() -> int:
     def expect(label: str, condition: bool, detail: str) -> None:
         if not condition:
             failures.append(f"{label}: {detail}")
+
+    _check_readings_at(expect)
 
     coverage_path = OUTPUT / "interval_coverage.csv"
     gate_path = OUTPUT / "gate_reliability.csv"
