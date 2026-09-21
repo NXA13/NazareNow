@@ -249,12 +249,12 @@ repair on it.
 
 ## Finding 3 — re-derived on the fixed code — what the one flattering approximation actually costs
 
-> Re-derived after #144. This section measured what the settled-feature approximation costs,
-> and the defect *was* that approximation, applied to the one feature the section assumed was
-> exempt — so its premise was the thing most at risk. It survived: the centre shifts are
-> unchanged to three decimals, because they depend on the size of the perturbation rather than
-> on where the centre sits. What moved is the coverage column, which was finding 1's and is now
-> finding 4's.
+> Re-derived after #144, and again after #145. This section measured what the settled-feature
+> approximation costs, and the defect *was* that approximation, applied to the one feature the
+> section assumed was exempt — so its premise was the thing most at risk. It survived both
+> times: the centre shifts are unchanged to three decimals, because they depend on the size of
+> the perturbation rather than on where the centre sits. What moves is the coverage column,
+> which was finding 1's and is now finding 4's.
 
 `output/settled_feature_cost.csv`. Seven of the model's eight features go unperturbed by
 `distribution`, because the Swell partition is not archived at any Lead Time (ADR 0004's #14
@@ -265,13 +265,13 @@ It is. Perturbing them by the Combined Sea partition's own measured drift, over 
 
 | Lead | Median centre shift | p95 | Median, as share of half-width | Coverage, settled | Coverage, perturbed |
 |---|---|---|---|---|---|
-| 1 d | 0.006 m | 0.017 m | 0.9% | 94.5% | 94.4% |
-| 2 d | 0.010 m | 0.031 m | 1.4% | 94.6% | 94.6% |
-| 3 d | 0.013 m | 0.039 m | 1.5% | 95.5% | 95.5% |
-| 4 d | 0.015 m | 0.047 m | 1.7% | 96.1% | 96.0% |
-| 5 d | 0.019 m | 0.059 m | 1.8% | 94.5% | 94.4% |
-| 6 d | 0.024 m | 0.076 m | 2.1% | 92.3% | 92.5% |
-| 7 d | 0.030 m | 0.098 m | 2.4% | 90.0% | 89.9% |
+| 1 d | 0.006 m | 0.017 m | 0.9% | 94.9% | 94.8% |
+| 2 d | 0.010 m | 0.031 m | 1.4% | 95.0% | 95.0% |
+| 3 d | 0.013 m | 0.039 m | 1.5% | 95.9% | 95.9% |
+| 4 d | 0.015 m | 0.048 m | 1.7% | 96.5% | 96.5% |
+| 5 d | 0.019 m | 0.059 m | 1.8% | 95.0% | 94.8% |
+| 6 d | 0.024 m | 0.076 m | 2.1% | 92.7% | 92.9% |
+| 7 d | 0.030 m | 0.098 m | 2.4% | 90.3% | 90.2% |
 
 **The whole approximation is worth at most 0.23 points of coverage**, at six days, and it does
 not have a consistent sign: at three and six days perturbing the features *raises* coverage
@@ -279,7 +279,7 @@ rather than lowering it. A stand-in whose effect changes direction across Lead T
 noise level of this sample, which is the strongest form the conclusion can take here.
 
 It cannot account for what finding 4 does report. The shipped range is about a third wider than
-the outcomes justify in the middle — a factor of 0.73 at four days — and a fifth of a point of
+the outcomes justify in the middle — a factor of 0.72 at four days — and a fifth of a point of
 coverage is not that.
 
 The stand-in errs upward: the Combined Sea is Swell plus locally-raised wind sea, and the wind
@@ -324,9 +324,9 @@ The divergence grows with Lead Time, exactly as the mechanism predicts.
 
 | Lead | coverage, as published | coverage, corrected | widening, published | widening, corrected |
 |---|---|---|---|---|
-| 1 d | 94.0% | 94.5% | 0.82 | 0.83 |
-| 4 d | 98.5% | 96.1% | 0.60 | 0.73 |
-| 7 d | 99.4% | **90.0%** | 0.53 | **1.00** |
+| 1 d | 94.0% | 94.9% | 0.82 | 0.81 |
+| 4 d | 98.5% | 96.5% | 0.60 | 0.72 |
+| 7 d | 99.4% | **90.3%** | 0.53 | **0.98** |
 
 The headline — *"nearly twice the width the outcomes justify"* at seven days — was manufactured
 entirely by the defect. The range is calibrated there.
@@ -337,49 +337,53 @@ Widening factor, all hours. 1.00 is calibrated, below 1 is too wide, above 1 is 
 
 | Lead | shipped | no drift | no translation | no own_error |
 |---|---|---|---|---|
-| 1 d | 0.83 | 0.86 | 0.90 | 1.79 |
-| 2 d | 0.80 | 0.95 | 0.86 | 1.28 |
-| 3 d | 0.76 | 0.98 | 0.83 | 1.14 |
-| 4 d | 0.73 | 1.07 | 0.77 | 1.01 |
-| 5 d | 0.81 | 1.37 | 0.83 | 1.02 |
-| 6 d | 0.89 | 1.60 | 0.91 | 1.06 |
-| 7 d | **1.00** | 2.05 | 1.02 | 1.15 |
+| 1 d | 0.81 | 0.85 | 0.88 | 1.75 |
+| 2 d | 0.79 | 0.93 | 0.85 | 1.27 |
+| 3 d | 0.75 | 0.97 | 0.79 | 1.13 |
+| 4 d | 0.72 | 1.06 | 0.75 | 1.00 |
+| 5 d | 0.80 | 1.34 | 0.83 | 1.01 |
+| 6 d | 0.88 | 1.57 | 0.89 | 1.04 |
+| 7 d | **0.98** | 2.02 | 1.00 | 1.11 |
 
 And on big swell:
 
 | Lead | shipped | no drift | no translation | no own_error |
 |---|---|---|---|---|
-| 1 d | 0.93 | 0.99 | 1.00 | 2.20 |
-| 2 d | 0.94 | 1.10 | 0.99 | 1.53 |
-| 3 d | 0.87 | 1.13 | 0.90 | 1.29 |
-| 4 d | 0.82 | 1.24 | 0.86 | 1.11 |
-| 5 d | 0.95 | 1.61 | 0.97 | 1.17 |
-| 6 d | 0.88 | 1.64 | 0.89 | 1.07 |
-| 7 d | **1.07** | 2.18 | 1.08 | 1.22 |
+| 1 d | 0.91 | 0.96 | 0.97 | 2.15 |
+| 2 d | 0.90 | 1.07 | 0.95 | 1.48 |
+| 3 d | 0.85 | 1.10 | 0.87 | 1.25 |
+| 4 d | 0.80 | 1.21 | 0.82 | 1.08 |
+| 5 d | 0.91 | 1.54 | 0.93 | 1.15 |
+| 6 d | 0.87 | 1.55 | 0.87 | 1.03 |
+| 7 d | **1.02** | 2.10 | 1.03 | 1.17 |
 
 **The drift term is essential and about the right size.** Removing it now *under*-covers hard —
-67.2% at seven days all hours and 64.1% on big swell, a factor above 2 — where under the defect
+67.5% at seven days all hours and 64.6% on big swell, a factor above 2 — where under the defect
 it appeared to calibrate the distribution. That reversal is the whole correction in one column.
 
-**`own_error` is load-bearing at short Lead Time**, exactly as before: removing it leaves 67.2%
-coverage at one day all hours and 59.0% on big swell. This is the one conclusion the defect did
-not touch, because at one day the forecast and the settled analysis nearly coincide.
+**`own_error` is load-bearing at short Lead Time**, exactly as before: removing it leaves 67.5%
+coverage at one day all hours and 59.5% on big swell. This is the one conclusion neither defect
+touched, because at one day the forecast and the settled analysis nearly coincide.
 
-**`translation_rmse` is inert**, also unchanged: removing it moves the factor by at most 0.07
-(big swell at one day), and by under 0.02 at seven days — 0.015 all hours and 0.012 on big
-swell, which is the 1.00 → 1.02 the table above rounds to. At 0.130 m it is swamped in
-quadrature. It is neither the problem nor worth touching.
+**`translation_rmse` is inert**, also unchanged: removing it moves the factor by at most 0.069
+(all hours at one day), and by under 0.02 at seven days — 0.018 all hours and 0.010 on big
+swell. At 0.130 m it is swamped in quadrature. It is neither the problem nor worth touching.
 
 ### So what is left to repair
 
-A real but modest over-width in the **middle of the range**, and nothing at the far end. The
-shipped factor dips to 0.73 all hours at four days and 0.82 on big swell — a range about a third
-wider than the outcomes justify — then climbs back to 1.00 and 1.07 by seven. Seven days is the
-one Lead Time where the range runs *narrow*, and it does so in **both** subsets: 88.8% coverage
-on big swell against the 90% it claims, and 89.96% all hours. The second is a hair under rather
-than a miss — it is the row the table rounds to 1.00, at a true factor of 1.0032 — but it is on
-the wrong side of nominal, and `analysis/track_record/publish.py --check` fails on both rows
-rather than only the big-swell one.
+A real but modest over-width in the **middle of the range**, and one row at the far end. The
+shipped factor dips to 0.72 all hours at four days and 0.80 on big swell — a range about a third
+wider than the outcomes justify — then climbs back to 0.98 and 1.02 by seven. Seven days is the
+one Lead Time where the range runs *narrow*, and since #145 it does so in **one** subset rather
+than both: 89.6% coverage on big swell against the 90% it claims, against 90.3% all hours, which
+clears its claim with a shade of width still in hand.
+
+That split is #145's doing and it is worth being precise about. Seven hours of instrument fault,
+every one of them above 8 m and every one inside this 1,593-hour window, inflated the measured
+error at every Lead Time; withholding them pulled the all-hours far end back over its claim and
+left the big-swell one under. The fault made the range look worse than it is, which is the
+direction that costs a Traveller a trip rather than sending them on a bad one — but it also
+meant the page carried a two-subset claim where only one subset ever had the finding in it.
 
 That is a different ticket from the one #82 was written as. There is no dominant oversized term
 to re-measure and no growth rate to refit; there is a mid-range bulge and a long-lead edge that
@@ -392,26 +396,36 @@ follows" gives below — and that reason is now stronger, not weaker, because th
 turns out to be close to calibrated and a correction to it is a smaller, sharper change to every
 `height_bar_probability` than a near-halving would have been.
 
-### A second defect, unrelated and still open
+### A second defect, unrelated — found here, fixed in #145
 
-The Proxy Target carries an **instrument fault on 2026-01-24, 25 and 26**. The seven largest
+The Proxy Target carried an **instrument fault on 2026-01-24, 25 and 26**. The seven largest
 hour-to-hour changes in the whole 14-year record — 4.17 m to 6.99 m — all fall on those three
-days, against a median hourly change of 0.103 m and a 99th percentile of 0.791 m over 73,396
-consecutive-hour pairs; the eighth largest is 2.33 m, in 2014. The buoy oscillates between 4.5 m
+days, against a median hourly change of 0.103 m and a 99th percentile of 0.791 m over 73,412
+consecutive-hour pairs; the eighth largest is 2.33 m, in 2014. (#145 records 73,396 for that
+count, taken on the local stamp, which loses 16 pairs to the autumn fold —
+`analysis/training_dataset/README.md` has the reconciliation. Nothing else in the evidence
+moves.) The buoy oscillates between 4.5 m
 and 13.8 m hour to hour while the independent Hindcast decays smoothly through the same hours,
 and it reports intermittently across all three days. Significant Wave Height is a sea-state
 statistic over tens of minutes and cannot do that.
 
-It is 46 hours, 2.89% of this module's evaluation window, and it is **not** in the Amplification
-Model's residual: those rows carry no wind in the training dataset (`wind_present` is false), so
-the held-out fit already drops them. Recomputing the shipped residual from
-`amplification.json`'s own coefficients over the held-out seasons reproduces 0.2820 and 0.4653
-exactly, with none of these hours in it.
+It was **not** in the Amplification Model's residual: those rows carry no wind in the training
+dataset (`wind_present` is false), so the held-out fit already dropped them. Recomputing the
+shipped residual from `amplification.json`'s own coefficients over the held-out seasons
+reproduces 0.2820 and 0.4653 exactly, with none of these hours in it. It *was* in everything
+this module measures, which scored all 46 hours of those three days.
 
-The percentile figures above are robust to it — 2.89% sits inside the tail the widening factor
-is read at, so it can only make the range look *narrower* than it is, which is the conservative
-direction for every "too wide" reading here. It has not been filtered out, and doing so needs
-its own ticket: the fault is in `analysis/training_dataset/`, upstream of everything.
+`build.py` now withholds the seven hours the instrument actually got wrong — continuity names
+the day, the ratio to the Hindcast names the hours, and the readings are kept beside the empty
+target rather than deleted. `analysis/training_dataset/README.md` carries the rule and the
+argument for it. The 39 remaining hours on those days are real and are still scored; this
+module's window is **1,586 hours**, seven fewer than before.
+
+The prediction made here before the fix was that the percentile figures would prove robust to
+it, because 2.89% sits inside the tail the widening factor is read at and could only make the
+range look *narrower* than it is. That was right in direction and too confident in size: every
+table in findings 3 and 4 moved, the shipped factor fell by about 0.02 at most Lead Times, and
+at seven days all hours it crossed back under 1.0 — which is a conclusion, not a rounding.
 
 ## What this cannot settle
 
@@ -426,7 +440,7 @@ correspondingly higher. This moves finding 1 in the direction it already points,
 most at the Lead Time where the finding is weakest.
 
 **Hours are not independent, and every count in this file overstates its own evidence.** The
-1,593 hours run from 2025-11-26 to 2026-02-20 and cluster into swells lasting a day or two, so
+1,586 hours run from 2025-11-26 to 2026-02-20 and cluster into swells lasting a day or two, so
 the independent sample behind a column is dozens, not thousands. Treat a four-point gap as
 suggestive and a nine-point one as the result; and read "59 hours, all of which cleared the bar"
 as a handful of swells rather than fifty-nine chances to be wrong.

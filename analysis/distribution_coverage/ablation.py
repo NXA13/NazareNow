@@ -121,10 +121,18 @@ NO_DRIFT = "no drift"
 NO_TRANSLATION = "no translation"
 NO_OWN_ERROR = "no own_error"
 
-COVERAGE_BOUNDARY_BAND = 0.005
-"""How close to nominal the coverage may sit before `--check` stops asking it to agree with the
-widening factor — half a percentage point. The comment at its use site carries the measurement
-that chose it, and why it is read off the coverage rather than off the factor."""
+FACTOR_BOUNDARY_BAND = 0.0075
+"""How close to 1.00 the widening factor may sit before `--check` stops asking it to agree with
+the coverage about direction.
+
+Measured, not chosen: on the corrected table the two rows where the factor and the coverage
+disagree sit 0.0029 and 0.0047 from 1.00, and the nearest row that *agrees* sits 0.0108 out.
+This falls between them rather than on either edge.
+
+It replaces #144's `COVERAGE_BOUNDARY_BAND`, which read the same exemption off the coverage —
+the discriminator that table supported and this one does not. The comment at the use site
+carries both measurements and why the guard is not simply given both bands.
+"""
 
 VARIANTS = (SHIPPED, NO_DRIFT, NO_TRANSLATION, NO_OWN_ERROR)
 """The shipped budget and the three single-term removals, in the order they are reported.
@@ -436,20 +444,29 @@ def check() -> int:
         # there is nothing left for the width to say, and which side it falls is decided by
         # the skew alone.
         #
-        # **Gated on the coverage, not on the factor**, and that choice is measured rather
-        # than preferred. Over the 56 rows two disagree — `no drift` at three days
-        # (factor 0.9790, coverage 89.83%) and `no translation` at one day on big swell
-        # (factor 1.0007, coverage 90.21%). A band on the factor cannot separate them: the
-        # first sits 0.0210 from 1.00 while an *agreeing* row sits 0.0216 out. A band on the
-        # coverage separates them cleanly — both disagreements lie within 0.21 percentage
-        # points of nominal, and half a point admits no false failure anywhere in the table,
-        # with or without a factor band beside it.
+        # **Gated on the factor, not on the coverage**, and that has now moved twice. The guard
+        # first used a band of 0.01 on the factor, calibrated against a table the `readings_at`
+        # defect had produced. #144 re-derived it on corrected numbers and moved it to the
+        # coverage: both disagreements then sat within 0.21 percentage points of nominal while
+        # a factor band could not separate them. #145 moves it back, for the same reason in
+        # reverse. Over the corrected 56 rows two still disagree — `no translation` at seven
+        # days all hours (factor 1.0029, coverage 90.10%) and `no own_error` at four days all
+        # hours (factor 0.9953, coverage 88.78%). The second is 1.22 points off nominal, far
+        # outside any honest coverage band, while an *agreeing* row sits 0.35 points off; no
+        # coverage band separates those. On the factor they separate cleanly — the two
+        # disagreements sit 0.0029 and 0.0047 from 1.00 against a nearest agreeing row at
+        # 0.0108 — so the factor is the discriminator this table supports.
         #
-        # This guard was written with a band of 0.01 on the factor, calibrated against a
-        # table that the `readings_at` defect had produced. Re-deriving it on corrected
-        # numbers is what showed the factor to be the wrong discriminator.
+        # **Deliberately not "either band".** Exempting a row when *either* reading is at its
+        # boundary looks like the stable generalisation, and it is strictly weaker: an `or` can
+        # only add exemptions. It would have released five rows rather than two, and the three
+        # extra are all released by the coverage leg — including `shipped` at seven days in
+        # both subsets, which are the rows the one surviving finding rests on. Buying stability
+        # against a future table by lifting the direction check off today's published rows is
+        # the wrong trade. Re-derive this the next time the table moves; that is what a
+        # tripwire is for.
         factor = float(row["widening_factor"])
-        if abs(covered - NOMINAL) > COVERAGE_BOUNDARY_BAND:
+        if abs(factor - 1.0) > FACTOR_BOUNDARY_BAND:
             expect(
                 f"{where} factor agrees with coverage",
                 (factor > 1.0) == (covered < NOMINAL),

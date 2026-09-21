@@ -6,7 +6,7 @@ actually is at each **Lead Time**, measured rather than assumed, so that
 distribution and the system's stated confidence means something.
 
 **6,192 archived hours, 2025-11-16 to 2026-07-31, at Lead Times one to seven days.** Gapless.
-1,593 of those hours also carry a Proxy Target.
+1,586 of those hours also carry a Proxy Target.
 
 ## Running it
 
@@ -198,24 +198,32 @@ failure this table exists to find.
 ## Finding 3 — drift is not where most of the uncertainty lives
 
 `output/total_error_by_lead_time.csv`. The same forecasts against the **Proxy Target** measured
-at Monican02, over the 1,593 hours the two records share — **2025-11-26 to 2026-02-20**. That
+at Monican02, over the 1,586 hours the two records share — **2025-11-26 to 2026-02-20**. That
 span is bounded at the far end by #9's dataset, not by the archive, and at the near end by a
-buoy gap. Everything in this section rests on those 1,593 hours, a quarter of the 6,192 the
+buoy gap. Everything in this section rests on those 1,586 hours, a quarter of the 6,192 the
 drift tables use.
 
 | Lead | All hours RMSE | Big swell RMSE | Big swell bias | Bias share |
 |---|---|---|---|---|
-| 1 d | 0.598 m | 0.809 m | **−0.393 m** | 23.6% |
-| 4 d | 0.657 m | 0.876 m | −0.420 m | 23.0% |
-| 7 d | 0.928 m | 1.184 m | **−0.689 m** | 33.9% |
+| 1 d | 0.422 m | 0.550 m | **−0.343 m** | 38.8% |
+| 4 d | 0.502 m | 0.644 m | −0.370 m | 33.0% |
+| 7 d | 0.823 m | 1.021 m | **−0.640 m** | 39.4% |
 
-**At one day out, total error is 0.598 m against 0.095 m of drift — six times larger.** Almost
-none of the uncertainty at short Lead Time is the forecast changing its mind. It is the
-standing gap between what Open-Meteo says about this point and what the buoy measures there.
+> Re-derived after #145. Every figure in this section fell, because the seven hours of
+> instrument fault withheld there were all above 8 m and all inside this window — they were
+> inflating the measured gap between the provider and the buoy. The conclusion is unchanged
+> and the margin behind it is smaller: the earlier table read 0.598 m at one day against
+> 0.809 m on big swell, and called the total error "six times" the drift where it is now
+> between four and five times.
+
+**At one day out, total error is 0.422 m against 0.095 m of drift — more than four times
+larger.** Almost none of the uncertainty at short Lead Time is the forecast changing its mind.
+It is the standing gap between what Open-Meteo says about this point and what the buoy measures
+there.
 
 And that gap is **systematic, not noise**: on big-swell hours the provider under-reads the
-Proxy Target by 0.39 m at one day and 0.69 m at seven, with a fifth to a third of the squared
-error removable by a constant correction.
+Proxy Target by 0.34 m at one day and 0.64 m at seven, with a quarter to two fifths of the
+squared error removable by a constant correction.
 
 ### Which table answers #14's bias question
 
@@ -227,7 +235,7 @@ result:
   all hours. When Open-Meteo revises its view of a date it revises in both directions about
   equally, and there is nothing to correct — only spread to inject. The exception is big swells
   beyond five days, where finding 2 shows a real forecast bias emerging.
-- **As a description of this mooring, they are.** The 0.39 m under-read is mostly *not* forecast
+- **As a description of this mooring, they are.** The 0.34 m under-read is mostly *not* forecast
   bias. It is present at one day's Lead Time, where there is almost no forecasting left to be
   wrong about, so most of it is the standing difference between a model grid node and a buoy
   15 km offshore. Calling that provider bias would blame the forecast for a representation gap.

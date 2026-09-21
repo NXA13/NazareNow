@@ -346,7 +346,7 @@ def baseline_prediction(rows: list[Row]) -> np.ndarray:
     return np.array([row.combined_sea_m for row in rows])
 
 
-def load_rows() -> list[Row]:
+def load_rows(path: Path = DATASET) -> list[Row]:
     """The dataset, reduced to rows a model can both be fitted on and served.
 
     **Rows without wind are dropped.** Open-Meteo always serves wind, so a model that took a
@@ -361,15 +361,20 @@ def load_rows() -> list[Row]:
     open; this is the answer for #13, and it is a serving constraint rather than a finding
     about whether the column would have helped.
     """
-    if not DATASET.exists():
+    if not path.exists():
         raise SystemExit(
-            f"{DATASET} is missing. Rebuild it with:\n"
+            f"{path} is missing. Rebuild it with:\n"
             "  .venv/Scripts/python.exe analysis/training_dataset/build.py"
         )
     rows: list[Row] = []
-    with DATASET.open(encoding="utf-8", newline="") as handle:
+    with path.open(encoding="utf-8", newline="") as handle:
         for record in csv.DictReader(handle):
             if record["wind_present"] != "true":
+                continue
+            # #145. A withheld hour keeps its row and loses its height, so the target arrives
+            # as an empty string rather than as an absent row. It is not a gap — the Hindcast
+            # and the wind are both good — but there is nothing here to fit against.
+            if not record[training_dataset.TARGET_COLUMN]:
                 continue
             rows.append(
                 Row(
@@ -987,6 +992,47 @@ def check() -> int:
     expect(
         abs(predicted.significant_wave_height - (0.4 + 1.15 * SAMPLE.combined_sea_m)) < 1e-9,
         "the backend does not reproduce the fit it was handed",
+    )
+
+    # --- #145: a withheld Proxy Target must never reach the fit -----------------------------
+    # `build.py` empties the target on hours Monican02 got wrong and flags them, keeping the
+    # row because the Hindcast and the wind on that hour are still perfectly good. Every
+    # withheld hour in the record today is *also* windless, so the wind filter in `load_rows`
+    # happens to drop it first — that is a coincidence of this one fault, not a property of
+    # the rule. The fixture is deliberately wind-present, so the only thing standing between
+    # an empty string and `float()` is the guard this asserts.
+    scratch = OUTPUT / "_check_dataset.csv"
+    common: dict[str, Any] = {
+        "day": "2026-01-25",
+        "season": 2025,
+        "hindcast_combined_sea_height_m": 4.98,
+        "swell_height_m": 4.5,
+        "swell_period_s": 15.0,
+        "swell_direction_deg": 300.0,
+        "wind_speed_kmh": 12.0,
+        "wind_direction_deg": 90.0,
+        "wind_present": True,
+    }
+    training_dataset.write_csv(
+        scratch,
+        training_dataset.COLUMNS,
+        [
+            {**common, "at_utc": "2026-01-25T11:00:00", training_dataset.TARGET_COLUMN: 5.43},
+            {
+                **common,
+                "at_utc": "2026-01-25T09:00:00",
+                training_dataset.TARGET_COLUMN: None,
+                training_dataset.SUSPECT_COLUMN: True,
+                training_dataset.RAW_TARGET_COLUMN: 14.0,
+            },
+        ],
+    )
+    loaded = load_rows(scratch)
+    scratch.unlink()
+    expect(len(loaded) == 1, "a withheld hour was loaded into the fit")
+    expect(
+        bool(loaded) and loaded[0].proxy_target_m == 5.43,
+        "the good hour beside a withheld one did not load",
     )
 
     for failure in failures:
