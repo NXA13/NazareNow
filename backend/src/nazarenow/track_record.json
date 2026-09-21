@@ -1,5 +1,5 @@
 {
-  "published_at": "2026-08-12",
+  "published_at": "2026-09-21",
   "source": "analysis/track_record/publish.py",
   "call_record": {
     "held_out": {
@@ -258,112 +258,112 @@
     "range_calibration": {
       "claimed": 0.9,
       "big_swell_from_m": 3.0,
-      "understates_because": "The range this system actually prints is wider still. Every distribution measured here was built without the wave models' disagreement term, which only ever widens a range, so the real coverage at short notice is higher than the figures above and the gap is larger than they show.",
-      "rests_on": "It rests on one partial Big-Wave Season. The 1,593 hours run from 2025-11-26 to 2026-02-20 and cluster into a few dozen swells rather than standing as independent chances to be wrong, and the window holds a single confirmed giant day. Nothing here says how the range behaves on the days this system exists for.",
+      "understates_because": "At short notice the range this system actually prints is wider still. Every distribution measured here was built without the wave models' disagreement term, and the shipped range takes whichever is larger, that term or this archive's own drift. The disagreement is the larger of the two only in the first days out, so the early figures above understate the real coverage. By six days this archive's drift is the larger term and the missing one would change little, which is why the seven-day figures should be read as they stand: across all hours the range still holds a shade more than it claims, and on big swell alone it is a shade under.",
+      "rests_on": "It rests on one partial Big-Wave Season. The 1,586 hours run from 2025-11-26 to 2026-02-20 and cluster into a few dozen swells rather than standing as independent chances to be wrong, and the window holds a single confirmed giant day. Nothing here says how the range behaves on the days this system exists for.",
       "leads": [
         {
           "lead_days": 1,
           "all_hours": {
-            "hours": 1593,
-            "covered": 0.9397,
+            "hours": 1586,
+            "covered": 0.9489,
             "median_width_m": 1.0459,
-            "widening_factor": 0.822
+            "widening_factor": 0.8103
           },
           "big_swell": {
-            "hours": 807,
-            "covered": 0.9257,
+            "hours": 800,
+            "covered": 0.9313,
             "median_width_m": 1.6144,
-            "widening_factor": 0.9368
+            "widening_factor": 0.9135
           }
         },
         {
           "lead_days": 2,
           "all_hours": {
-            "hours": 1593,
-            "covered": 0.9623,
+            "hours": 1586,
+            "covered": 0.9502,
             "median_width_m": 1.2004,
-            "widening_factor": 0.726
+            "widening_factor": 0.7889
           },
           "big_swell": {
-            "hours": 807,
-            "covered": 0.9517,
+            "hours": 800,
+            "covered": 0.9263,
             "median_width_m": 1.7969,
-            "widening_factor": 0.8315
+            "widening_factor": 0.9049
           }
         },
         {
           "lead_days": 3,
           "all_hours": {
-            "hours": 1593,
-            "covered": 0.9718,
+            "hours": 1586,
+            "covered": 0.959,
             "median_width_m": 1.3185,
-            "widening_factor": 0.6645
+            "widening_factor": 0.7537
           },
           "big_swell": {
-            "hours": 807,
-            "covered": 0.9616,
+            "hours": 800,
+            "covered": 0.94,
             "median_width_m": 1.9619,
-            "widening_factor": 0.7632
+            "widening_factor": 0.8473
           }
         },
         {
           "lead_days": 4,
           "all_hours": {
-            "hours": 1593,
-            "covered": 0.9849,
+            "hours": 1586,
+            "covered": 0.9653,
             "median_width_m": 1.4717,
-            "widening_factor": 0.6028
+            "widening_factor": 0.7194
           },
           "big_swell": {
-            "hours": 807,
-            "covered": 0.9777,
+            "hours": 800,
+            "covered": 0.9625,
             "median_width_m": 2.2867,
-            "widening_factor": 0.6563
+            "widening_factor": 0.7973
           }
         },
         {
           "lead_days": 5,
           "all_hours": {
-            "hours": 1593,
-            "covered": 0.99,
+            "hours": 1586,
+            "covered": 0.9496,
             "median_width_m": 1.6496,
-            "widening_factor": 0.5489
+            "widening_factor": 0.8042
           },
           "big_swell": {
-            "hours": 807,
-            "covered": 0.9864,
+            "hours": 800,
+            "covered": 0.9187,
             "median_width_m": 2.6125,
-            "widening_factor": 0.5795
+            "widening_factor": 0.9139
           }
         },
         {
           "lead_days": 6,
           "all_hours": {
-            "hours": 1593,
-            "covered": 0.9906,
+            "hours": 1586,
+            "covered": 0.9269,
             "median_width_m": 1.8047,
-            "widening_factor": 0.5454
+            "widening_factor": 0.8779
           },
           "big_swell": {
-            "hours": 807,
-            "covered": 0.9864,
+            "hours": 800,
+            "covered": 0.9263,
             "median_width_m": 2.7504,
-            "widening_factor": 0.583
+            "widening_factor": 0.8661
           }
         },
         {
           "lead_days": 7,
           "all_hours": {
-            "hours": 1593,
-            "covered": 0.9937,
+            "hours": 1586,
+            "covered": 0.9035,
             "median_width_m": 2.1919,
-            "widening_factor": 0.5264
+            "widening_factor": 0.9848
           },
           "big_swell": {
-            "hours": 807,
-            "covered": 0.9888,
+            "hours": 800,
+            "covered": 0.8962,
             "median_width_m": 3.0812,
-            "widening_factor": 0.5767
+            "widening_factor": 1.0239
           }
         }
       ]

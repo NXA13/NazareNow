@@ -11,7 +11,7 @@ import sqlite3
 import httpx
 import pytest
 
-from helpers import ensemble_body_from, is_ensemble_request
+from helpers import ensemble_body_from, grid_from, is_ensemble_request, is_grid_request
 from nazarenow.api import ForecastHour, Reading
 from nazarenow.pipeline import run_pipeline
 from nazarenow.sources.open_meteo import (
@@ -236,16 +236,26 @@ def test_current_conditions_still_work_alongside_the_forecast(store, client) -> 
     assert client.get("/api/conditions/current").status_code == 200
 
 
-def test_the_pipeline_takes_one_request_per_endpoint_and_one_for_the_whole_ensemble(
+def test_the_pipeline_takes_five_requests_where_it_could_have_taken_thirty(
     store,
 ) -> None:
-    """Three requests, and the third is the one that could easily have been five.
+    """Five requests, and three of them are ones that could easily have been many more.
 
     Current and hourly arrive in the same response, so adding the forecast did not double
     the load on a free API. Model Spread added the third: Open-Meteo takes a comma-separated
     `models` list, so all five wave models arrive in one response rather than one apiece.
     That is not only a request budget — every member is then read at a single instant, so
     none of the measured disagreement is our own sampling drifting between calls.
+
+    The map's grid (#120) added the fourth and fifth on the same principle, and they are the
+    ones that could have been twenty-five each: the endpoint takes several coordinates at once,
+    so the whole five-by-five arrives in one response per API. **Two rather than one**, because
+    marine and weather are separate products and the darts need the weather half — the same
+    split the single offshore point already makes.
+
+    Counted rather than reasoned about, because this is a free rate limit and a run that
+    quietly started making twenty-seven requests would look exactly like one making five until
+    the provider said otherwise.
     """
     seen: list[httpx.Request] = []
 
@@ -254,15 +264,24 @@ def test_the_pipeline_takes_one_request_per_endpoint_and_one_for_the_whole_ensem
         if is_ensemble_request(request):
             return httpx.Response(200, json=ensemble_body_from(marine_with_hourly()))
         marine = "marine" in request.url.host
-        return httpx.Response(200, json=marine_with_hourly() if marine else weather_with_hourly())
+        body = marine_with_hourly() if marine else weather_with_hourly()
+        if is_grid_request(request):
+            return httpx.Response(200, json=grid_from(body, body["current_units"]))
+        return httpx.Response(200, json=body)
 
     with httpx.Client(transport=httpx.MockTransport(handle)) as http:
         run_pipeline(store, http, sleep=lambda _: None)
 
-    assert len(seen) == 3
+    assert len(seen) == 5
     ensemble = [request for request in seen if is_ensemble_request(request)]
     assert len(ensemble) == 1
     assert len(ensemble[0].url.params["models"].split(",")) == 5
+
+    grid = [request for request in seen if is_grid_request(request)]
+    assert len(grid) == 2
+    assert {"marine" in request.url.host for request in grid} == {True, False}
+    # Twenty-five coordinates in each, not twenty-five requests.
+    assert all(len(request.url.params["latitude"].split(",")) == 25 for request in grid)
 
 
 def test_hours_the_provider_could_not_model_are_dropped(store, client) -> None:
@@ -359,19 +378,30 @@ def test_a_duplicated_hour_is_rejected(store, client) -> None:
 def test_the_provider_is_asked_for_the_whole_range_hour_by_hour(store) -> None:
     """Nothing pinned the request itself: dropping forecast_days left the suite green
     while the provider quietly fell back to its seven-day default."""
-    asked: list[httpx.URL] = []
+    asked: list[httpx.Request] = []
 
     def handle(request: httpx.Request) -> httpx.Response:
-        asked.append(request.url)
+        asked.append(request)
         if is_ensemble_request(request):
             return httpx.Response(200, json=ensemble_body_from(marine_with_hourly()))
         marine = "marine" in request.url.host
-        return httpx.Response(200, json=marine_with_hourly() if marine else weather_with_hourly())
+        body = marine_with_hourly() if marine else weather_with_hourly()
+        if is_grid_request(request):
+            return httpx.Response(200, json=grid_from(body, body["current_units"]))
+        return httpx.Response(200, json=body)
 
     with httpx.Client(transport=httpx.MockTransport(handle)) as http:
         run_pipeline(store, http, sleep=lambda _: None)
 
-    for url in asked:
+    # The grid is deliberately not in this loop. #120 asks it for `current` only and no
+    # horizon at all, which `test_it_asks_for_current_only_and_no_forecast_horizon` pins from
+    # the other side — so a grid request carrying `forecast_days` would be the bug there.
+    # Told apart by the shared predicate rather than by re-deriving it here: two spellings of
+    # "this is a grid request" is one more place than it can be right in.
+    forecasts = [request.url for request in asked if not is_grid_request(request)]
+    assert len(forecasts) == 3
+
+    for url in forecasts:
         # The literal the ticket asks for, not the constant the code uses. Comparing
         # against FORECAST_DAYS was self-referential: changing it to 7 — the exact
         # regression this test names — passed.
@@ -383,9 +413,9 @@ def test_the_provider_is_asked_for_the_whole_range_hour_by_hour(store) -> None:
     # block per model would add a second way for that call to fail for something nothing
     # reads. Asserted separately rather than dropped, or the ensemble's exemption would
     # have quietly excused the other two.
-    for url in asked:
-        if "models" not in url.params:
-            assert url.params.get("current"), "current conditions must still be requested"
+    for request in asked:
+        if "models" not in request.url.params:
+            assert request.url.params.get("current"), "current conditions must still be requested"
 
 
 def test_every_ingested_hourly_reading_is_served_by_the_api() -> None:

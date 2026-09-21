@@ -89,6 +89,14 @@ OFFSHORE_COLUMNS = (
 
 TARGET_COLUMN = "proxy_target_height_m"
 
+# #145. An hour the instrument got wrong is not the same thing as an hour it did not report,
+# and the file has to be able to say which. The target goes empty so that every consumer's
+# existing presence test drops it, `proxy_target_suspect` records that the emptiness was a
+# decision, and the reading itself is carried rather than deleted — the judgement stays
+# reviewable, and reversible, by whoever reads the file next.
+SUSPECT_COLUMN = "proxy_target_suspect"
+RAW_TARGET_COLUMN = "proxy_target_raw_m"
+
 COLUMNS = (
     "at_utc",
     "at_local",
@@ -100,6 +108,8 @@ COLUMNS = (
     *OFFSHORE_COLUMNS,
     "offshore_observation_present",
     TARGET_COLUMN,
+    SUSPECT_COLUMN,
+    RAW_TARGET_COLUMN,
 )
 
 # Written to this many decimals, always, so the file is byte-identical between runs on
@@ -116,6 +126,21 @@ DECIMALS = 3
 # load-bearing. Bands avoid inventing a threshold at all, and let a reader put the line
 # wherever their question needs it.
 TARGET_BANDS = (2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0)
+
+# How far above the Hindcast's Combined Sea a Proxy Target reading may sit before it stops
+# being a believable amplification and starts being an instrument fault (#145). The
+# Amplification Model's fitted coefficient on the Combined Sea is 1.0968 [fixed:#13], so 1.5
+# is well clear of the transformation the canyon actually performs. A refit moves that
+# coefficient and not this bar: 1.5 is where a reading stops being believable, which is a
+# judgement about the instrument rather than a property of the model.
+SUSPECT_RATIO = 1.5
+
+# What the sea cannot do in an hour. Measured over the 73,412 consecutive-hour pairs in the
+# whole 14-year record: the median change is 0.103 m, the 99th percentile 0.791 m, and the
+# largest change the buoy has ever legitimately recorded is 2.33 m, on 2014-12-11. The
+# 2026-01 cluster's *smallest* excursion is 4.17 m. Any threshold between those two isolates
+# the fault and nothing else; 3.0 sits in the middle of that gap rather than at its edge.
+CONTINUITY_BREAK_M_PER_HOUR = 3.0
 
 GOLD_DAYS = ROOT / "analysis" / "gold_days" / "gold_days.jsonl"
 
@@ -134,6 +159,7 @@ class Counts:
     hindcast_hours: int
     target_hours: int
     paired: int
+    target_withheld: int
     in_season: int
     with_wind: int
     with_offshore_observation: int
@@ -354,6 +380,74 @@ def pair(
     return rows
 
 
+def suspect_target_hours(rows: list[dict[str, Any]]) -> set[str]:
+    """The UTC hours whose Proxy Target reading is an instrument fault rather than a sea.
+
+    Ticket #145. Monican02 read 14.00 m against a 4.98 m offshore analysis on 2026-01-25,
+    rejoining the Hindcast on either side of the excursion.
+
+    **Two legs, and neither works alone.** Continuity says *which day the instrument was in
+    trouble* — a change the sea cannot perform is the only signal that separates the fault
+    from a buoy the canyon is genuinely amplifying. The ratio then says *which hours inside
+    that day* to withhold, because the surrounding hours are usually a real swell and
+    dropping them would throw away exactly the big-sea data the model is short of. Applied
+    to the whole record, continuity alone flags three days and nothing else in fourteen
+    years, while the ratio alone flags 248 hours across 77 days.
+
+    **An hour with no target is skipped rather than compared.** Rows whose target has already
+    been withheld carry `None` there, so running this over an already-withheld table must be
+    a no-op rather than an arithmetic error. The two sets it builds are deliberately named
+    apart: `days_in_trouble` holds Nazaré **local days** (ADR 0008) and the return holds
+    **UTC hours**, and both would otherwise read as an undifferentiated `set[str]`.
+    """
+    readable = [row for row in rows if row[TARGET_COLUMN] is not None]
+    ordered = sorted(readable, key=lambda row: row["at_utc"])
+    days_in_trouble: set[str] = set()
+    for earlier, later in zip(ordered, ordered[1:], strict=False):
+        apart = dt.datetime.fromisoformat(later["at_utc"]) - dt.datetime.fromisoformat(
+            earlier["at_utc"]
+        )
+        if apart != dt.timedelta(hours=1):
+            continue
+        if abs(later[TARGET_COLUMN] - earlier[TARGET_COLUMN]) > CONTINUITY_BREAK_M_PER_HOUR:
+            days_in_trouble.add(earlier["day"])
+            days_in_trouble.add(later["day"])
+
+    return {
+        row["at_utc"]
+        for row in readable
+        if row["day"] in days_in_trouble
+        and row["hindcast_combined_sea_height_m"]
+        and row[TARGET_COLUMN] / row["hindcast_combined_sea_height_m"] > SUSPECT_RATIO
+    }
+
+
+def withhold_suspect_targets(rows: list[dict[str, Any]]) -> int:
+    """Empty the Proxy Target on the hours the instrument got wrong, and say so. Returns how
+    many.
+
+    Every row keeps its place. The Hindcast, the wind and the Offshore Observation on a
+    withheld hour are all still good — it is one instrument that failed, not the hour — so
+    only the target moves, into `proxy_target_raw_m` where it stays readable.
+
+    **Idempotent, and that is not decoration.** An already-withheld row is left exactly as it
+    is rather than re-examined: its target is gone, so a second pass would find nothing
+    suspect about it and would helpfully clear the flag and the raw reading that record why
+    it is empty. Silently converting a deliberate exclusion into an indistinguishable gap is
+    a worse failure than the crash it replaces.
+    """
+    suspect = suspect_target_hours(rows)
+    for row in rows:
+        if row.get(SUSPECT_COLUMN):
+            continue
+        withheld = row["at_utc"] in suspect
+        row[SUSPECT_COLUMN] = withheld
+        row[RAW_TARGET_COLUMN] = row[TARGET_COLUMN] if withheld else None
+        if withheld:
+            row[TARGET_COLUMN] = None
+    return sum(1 for row in rows if row[SUSPECT_COLUMN])
+
+
 def read_gold_days() -> set[str]:
     """The 38 hand-verified Gold Days, as local day strings.
 
@@ -392,6 +486,7 @@ def count_by_season(
                 "hindcast_hours": 0,
                 "target_hours": 0,
                 "paired": 0,
+                "target_withheld": 0,
                 "in_season": 0,
                 "with_wind": 0,
                 "with_offshore_observation": 0,
@@ -413,6 +508,12 @@ def count_by_season(
         counts["with_wind"] += int(bool(row["wind_present"]))
         counts["with_offshore_observation"] += int(bool(row["offshore_observation_present"]))
         counts["gold_day_rows"] += int(row["day"] in gold_days)
+        # A withheld hour has no height, so it belongs in no band. It is counted on its own
+        # line instead — #145's exclusions are reported where the gap rule's are, because a
+        # reading this project threw away should be as visible as one the buoy never took.
+        if row.get(SUSPECT_COLUMN):
+            counts["target_withheld"] += 1
+            continue
         for band in TARGET_BANDS:
             counts["bands"][band] += int(row[TARGET_COLUMN] >= band)
 
@@ -476,6 +577,8 @@ def build() -> int:
         )
         return 1
 
+    withheld = withhold_suspect_targets(rows)
+
     gold_days = read_gold_days()
     counts = count_by_season(rows, hindcast_rows, target_rows, gold_days)
     digest = write_csv(DATASET, COLUMNS, rows)
@@ -489,6 +592,7 @@ def build() -> int:
             "target_hours",
             "paired",
             "target_hours_unpaired",
+            "target_withheld",
             "in_big_wave_season",
             "with_wind",
             "with_offshore_observation",
@@ -502,6 +606,7 @@ def build() -> int:
                 "target_hours": entry.target_hours,
                 "paired": entry.paired,
                 "target_hours_unpaired": entry.target_hours_unpaired,
+                "target_withheld": entry.target_withheld,
                 "in_big_wave_season": entry.in_season,
                 "with_wind": entry.with_wind,
                 "with_offshore_observation": entry.with_offshore_observation,
@@ -528,6 +633,11 @@ def build() -> int:
     print(f"Big-Wave Season   : {in_season:,} rows ({in_season / len(rows):.1%})")
     print(f"with wind         : {with_wind:,} ({with_wind / len(rows):.1%})")
     print(f"with Monican01    : {with_offshore:,} ({with_offshore / len(rows):.1%})")
+    # Printed every build, with the dates, because the rule can in principle reach a day
+    # nobody has looked at. A rebuild that withholds a different set should be impossible to
+    # miss rather than something a reader has to go diffing for.
+    withheld_days = sorted({row["day"] for row in rows if row[SUSPECT_COLUMN]})
+    print(f"withheld (#145)   : {withheld:,} hours on {', '.join(withheld_days) or 'no days'}")
     print("Proxy Target      :")
     for band in TARGET_BANDS:
         hit = sum(entry.bands[band] for entry in counts)
@@ -659,6 +769,20 @@ def check() -> int:
     plain = count_by_season(rows, hindcast_rows, target_rows, gold_days=set())
     expect("a non-Gold day counts zero", plain[0].gold_day_rows, 0)
 
+    # How a withheld hour counts. It *was* paired — the Hindcast had it and the buoy reported
+    # something — so the pairing figure is unchanged and the join's own story stays honest.
+    # What it must not do is enter a Proxy Target band, because the band table is the one a
+    # reader uses to judge how much big-sea data the record holds, and a 14 m reading the
+    # instrument invented would put a row in a band nothing ever reached.
+    faulty_targets = {hour: {TARGET_COLUMN: 5.5}, "2016-11-05T07:00:00": {TARGET_COLUMN: 14.0}}
+    faulty = pair(hindcast_rows, wind_rows, set(), faulty_targets, offshore_rows)
+    expect("one hour is withheld", withhold_suspect_targets(faulty), 1)
+    faulty_counts = count_by_season(faulty, hindcast_rows, faulty_targets, gold_days=set())
+    expect("a withheld hour is still a paired hour", faulty_counts[0].paired, 2)
+    expect("the season says how many it withheld", faulty_counts[0].target_withheld, 1)
+    expect("the invented height reaches no band", faulty_counts[0].bands[8.0], 0)
+    expect("the hour beside it still counts", faulty_counts[0].bands[5.0], 1)
+
     # Byte-stability: the same rows written twice give the same digest, and formatting is
     # fixed rather than repr-dependent.
     scratch = OUTPUT / "_check.csv"
@@ -674,6 +798,121 @@ def check() -> int:
     expect("a float is formatted, not repr'd", _cell(0.1 + 0.2), "0.300")
     expect("a bool is lowercase", _cell(True), "true")
     expect("None is empty", _cell(None), "")
+
+    # #145 — the Proxy Target's instrument fault. Significant Wave Height is a sea-state
+    # statistic over tens of minutes, so it cannot double and halve within an hour.
+    # Monican02 did exactly that on 2026-01-24, 25 and 26. These drive the rule against
+    # synthetic hours shaped like the real ones, so the claim is checkable without the
+    # gitignored dataset.
+    def episode(day: str, *readings: tuple[str, float, float]) -> list[dict[str, Any]]:
+        """Rows carrying only the three fields the rule reads."""
+        return [
+            {
+                "at_utc": f"{day}T{hour}:00:00",
+                "at_local": f"{day}T{hour}:00",
+                "day": day,
+                "hindcast_combined_sea_height_m": hindcast,
+                TARGET_COLUMN: target,
+            }
+            for hour, target, hindcast in readings
+        ]
+
+    # The 25th, as recorded: a smooth Hindcast decay with the buoy tripling through it. Held
+    # as one literal because two assertions below read it — the detector's, and the row
+    # contract's — and a fixture that drifts between them would prove nothing about either.
+    THE_25TH = (
+        ("07", 5.71, 5.20),
+        ("08", 9.83, 5.08),
+        ("09", 14.00, 4.98),
+        ("10", 9.67, 4.90),
+        ("11", 5.43, 4.83),
+    )
+    spike = episode("2026-01-25", *THE_25TH)
+    expect(
+        "the excursion's own hours are withheld",
+        sorted(suspect_target_hours(spike)),
+        ["2026-01-25T08:00:00", "2026-01-25T09:00:00", "2026-01-25T10:00:00"],
+    )
+
+    # The ratio on its own is not a spike detector and must never be used as one. On a small
+    # sea it is simply unstable: 2020-01-13 runs to 4.78 and 2018-01-29 to 3.96 across long
+    # *smooth* stretches the buoy recorded perfectly well. Continuity is what separates the
+    # fault from the noise, so nothing here may be withheld however high the ratio climbs.
+    calm = episode(
+        "2020-01-13",
+        ("09", 1.84, 0.46),
+        ("10", 1.86, 0.47),
+        ("11", 1.88, 0.47),
+        ("12", 1.85, 0.48),
+    )
+    expect("a smooth small sea is never withheld", suspect_target_hours(calm), set())
+
+    # The other edge, and the one that actually costs something if it moves. These are
+    # 2014-12-11's real readings: a genuine 6-8 m sea the canyon was amplifying hard, with
+    # five hours sitting above SUSPECT_RATIO and a 10:00 -> 11:00 fall of 2.33 m that is the
+    # largest change in the entire record. Continuity is the only thing holding them, so if
+    # CONTINUITY_BREAK_M_PER_HOUR is ever lowered under that figure this goes red and names
+    # the five hours it would have thrown away.
+    steep = episode(
+        "2014-12-11",
+        ("08", 5.55, 3.86),
+        ("09", 6.20, 4.01),
+        ("10", 8.07, 4.09),
+        ("11", 5.74, 4.12),
+        ("12", 7.68, 4.16),
+        ("13", 7.19, 4.18),
+        ("14", 6.31, 4.17),
+    )
+    expect("the record's steepest real hour is kept", suspect_target_hours(steep), set())
+
+    # 2026-01-26 as recorded, gaps and all: the buoy reported six hours out of twenty-four,
+    # because a mooring in trouble drops readings. That matters to the rule's shape. 06:00
+    # has no neighbour an hour either side, so a continuity test asked to name *hours* would
+    # clear it on a technicality — it is 10.47 m against a 4.61 m analysis. Continuity names
+    # the day and the ratio names the hours, which is what reaches it.
+    intermittent = episode(
+        "2026-01-26",
+        ("03", 13.76, 5.00),
+        ("04", 6.77, 4.87),
+        ("06", 10.47, 4.61),
+        ("08", 5.00, 4.39),
+        ("10", 10.22, 4.12),
+        ("11", 4.45, 3.99),
+    )
+    expect(
+        "an excursion marooned between gaps is still withheld",
+        sorted(suspect_target_hours(intermittent)),
+        ["2026-01-26T03:00:00", "2026-01-26T06:00:00", "2026-01-26T10:00:00"],
+    )
+
+    # What a withheld hour looks like in the file. The reading is not deleted — #145 asks for
+    # the exclusion to be deliberate and recorded, and a value removed because it disagrees
+    # with a model has to stay auditable. So the hour keeps its row, the target goes empty so
+    # every consumer's existing "is it present?" test drops it without being taught anything
+    # new, the flag says the emptiness was a decision rather than an outage, and the raw
+    # reading rides along beside it.
+    withheld = episode("2026-01-25", *THE_25TH)
+    expect("the count of withheld hours is returned", withhold_suspect_targets(withheld), 3)
+    by_hour = {row["at_utc"]: row for row in withheld}
+    excluded = by_hour["2026-01-25T09:00:00"]
+    expect("a withheld hour carries no target", excluded[TARGET_COLUMN], None)
+    expect("it says so", excluded[SUSPECT_COLUMN], True)
+    expect("and the reading is preserved", excluded[RAW_TARGET_COLUMN], 14.00)
+    kept = by_hour["2026-01-25T11:00:00"]
+    expect("an hour either side keeps its target", kept[TARGET_COLUMN], 5.43)
+    expect("is not flagged", kept[SUSPECT_COLUMN], False)
+    expect("and carries no raw copy", kept[RAW_TARGET_COLUMN], None)
+
+    # Running it twice must change nothing. A withheld row has no target left to judge, so a
+    # second pass that re-examined it would find nothing suspect and would clear the flag and
+    # the raw reading — turning a recorded decision back into an anonymous gap.
+    expect("a second pass withholds the same hours", withhold_suspect_targets(withheld), 3)
+    expect("and leaves the record intact", by_hour["2026-01-25T09:00:00"][RAW_TARGET_COLUMN], 14.00)
+    expect(
+        "and the flag with it",
+        by_hour["2026-01-25T09:00:00"][SUSPECT_COLUMN],
+        True,
+    )
 
     for failure in failures:
         print(f"FAIL {failure}")

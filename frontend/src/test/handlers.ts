@@ -41,6 +41,41 @@ export const currentConditions: CurrentConditions = {
 };
 
 /**
+ * The 5x5 wind grid, over exactly the bounds the map draws (#120): 39.40-39.82N,
+ * 9.04-9.52W. The corners sit ON the bounds rather than at cell centres, because
+ * `open_meteo.grid_points()` divides by `GRID_SIDE - 1` — which is the fact ADR 0015 turned
+ * on, and a fixture that quietly centred them would hide it.
+ *
+ * **Every point differs in speed and direction**, so a map that drew one dart twenty-five
+ * times, or drew them all pointing the same way, fails rather than looking plausible.
+ */
+export const conditionsGrid = {
+  observed_at: '2026-02-13T09:00',
+  fetched_at: '2026-02-13T09:04:11.221000+00:00',
+  refresh_failed: false,
+  stale: false,
+  stale_after_hours: 6,
+  points: Array.from({ length: 25 }, (_, index) => {
+    const row = Math.floor(index / 5);
+    const column = index % 5;
+    return {
+      latitude: Number((39.4 + (row * (39.82 - 39.4)) / 4).toFixed(6)),
+      longitude: Number((-9.52 + (column * (9.52 - 9.04)) / 4).toFixed(6)),
+      swell_height: { value: 8.1 - index * 0.05, unit: 'm' },
+      swell_period: { value: 17.0 - index * 0.1, unit: 's' },
+      swell_direction: { value: (298 + index) % 360, unit: '°' },
+      significant_wave_height: { value: 8.4 - index * 0.05, unit: 'm' },
+      wave_period: { value: 16.2 - index * 0.1, unit: 's' },
+      wave_direction: { value: (295 + index) % 360, unit: '°' },
+      water_temperature: { value: 15.2 + index * 0.01, unit: '°C' },
+      air_temperature: { value: 13.4 + index * 0.01, unit: '°C' },
+      wind_speed: { value: 6 + index * 1.5, unit: 'km/h' },
+      wind_direction: { value: (40 + index * 11) % 360, unit: '°' },
+    };
+  }),
+};
+
+/**
  * Every hour differs from every other, in every column the table renders.
  *
  * A fixture of 24 identical hours cannot tell a table that renders each hour from one
@@ -226,6 +261,45 @@ export const forecast: Forecast = {
     dayFrom('2026-02-13', 8.1, 17, 223, 'go', 4),
     dayFrom('2026-02-14', 5.7, 12, 280, 'watch', 9),
   ],
+};
+
+/**
+ * A forecast as long as the provider can make it, for the layout suite.
+ *
+ * The three-day `forecast` above is right for behaviour: it is the smallest set that exercises
+ * every call status, and a shorter fixture makes a failing assertion easier to read. It is the
+ * wrong one to measure a page against. `open_meteo.py` asks for sixteen days and the page
+ * renders whatever the merged marine and weather forecasts cover — about ten today — so a
+ * layout proved against three days is a layout proved against a page no reader sees.
+ *
+ * Sixteen, because the design spec is emphatic that **"any layout that assumes a fixed count is
+ * a layout that breaks silently"**, and the honest number to hold a layout to is the most the
+ * provider can send rather than the count it happens to send this week.
+ *
+ * The days are ordinary — one call status, repeated. What varies here is how many rows there
+ * are, which is the only thing this fixture exists to vary.
+ *
+ * **Except for where the measured archive ends**, which a sixteen-day response cannot avoid
+ * having: the archive is measured *through a lead time of seven days*, so eight of these rows are
+ * measured — the first day and the seven after it, which is `beyond = max(0, lead_time_days -
+ * measured_through_lead_days)` in `distribution.py` — and the rest carry the flag that says their
+ * width was extrapolated. The page draws a divider and dims those (#117). A fixture with every
+ * day measured would hold the layout to a page shorter than the one a reader gets, which is the
+ * same mistake as measuring against three days.
+ */
+export const longForecast: Forecast = {
+  ...forecast,
+  days: Array.from({ length: 16 }, (_, index) => {
+    const day = dayFrom(
+      `2026-02-${String(12 + index).padStart(2, '0')}`,
+      2 + (index % 5),
+      8 + (index % 4),
+      250 + index,
+      index === 1 ? 'go' : index === 2 ? 'watch' : 'none',
+      index,
+    );
+    return { ...day, call: { ...day.call!, uncertainty_measured: index <= 7 } };
+  }),
 };
 
 /** The provenance a calibrated forecast carries (#12).
@@ -510,8 +584,27 @@ export const trackRecord: TrackRecord = {
   },
 };
 
-export const handlers = [
-  http.get('*/api/conditions/forecast', () => HttpResponse.json(forecast)),
-  http.get('*/api/conditions/current', () => HttpResponse.json(currentConditions)),
-  http.get('*/api/track-record', () => HttpResponse.json(trackRecord)),
-];
+/**
+ * Every endpoint this site reads, and what a healthy one answers with.
+ *
+ * One table, because two suites need it: the jsdom suite serves it through msw, and the layout
+ * suite in `e2e/` serves it through Playwright's own routing — msw intercepts in the process that
+ * imports it, and the layout suite's requests come from a browser, so the two cannot share a
+ * mechanism. They can share this, and a path added here reaches both.
+ *
+ * Without it the paths were written twice, which is the shape ADR 0013 warns about: an endpoint
+ * renamed on one side leaves the other stubbing an address nothing calls, and a test whose stub
+ * quietly stops matching does not fail — it tests the failure state and passes.
+ */
+export const FIXTURE_BY_PATH = {
+  '/api/conditions/forecast': forecast,
+  '/api/conditions/current': currentConditions,
+  '/api/track-record': trackRecord,
+  '/api/conditions/grid': conditionsGrid,
+};
+
+/** The same table as msw handlers. `*` for the origin, because the app reads `VITE_API_BASE`
+ * and falls back to a different host than the one serving the page. */
+export const handlers = Object.entries(FIXTURE_BY_PATH).map(([path, body]) =>
+  http.get(`*${path}`, () => HttpResponse.json(body)),
+);

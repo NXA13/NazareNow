@@ -1,20 +1,47 @@
 /*
- * Deliberately restrained. This ticket asks only that the page be usable and readable
- * at mobile widths; visual identity is worth a dedicated pass once there is something
- * more interesting than current conditions to look at.
+ * Both pages in Ink (#114), and nothing moved.
  *
- * Sizing uses relative units and the grid is fluid, so nothing needs a breakpoint to
- * stay legible on a phone.
+ * The re-skin only: the ground, the two faces and the three colour systems, applied to the
+ * pages exactly as #113 left them, so the skin can be judged on its own before #115-#119 start
+ * moving layout.
+ *
+ * **Every selector here existed before, with two additions.** A bare `a`, because the spec puts
+ * links in Ice and the browser's default blue is close to unreadable on graphite — the old sheet
+ * only ever styled the nav's links, because the nav was the only place a link had appeared. And
+ * `:focus-visible`, because the default focus ring is drawn in a colour that vanishes on a
+ * near-black ground, which would have left the keyboard with no visible cursor.
+ *
+ * **No colour, face or type size is decided in this file.** Those come from `tokens.css`, which
+ * is where a re-skin is argued about, and `src/ink.test.ts` fails if a hex value, a
+ * `font-family` or a `font-size` is named anywhere but there. Space, radius and rule come from
+ * there too.
+ *
+ * What stays local is *layout dimension*: the narrowest a card may shrink to before the grid
+ * drops a column, the flex basis that lines the history ladder's columns up, and the height the
+ * forecast page is capped to. Those are decisions about this page's geometry rather than about
+ * the visual system — a token named `--space-5` has no business being the answer to "how wide
+ * is a readable card", and `--day-slot-height` had no business being the answer to "how tall is
+ * the day list", which is why #132 deleted it from the visual-system sheet and put the geometry
+ * here.
+ *
+ * Three rules this sheet is held to, all three enforced by that test:
+ *
+ * 1. **Status colour carries a state of the sea**, and nothing else. The call badges and the
+ *    verdict panel take it. Rank, selection, focus and model performance do not — they are
+ *    carried by the neutrals, by weight and by size, because a page where "this is the biggest
+ *    day of the week" and "this is a Go Call" share a colour has lost the distinction that
+ *    matters most on it.
+ * 2. **Ice — the main colour — appears on the wordmark, the nav and links.** Not on the verdict
+ *    panel, so the brand never competes with the call for attention.
+ * 3. **Every number is IBM Plex Mono.** Anything that is all figures asks for `--font-mono`
+ *    here; numbers inside sentences are covered by the digit-scoped face `tokens.css` puts at
+ *    the front of `--font-text`, so no component has to remember.
+ *
+ * Sizing is still relative and the grids are still fluid, so nothing needs a breakpoint to stay
+ * legible on a phone.
  */
 
-:root {
-  --ink: #10202b;
-  --muted: #5a6b78;
-  --line: #d8e0e6;
-  --surface: #ffffff;
-  --page: #f4f7f9;
-  --accent: #0b5d7a;
-}
+@import './tokens.css';
 
 * {
   box-sizing: border-box;
@@ -22,148 +49,944 @@
 
 body {
   margin: 0;
-  background: var(--page);
-  color: var(--ink);
-  font-family:
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    sans-serif;
-  line-height: 1.5;
+  /* The page sits on the graphite; the ground behind it is the deeper tone the map is drawn
+     on, so an overscroll on a phone reveals more of the same world rather than white. */
+  background: var(--ink-deep);
+  color: var(--ink-text);
+  font-family: var(--font-text);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  -webkit-font-smoothing: antialiased;
 }
 
+/* The frame both pages sit in. It sets the ground and the padding and leaves the width to the
+ * page, because the two pages want different ones: a reading page is bounded by how far a line
+ * of text can run, and the home page is an instrument that wants the screen.
+ *
+ * Until #115 this was one `max-width: 60rem` for both, which was right while there was only one
+ * kind of page. Left in place it would have squeezed the two columns into a 928px box on a
+ * 1440px screen — a left column of 527px, and columns whose widths were identical at every
+ * desktop width, which is also why the proportion this ticket asks about could not be observed
+ * to hold or fail. */
 main {
-  max-width: 60rem;
   margin: 0 auto;
-  padding: 1.5rem 1rem 3rem;
+  /* Trimmed vertically by #128: the 48px that used to sit under the footer was the single
+     largest piece of empty page on the site. The sides are left alone deliberately — the
+     mockup's frame is 28px there, but a horizontal change buys no height, and the one viewport
+     it would change most is the 390px screen that has the least room to give. */
+  padding: var(--space-5) var(--space-5) var(--space-6);
+  background: var(--ink-page);
+  min-height: 100vh;
 }
 
+/* **The forecast page is exactly a viewport tall (#132), and only this page is.**
+ *
+ * `min-height` is what every other page wants and is no use here: it sets a floor, and a floor
+ * leaves nothing for `flex: 1` below it to distribute, so the column simply grew to its content
+ * again. A definite height is what gives the chrome its share and the column the remainder, and
+ * `box-sizing: border-box` above means the padding is inside the viewport rather than added to
+ * it.
+ *
+ * The reading page keeps `min-height` and scrolls as long as it likes. The no-scroll promise is
+ * about the instrument, not about prose. */
+.page-forecast {
+  max-width: var(--measure-instrument);
+  height: 100vh;
+  /* A column, so the forecast column can ask for "whatever height is left" rather than for a
+     number. The alternative was `calc(100vh - 5rem)`, which was wrong by 2px the day it was
+     written and would have been wrong by more the next time the chrome changed.
+
+     On this page only. It was on `main` first, where it also reached the reading page — which
+     has no cap, no second column and nothing to distribute, and quietly lost its margin
+     collapsing for the privilege. */
+  display: flex;
+  flex-direction: column;
+}
+
+.page-reading {
+  max-width: var(--measure-page);
+}
+
+/*
+ * The chrome, as a bar rather than a block (#128).
+ *
+ * It was a stack: a 40px wordmark, the tagline under it, the nav under that, and two 32px gaps
+ * holding them apart — 190px above the first word of content, measured in Chromium at
+ * 1440x900. The mockup draws all three on one rule-bottomed line instead, and on a page whose
+ * whole height budget is a viewport that difference is worth more than #116 or #119 saves.
+ *
+ * Done in the sheet rather than in `App.tsx` deliberately. The markup is already three siblings
+ * in reading order, so a row is a `display: flex` and a `margin-left: auto`; delete this rule
+ * and the header still renders, in the same order, as the block it was. Nothing about the
+ * wordmark, the tagline or the nav had to move for the page to get its height back.
+ *
+ * It wraps, because the same bar has to survive 390px. No-scroll is a desktop promise, but the
+ * header is not allowed to run off a phone.
+ */
+header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-4);
+  padding-bottom: var(--space-3);
+  margin-bottom: var(--space-4);
+  border-bottom: var(--rule) solid var(--ink-border);
+}
+
+/* The wordmark, in Ice. One of the three places the main colour is allowed.
+ *
+ * At `--text-meta` now rather than `--text-display`, which clamped to 2.5rem and cost 50px of
+ * a 900px page. What carries it at 14.4px is the tracking, not the scale: letter-spaced capitals
+ * read as a mark, where the same word set tight at that size reads as a stray heading. The tight
+ * tracking that suited it at 40px is exactly wrong here and has gone with the size. */
 header h1 {
   margin: 0;
-  font-size: clamp(1.75rem, 5vw, 2.5rem);
-  letter-spacing: -0.02em;
+  color: var(--ink-main);
+  font-size: var(--text-meta);
+  font-weight: var(--weight-bold);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wordmark);
+  line-height: var(--leading-tight);
 }
 
+/* Beside the wordmark now rather than under it, and at the size a subtitle on a bar is: the
+   place it tells you is worth saying once, quietly, not worth a line of its own. */
 .tagline {
-  margin: 0.25rem 0 2rem;
-  color: var(--muted);
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: var(--text-micro);
+}
+
+/*
+ * The two pages, offered before either of them is read.
+ *
+ * Still styled no further than a nav has to be to work: a row, a gap, and a mark on the page
+ * being read. #114 gave it the main colour it was waiting for — the nav was one of the three
+ * things Ice was always for — and changed nothing else about it.
+ *
+ * #128 did move it: it sits at the far end of the header bar rather than on a line below the
+ * tagline. That was a height decision rather than a navigation one, but the comment that used
+ * to say where it sits was "#115's decision, not this ticket's" and is no longer true, so it
+ * says this instead.
+ */
+header nav {
+  display: flex;
+  gap: var(--space-6);
+  /* Pushed to the far end of the bar. The `auto` is the whole of the layout: without it the
+     three children sit together at the left and the header is a short row rather than a bar. */
+  margin: 0 0 0 auto;
+  font-size: var(--text-tiny);
+}
+
+header nav a {
+  color: var(--ink-main);
+}
+
+/* Hung off the attribute a screen reader announces rather than set beside it, so what is seen
+   and what is announced cannot drift apart. The page being read is the one in plain text: a
+   lit link would say "follow me", which is the opposite of what it means. */
+header nav a[aria-current='page'] {
+  color: var(--ink-text);
+  font-weight: var(--weight-semibold);
+}
+
+a {
+  color: var(--ink-main);
+}
+
+/* Bright rather than Ice, because a focus ring is not a link — it is the keyboard's cursor, and
+   giving it the brand colour would put Ice on every interactive element on the page. */
+:focus-visible {
+  outline: var(--edge) solid var(--ink-text);
+  outline-offset: 2px;
 }
 
 h2 {
-  font-size: 0.8rem;
+  font-size: var(--text-tiny);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-  margin: 2rem 0 0.75rem;
+  letter-spacing: var(--tracking-widest);
+  color: var(--ink-muted);
+  font-weight: var(--weight-semibold);
+  /* Was `var(--space-7)` above, so every boundary between sections cost 32px where the mockup
+     spends 12. On a page with four of them that was 80px of nothing, and the gap had never been
+     a decision — it was a near-top step of the scale, reached for once and inherited since
+     (#128). */
+  margin: var(--space-4) 0;
 }
 
-/* Fluid: as many columns as fit, never narrower than a readable card. */
-.readings {
+/*
+ * The four tiles (#116), replacing the ten equal cards that were here.
+ *
+ * Equal cards were the honest thing to draw while nothing on the page said which readings
+ * decided anything. The tile row says it: these four are the quantities a Go Call is gated on,
+ * and they are the size of a headline because that is what they are.
+ *
+ * `auto-fit` rather than a fixed four. There are exactly four tiles, so on the desktop column
+ * this lays out as four — but the same row has to survive a 390px screen, and a fixed
+ * `repeat(4, ...)` there gives four columns of 80px with a two-line label in each.
+ */
+.tiles {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
-  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+}
+
+.tile {
+  background: var(--ink-panel);
+  border: var(--rule) solid var(--ink-border);
+  border-radius: var(--radius);
+  padding: var(--space-3);
+}
+
+.tile-headline {
   margin: 0;
 }
 
-.reading {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
-  padding: 0.75rem 0.9rem;
-}
-
-.reading dt {
-  font-size: 0.75rem;
+.tile-headline dt {
+  font-size: var(--text-micro);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
+  letter-spacing: var(--tracking-widest);
+  color: var(--ink-muted);
 }
 
-.reading dd {
-  margin: 0.35rem 0 0;
+.tile-headline dd {
+  margin: var(--space-1) 0 0;
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
-  gap: 0.3rem;
+  gap: var(--space-1);
 }
 
+/* Four figures in a row want to be read as a row, so this is a step below the size a figure
+   standing alone takes. */
+.tile-headline .value {
+  font-size: var(--text-figure);
+}
+
+/*
+ * The rest of each tile's own wave field, riding small.
+ *
+ * Small, and not absent. The spec's rule is that the other six readings are not dropped, because
+ * a pipeline that went on fetching and storing figures the site never shows is worse than a
+ * quiet line — so each tile carries the rest of its field rather than the page carrying six more
+ * cards. Laid out as rows inside the tile so a label and its figure stay on one line together.
+ */
+.companions {
+  margin: var(--space-2) 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-hair);
+}
+
+.companion {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.companion dt {
+  font-size: var(--text-micro);
+  color: var(--ink-muted);
+}
+
+.companion dd {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+}
+
+/* Small enough to read as a companion rather than as a second headline, and regular weight so
+   the tile has one figure in it that the eye lands on first. */
+.companion .value {
+  font-size: var(--text-micro);
+  font-weight: var(--weight-regular);
+}
+
+.companion .unit,
+.companion .bearing {
+  font-size: var(--text-micro);
+}
+
+/*
+ * The two temperatures, on one line under the row.
+ *
+ * Neither gates anything, so neither gets a tile: a tile is the page saying "the call turns on
+ * this", and a sea temperature decides nothing about whether to fly. They were nearly declared
+ * unread and were not, because the pipeline would then go on fetching and storing two numbers
+ * the site never shows.
+ */
+.temperatures {
+  margin: var(--space-2) 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+}
+
+.temperatures .companion {
+  justify-content: flex-start;
+}
+
+/*
+ * The line of track record at the foot of the forecast column (#119).
+ *
+ * Body size and body colour, which is the point of it: #113 replaced a track record on the page
+ * with a link to one, on the reasoning that a track record nobody navigates to is a limitation
+ * nobody reads, and a line set as fine print would be the same retreat by a different route.
+ */
+.track-record-line {
+  margin: var(--space-4) 0 0;
+  max-width: var(--measure-prose);
+  line-height: var(--leading-body);
+}
+
+/* The reading page's prose, bounded by how far a line of text can run rather than by the page
+   width — `--measure-page` is the column, this is the paragraph inside it. */
+.explainer p {
+  max-width: var(--measure-prose);
+}
+
+/*
+ * Where the tile figures came from, beside them rather than under the page (#116).
+ *
+ * It used to be the last element on the page, inside a `footer` set at `--text-small` in
+ * `--ink-muted`: smaller, dimmer and later than the figures it qualifies, which is exactly the
+ * three things the ticket forbids of it. Out of the footer it inherits body size and body
+ * colour, which makes it larger and brighter than the companion readings and the temperature
+ * line above it.
+ *
+ * `--ink-text` is set here rather than left to inherit, so that a future rule dimming a
+ * container cannot quietly take it back — and so `ink.test.ts` has something to assert.
+ *
+ * It is not literally as large as the 1.4rem figure on the tile, and no paragraph should be.
+ * The criterion the ticket is protecting is that the limit is not rendered as diminished fine
+ * print relative to what it qualifies, and a body-size, full-colour paragraph directly beneath
+ * the row is not that.
+ */
+.conditions-provenance {
+  margin: var(--space-3) 0 0;
+  color: var(--ink-text);
+}
+
+/* No `font-size` here. Every element that takes this class sets its own — the tile headline,
+   the companions, the day row and the day detail — so a size declared here was a default nothing
+   could reach, and a wrong one to inherit if some future `.value` ever did. The face and the
+   weight are the part that is genuinely shared, and `ink.test.ts` pins the face. */
 .value {
-  font-size: clamp(1.5rem, 4vw, 1.9rem);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+  font-weight: var(--weight-semibold);
+}
+
+/* A figure that lands in prose, wrapped by `Figure` (#114).
+ *
+ * The digit-scoped face in `tokens.css` sets every digit on both pages in Plex wherever it sits,
+ * including mid-sentence. What it cannot claim is the characters a number shares with prose — the
+ * decimal point, the comma, the unit — because a range covering those would set every full stop
+ * in the site's copy in the mono face. This rule is the other half: inside the wrapper the whole
+ * figure is mono, so "6.42m to 8.79m" has no Space Grotesk left in it.
+ *
+ * Size and weight are inherited deliberately. A figure in a sentence is part of that sentence,
+ * and one that changed size mid-line would read as a pull-quote. */
+.figure {
+  font-family: var(--font-mono);
 }
 
 .unit {
-  color: var(--muted);
-  font-size: 0.9rem;
+  font-family: var(--font-mono);
+  color: var(--ink-muted);
+  font-size: var(--text-meta);
 }
 
+/* A bearing rides with its reading rather than standing on its own, so it is drawn as a quiet
+   chip in the neutrals: a direction is not a state of the sea and must not read as one. */
 .bearing {
   margin-left: auto;
-  background: var(--accent);
-  color: #fff;
-  border-radius: 0.25rem;
-  padding: 0.1rem 0.4rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-family: var(--font-mono);
+  /* A bearing is one token — "326° NW" — and it broke across two lines inside the chip once the
+     mono face made it wider than the text face had at the same size. The chip is narrower than
+     the card, so it wraps rather than overflowing; this keeps it one line, which is what it was
+     before the re-skin. */
+  white-space: nowrap;
+  background: var(--ink-border);
+  color: var(--ink-text);
+  border-radius: var(--radius-badge);
+  padding: var(--space-hair) var(--space-2);
+  font-size: var(--text-tiny);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-wide);
 }
 
+/*
+ * Something failed to load.
+ *
+ * **Deliberately not a colour.** A failure is not a state of the sea, so it cannot take a
+ * status colour, and it is not the brand, so it cannot take Ice — and inventing a fourth hue
+ * for it would undo the one thing #114 is for. It is loud by weight and by a bright edge
+ * instead, which is a signal the three systems do not use anywhere else.
+ */
 .alert {
-  background: #fff6e5;
-  border: 1px solid #e8c98a;
-  border-radius: 0.5rem;
-  padding: 0.75rem 1rem;
-  margin: 0 0 1rem;
+  background: var(--ink-panel);
+  border: var(--rule) solid var(--ink-border);
+  border-left: var(--edge-bold) solid var(--ink-text);
+  border-radius: var(--radius);
+  padding: var(--space-4) var(--space-5);
+  margin: 0 0 var(--space-5);
+  font-weight: var(--weight-medium);
 }
 
 footer {
-  margin-top: 2.5rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--line);
-  color: var(--muted);
-  font-size: 0.85rem;
+  /* Was `--space-8`. That was the gap under a page; this now sits inside the column's scroller,
+     where 48px of air is a day row nobody can see (#132). */
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+  border-top: var(--rule) solid var(--ink-border);
+  color: var(--ink-muted);
+  font-size: var(--text-small);
 }
 
 footer p {
-  margin: 0.25rem 0;
+  margin: var(--space-1) 0;
 }
 
 .provenance {
-  max-width: 40rem;
+  max-width: var(--measure-prose);
+}
+
+/* ---------------------------------------------------------------------------
+ * The home page's two columns (#115).
+ *
+ * The forecast on the left, the map on the right, the map matching the column's height rather
+ * than being pinned or sticky. A fixed map with content sliding past it was considered and
+ * rejected: that is Windy's solution, and it reads as two unrelated panels rather than as one
+ * instrument.
+ *
+ * **Neither column scrolls on its own**, which is a rule about what is *absent* here — no
+ * `overflow` on either column, and no height cap that would make one necessary. A column with
+ * its own scrollbar is the same failure as a pinned map: the two halves stop moving together and
+ * stop reading as one thing.
+ *
+ * `minmax(0, …fr)` rather than a bare `fr`, because a grid track's default minimum is its
+ * content, and the hourly table is wider than its share. Without the explicit zero the table
+ * would push the left column past its fraction and shove the map off the proportion this ticket
+ * asks it to keep.
+ *
+ * The split is in fractions, so the proportion holds at every width rather than at one. The map
+ * takes the smaller share: it is the instrument's context, and the figures are what a reader
+ * came to read.
+ * ------------------------------------------------------------------------ */
+.home {
+  /* Takes the height the chrome leaves, which is what makes the no-scroll promise exact rather
+     than approximately right. `min-height: 0` because a flex item will not shrink below its
+     content without it, and the content here is deliberately taller than the space. */
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  /* **One row, exactly this container's height — and without it the columns are not capped at
+     all.** `min-height: 0` above lets `.home` shrink to the space the chrome leaves, but the
+     row inside it defaults to `auto`, which sizes to its content and overflows the box that
+     was just capped. Measured at 1440x900 before this line: `.home` 818px with both columns
+     832px inside it. The 14px of overflow was invisible — it fitted under the fold with 11px
+     to spare — and it meant `.map-slot`, which is `height: 100%` of a column, was resolving
+     against a column that grew rather than one that held.
+
+     So the map never shrank. #139's note is the paragraph that made that visible: it pushed
+     the columns to 919px and put the caption 76px below the fold, with every test green.
+     `minmax(0, 1fr)` pins the row to the container, `.map-slot` inherits a real height, and
+     `.bathymetry` — the `flex: 1` in it — finally absorbs what the prose below always claimed
+     it did. Map at 1440x900: 639px normally, 573px with a lost refresh, 552px with both
+     clauses.
+
+     **Every figure above was measured at #139 and none of them is pinned.** They date this
+     paragraph rather than defining behaviour, and they will drift the next time anything in
+     the column changes size. What is pinned is the direction, in two browser tests that write
+     no pixel figure down at all: neither column exceeds the box capping them, and the note is
+     paid for out of the map. Re-measure before believing these; do not tune anything to
+     them. */
+  grid-template-rows: minmax(0, 1fr);
+  gap: var(--space-6);
+  /* Both columns to the height of the taller, which is what "equal height" is. It is the grid
+     default and is stated anyway, because it is a promise this page is tested against rather
+     than an accident of the display type. */
+  align-items: stretch;
+}
+
+/* A grid item is a block, and a block's children establish their own flow — the left column
+   needs nothing but to exist and to be allowed to shrink. `min-width: 0` for the same reason
+   the track uses `minmax(0, …)`: without it the table inside sets the floor. */
+.home-forecast,
+.home-map {
+  min-width: 0;
+}
+
+/*
+ * The scoped no-scroll promise, in four declarations (#132).
+ *
+ * The column is capped to the viewport and its tail scrolls inside it, so the *page* never
+ * scrolls on a desktop. Three things follow, and each was a separate problem before:
+ *
+ * - The map holds its proportion. `.map-slot` is `height: 100%` of this column, so a column
+ *   that cannot change height cannot restretch it.
+ * - The left column's height is identical whether the day list or one day's detail is showing,
+ *   which is #118's invariant — held here now, by the cap, rather than by a fixed box inside.
+ * - The page measures the same at three days as at sixteen, which is what the design spec means
+ *   by refusing to assume a count.
+ *
+ * `min-height: 0` on the scrolling child is the whole trick and the usual omission: a flex item
+ * defaults to `min-height: auto`, which is its content's height, so without this the child
+ * refuses to shrink and the column grows exactly as it did before.
+ */
+.home-forecast {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.column-head {
+  /* Matching `.column-scroll`, so the fold is not a step in the left edge. */
+  padding: 0 var(--space-3);
+}
+
+/* The landmark between the column and its two blocks. It has no look of its own, but the cap
+   has to reach *through* it: a flex chain broken by one ordinary block is a scroller that never
+   scrolls. Measured before this rule existed — the scrolling block grew to 1020 inside a column
+   of 820, and the page grew with it. */
+.forecast {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.column-scroll {
+  flex: 1;
+  /*
+   * **A floor, not `0`, and the floor is what makes the tripwire honest.**
+   *
+   * `flex: 1; min-height: 0` alone means anything added above the fold is paid for out of this
+   * box first: the scroller squeezes toward nothing and the page goes on measuring exactly one
+   * viewport, so `layout.spec.ts`'s promise test would keep passing while the day list shrank
+   * to a slit. The promise would be kept in the letter and lost in the substance.
+   *
+   * With a floor, above-fold growth pushes the column past its cap instead, the page grows, and
+   * the promise test fails — which is the behaviour that test's docstring claims. Roughly five
+   * day rows; it is a floor rather than a target and nothing should be sized against it.
+   */
+  min-height: 12rem;
+  overflow-y: auto;
+  /* A scroller clips at its padding edge, so this is the room a focused row's ring needs in
+     order not to be cut in half by the box it scrolls in — `:focus-visible` is a 3px outline at
+     a 2px offset, and this is wider than the 5px that needs. `.column-head` carries the same
+     padding so that the two blocks stay aligned down the column rather than stepping. */
+  padding: 0 var(--space-3);
+  /* The rows already wrap; a horizontal bar inside a vertical scroller is the classic double
+     scrollbar and never what is wanted here. */
+  overflow-x: hidden;
+}
+
+/* Narrow widths keep no no-scroll promise and have no map beside the column, so nothing is
+   capped and nothing scrolls inside anything. The page scrolls, which on a phone is right. */
+@media (max-width: 60rem) {
+  main,
+  .home-forecast,
+  .forecast {
+    display: block;
+  }
+
+  .page-forecast {
+    height: auto;
+  }
+
+  .column-scroll {
+    /* **Both axes, because one is not enough.** `overflow-y: visible` beside an `overflow-x`
+       that is not visible computes to `auto`, so this stayed a scroll container on a phone
+       while the rule beside it claimed nothing scrolls inside anything down here. */
+    overflow: visible;
+    min-height: 0;
+    padding: 0;
+  }
+
+  .column-head {
+    padding: 0;
+  }
+}
+
+/* --- the sea floor, drawn from soundings (#121) ---------------------------- */
+
+/*
+ * The map fills its slot at the proportion the shell reserved. The frame is a fixed view of a
+ * fixed place and the slot's aspect ratio follows the column beside it, so the choice is between
+ * cropping the frame and letterboxing the panel.
+ *
+ * **It was `slice`, and this comment argued for it: cropping kept the canyon head filling the
+ * space it was given.** That argument was made against an estimate and the estimate was wrong.
+ * Measured, `slice` crops 12.98% of the width — 6.49% each side, nothing vertically — and #120's
+ * grid puts its outer columns on the bounds rather than at cell centres, so those two thin
+ * strips contained two of the five wind columns. 40% of the data the map exists to show, off
+ * the edge. It is `meet` now; `docs/adr/0015-the-whole-frame-is-drawn.md` records why.
+ *
+ * The ~97 px the letterbox leaves stays this panel's own background. **Do not fill it with
+ * `--map-band-7`.** The bands fall at the frame's north and south edges — open ocean and coast —
+ * so extending the deepest tone into them would draw sea floor nobody surveyed, which is the
+ * objection that got the hand-drawn canyon rejected in the first place.
+ */
+.bathymetry {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius);
+}
+
+.bathymetry-deep {
+  fill: var(--map-band-7);
+}
+
+.bathymetry-band-0 {
+  fill: var(--map-band-0);
+}
+.bathymetry-band-1 {
+  fill: var(--map-band-1);
+}
+.bathymetry-band-2 {
+  fill: var(--map-band-2);
+}
+.bathymetry-band-3 {
+  fill: var(--map-band-3);
+}
+.bathymetry-band-4 {
+  fill: var(--map-band-4);
+}
+.bathymetry-band-5 {
+  fill: var(--map-band-5);
+}
+.bathymetry-band-6 {
+  fill: var(--map-band-6);
+}
+.bathymetry-band-7 {
+  fill: var(--map-band-7);
+}
+
+.bathymetry-hairline {
+  fill: none;
+  stroke: var(--map-hairline);
+  stroke-width: 0.6;
+  stroke-linejoin: round;
+}
+
+.bathymetry-land {
+  fill: var(--map-land);
+  stroke: var(--map-hairline);
+  stroke-width: 0.6;
+}
+
+/* **The swell (#122), and the only colour on this map.** The base is greyscale precisely so
+   that colour can mean live data, and these crests are the first live thing drawn on it —
+   solved in the page against today's period and direction (ADR 0016).
+
+   Ice, which is the main colour: `ink.test.ts` holds the list of what may name `--ink-main`
+   and these two selectors are on it deliberately, because `tokens.css` has said since #114
+   that Main carries "the swell crests when the map arrives". They arrived.
+
+   Dim in deep water and bright inside the shoaling zone — the same stroke at two opacities,
+   so the difference reads as one front crossing a boundary rather than as two kinds of thing. */
+.bathymetry-crest {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.bathymetry-crest-deep {
+  stroke: var(--ink-main);
+  stroke-width: 0.7;
+  opacity: 0.3;
+}
+
+.bathymetry-crest-shoaling {
+  stroke: var(--ink-main);
+  stroke-width: 1.2;
+  opacity: 0.78;
+}
+
+/* **The wind (#123), the third colour system and the quietest.** Status colours carry the
+   call, Ice carries the swell, and this neutral warm grey carries the wind — deliberately
+   below the crests in the reading order, because the swell is what the site is about.
+
+   **The animation is on the path, not on the group.** The group carries the dart's position
+   and bearing in a `transform` ATTRIBUTE, and a CSS `transform` animation on the same element
+   overrides that attribute outright — every dart would pile up at the origin, pointing east,
+   and still animate convincingly. The path sits inside the rotated group, so translating it
+   along +x moves it along its own heading, which is what "drifts along its own heading" means.
+
+   `animation-duration: inherit` is doing real work: the duration is set inline on the group,
+   per dart, from `driftSeconds`. Duration is not an inherited property, so without `inherit`
+   every dart would drift at whatever this rule said and speed would vanish from the map. */
+.wind-dart path {
+  fill: var(--ink-wind);
+  animation-name: wind-drift;
+  animation-duration: inherit;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+@keyframes wind-drift {
+  0% {
+    transform: translateX(-9px);
+    opacity: 0;
+  }
+  22% {
+    opacity: 0.85;
+  }
+  74% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translateX(13px);
+    opacity: 0;
+  }
+}
+
+/* **Reduced motion keeps the map, not just the stillness.** Direction is in the glyph's
+   bearing and survives; only the drift stops. The cost is stated in `Wind.tsx`: speed lives
+   entirely in the motion, so a still map shows which way and not how hard. */
+@media (prefers-reduced-motion: reduce) {
+  .wind-dart path {
+    animation: none;
+    opacity: 0.85;
+  }
+}
+
+.wind-legend {
+  display: flex;
+  gap: var(--space-4);
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--ink-muted);
+}
+
+.wind-legend li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.wind-legend-glyph {
+  width: 20px;
+  height: 12px;
+  overflow: visible;
+}
+
+.map-slot-note-missing strong {
+  color: var(--ink-muted);
+}
+
+/* The wind on the map is older than the map claims, and this says so (#139).
+ *
+ * **Louder than the caption under it, not quieter.** #116's rule is that a limit is never set
+ * below the figure it qualifies, and the caption below is already at full ink for that reason.
+ * This one qualifies a picture that is *wrong about now*, so it takes the same bold left edge
+ * the conditions banner takes above the forecast — the treatment a reader already reads as
+ * "before you trust what is beside this".
+ *
+ * It costs the map height rather than the page — but only since `.home` was given a row that
+ * holds. That is written up on `grid-template-rows` above, and it was this note that exposed
+ * it: `.map-slot` is a flex column of the column's height and `.bathymetry` is the `flex: 1`
+ * in it, so a paragraph appearing here shrinks the drawing rather than pushing the column past
+ * the no-scroll promise (#132). `layout.spec.ts` measures that in a browser, which is the only
+ * place it can be measured. */
+.map-slot-note-old {
+  border-left: var(--edge-bold) solid var(--ink-text);
+  background: var(--ink-panel);
+}
+
+/* Where the map goes. It held a placeholder from #115 until #121 and refused to resemble a map
+   for all of it; `MapSlot.tsx` records why. There is a real one in it now. */
+.map-slot {
+  height: 100%;
+  /* A floor, for the two cases where the column beside it is short or absent: stacked under the
+     forecast at narrow widths, and — on desktop too — the failure state, where the left column
+     is one alert and nothing else. Without it the slot collapses to its own two lines of text at
+     exactly the moment a reader is deciding whether this site works. */
+  min-height: 20rem;
+  display: flex;
+  flex-direction: column;
+  /* Top, not centre — which mattered most while this was a placeholder whose label could
+     otherwise sit below the fold, and still matters: the map takes the room and the caption
+     takes the line under it, in that order. */
+  justify-content: flex-start;
+  gap: var(--space-2);
+  /* **Solid since #121.** It was dashed in `--ink-muted` while it was a placeholder, because a
+     dashed edge is the one border convention that reads as "not finished" without having to say
+     so. There is a map in it now, so the frame goes back to being a frame. */
+  border: var(--rule) solid var(--ink-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+/* The map takes the room; the caption takes a line. */
+.map-slot .bathymetry {
+  flex: 1;
+  min-height: 0;
+}
+
+.map-slot-note {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  /* **Full text colour, not the muted tone.** This line is the caveat that stops a permanent
+     feature of the sea bed being read as today's sea, and #116's rule is that a limit is never
+     set quieter than the figure it qualifies. Muted-and-a-size-down is precisely the treatment
+     that turns a disclaimer into elegant grey fine print. */
+  color: var(--ink-text);
+  font-size: var(--text-small);
+}
+
+/* Narrow widths: one column, the forecast first.
+ *
+ * **This is not the phone design**, which is a separate piece of work and is not part of v2. It
+ * is the promise that the phone is not broken while it waits for one: everything still renders,
+ * in an order that makes sense, and the page scrolls — because the no-scroll promise is a
+ * desktop promise and pretending otherwise on a 390px screen would mean hiding things.
+ *
+ * The breakpoint is where two columns stop being readable rather than a device width. Below it
+ * the left column would be narrower than the hourly table it has to hold. */
+@media (max-width: 60rem) {
+  .home {
+    grid-template-columns: minmax(0, 1fr);
+    /* **And the row cap is released, explicitly.** Stacked, this grid has two rows rather than
+       one, and `minmax(0, 1fr)` above would name only the first — leaving the map in an
+       implicit `auto` row beneath a forecast told to take everything. It happens to render
+       correctly today because the page is allowed to scroll here, so the container's height is
+       indefinite and `1fr` resolves to content. Depending on that is the same implicit
+       dependency that hid the 14px overflow above. Below this breakpoint the page scrolls and
+       both rows take their content, which is what `auto` says. */
+    grid-template-rows: auto;
+  }
 }
 
 /* --- forecast range ------------------------------------------------------- */
 
 /* The one sentence a Traveller came for (#86).
  *
- * Larger than the copy under it, in the page's ordinary ink rather than `.alert`'s amber and
- * with no panel around it. Size is the whole emphasis, which is what a reader scanning for
- * the answer needs — but most weeks this sentence says "nothing to book yet", and a warning
- * panel saying that every week would train a reader to skip the week it changes. */
-.earliest {
-  margin: 0 0 1rem;
-  font-size: 1.05rem;
-  line-height: 1.5;
-  max-width: 40rem;
+ * Larger than the copy under it, in the page's ordinary ink and with no panel around it. Size
+ * is the whole emphasis, which is what a reader scanning for the answer needs — but most weeks
+ * this sentence says "nothing to book yet", and a panel saying that every week would train a
+ * reader to skip the week it changes. */
+/*
+ * The verdict (#116): the one panel on this page a Traveller came for.
+ *
+ * A surface in the status colour, which §4 of the spec licenses explicitly — status colour is
+ * a state of the sea, and this is the page's loudest statement about one. It replaces
+ * `.earliest`, which was a paragraph of lead-sized prose saying most of the same thing.
+ */
+.verdict {
+  /* Tightened by #132: the scoped promise buys its rows out of whitespace above
+     the fold, and this panel is the largest block up there. Space only — no type size and
+     no colour changes, both of which `ink.test.ts` guards. */
+  margin: 0 0 var(--space-4);
+  padding: var(--space-4);
+  border: var(--rule) solid var(--ink-border);
+  border-radius: var(--radius);
+  background: var(--ink-panel);
+}
+
+/* The tier and the Lead Time, in the status colour and in mono. Mono by selector rather than
+   through `Figure`, because the whole line is a machine's statement about a date and the number
+   in it is not a figure landing in prose — it is the notice a reader has to act inside. */
+.verdict-status {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-widest);
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+/* The largest type on the page, and an h2 that deliberately does not look like the other h2s —
+   those are quiet uppercase labels above sections, and this is the answer. */
+.verdict-headline {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-figure-lg);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-tight);
+  text-transform: none;
+  color: var(--ink-text);
+}
+
+/*
+ * The figures, and the limits that qualify them, at the same size.
+ *
+ * One rule for both on purpose. #116's acceptance criteria require that the height-only caveat
+ * and the extrapolation caution are "no smaller, dimmer or later than the figures they
+ * qualify", and the surest way to keep a caveat the same size as what it caveats is for the two
+ * to be unable to differ. `ink.test.ts` holds the colour half, which cannot be shared because
+ * the caveat is brighter than the prose around it rather than dimmer.
+ */
+.verdict-detail,
+.verdict-scope {
+  font-size: var(--text-small);
+  line-height: var(--leading-body);
+  max-width: var(--measure-prose);
+}
+
+.verdict-detail {
+  margin: var(--space-2) 0 0;
+  color: var(--ink-muted);
+}
+
+/* Full text colour, not the muted tone of the prose it follows. A redesign is exactly the
+   change that turns a disclaimer into elegant grey fine print, and this project exists to avoid
+   overclaiming — so the limit is set brighter than the sentence around it, not dimmer. */
+.verdict-scope {
+  margin: var(--space-2) 0 0;
+  color: var(--ink-text);
+}
+
+/* The figures inside the sentence, lifted out of the muted prose. */
+.verdict-detail strong {
+  color: var(--ink-text);
+  font-weight: var(--weight-semibold);
+}
+
+.verdict-go {
+  border-color: var(--ink-go);
+  background: var(--ink-go-dim);
+}
+
+.verdict-go .verdict-status {
+  color: var(--ink-go);
+}
+
+.verdict-watch {
+  border-color: var(--ink-watch);
+  background: var(--ink-watch-dim);
+}
+
+.verdict-watch .verdict-status {
+  color: var(--ink-watch);
 }
 
 /* The multi-day windows, above the range (#85).
  *
  * A surface rather than an alert. It is the first answer a trip-planner wants and sits above
  * everything, so it needs to read as the summary of what follows — not as a warning, which is
- * what `.alert`'s amber would make of "there is a three-day swell here". */
+ * what the bright edge above would make of "there is a three-day swell here". */
 .windows {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
-  padding: 0.75rem 1rem;
-  margin: 0 0 1rem;
+  background: var(--ink-panel);
+  border: var(--rule) solid var(--ink-border);
+  border-radius: var(--radius);
+  padding: var(--space-4) var(--space-5);
+  margin: 0 0 var(--space-5);
 }
 
 .windows h3 {
-  margin: 0 0 0.5rem;
-  font-size: 1rem;
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-body);
 }
 
 .windows ul {
@@ -173,81 +996,265 @@ footer p {
 }
 
 .windows li + li {
-  margin-top: 0.4rem;
+  margin-top: var(--space-2);
 }
 
 .windows p {
-  margin: 0.5rem 0 0;
+  margin: var(--space-3) 0 0;
 }
 
+/* The days ahead, one per row (#117).
+ *
+ * A row rather than a grid cell, because a cell fits two of the four things a day has to carry
+ * — its date, its height, how it compares with the rest of the range, and the call. The grid
+ * this replaced fitted the first two and wrapped the rest onto further lines, which is also why
+ * it took three rows of cards to show a week.
+ *
+ * **Every row is one line at every count.** Nothing here grows with the number of days: sixteen
+ * rows are sixteen of exactly this, which is what lets the column's height be reasoned about
+ * against a response nobody has seen yet. */
 .days {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
-  gap: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
 }
 
 .day {
   display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
+  /* Wrapping rather than a media query. At a phone width the fixed cells no longer fit beside
+     each other, and the choice is to wrap them or to drop one — and dropping the period and
+     direction is what a `display: none` would quietly do, to the one reading that separates a
+     groundswell worth travelling for from a big messy sea. */
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
   text-align: left;
   font: inherit;
+  color: inherit;
   cursor: pointer;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--line);
-  border-radius: 0.5rem;
-  padding: 0.6rem 0.7rem;
+  background: var(--ink-panel);
+  border: var(--rule) solid var(--ink-border);
+  border-radius: var(--radius-badge);
+  padding: var(--space-1) var(--space-3);
+  /* Tight, and stated here rather than left to the body's leading: a row is one line of figures
+     and the leading meant for a paragraph adds four pixels to each of sixteen rows. */
+  line-height: var(--leading-tight);
 }
 
 .day:hover {
-  border-color: var(--accent);
+  border-color: var(--ink-muted);
 }
 
 .day-date {
-  font-size: 0.75rem;
+  width: 5rem;
+  flex-shrink: 0;
+  font-size: var(--text-tiny);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
+  letter-spacing: var(--tracking-wide);
+  color: var(--ink-muted);
+}
+
+/* Right-aligned at a fixed width, so sixteen heights read as a column of figures a reader can
+   run an eye down rather than sixteen numbers each starting wherever its date happened to end. */
+.day-swell {
+  width: 4.5rem;
+  flex-shrink: 0;
+  text-align: right;
 }
 
 .day-swell .value {
-  font-size: 1.4rem;
+  font-size: var(--text-meta);
+}
+
+.day-swell .unit {
+  font-size: var(--text-tiny);
 }
 
 .day-detail {
   display: flex;
   align-items: baseline;
-  gap: 0.3rem;
-  font-size: 0.85rem;
-  color: var(--muted);
+  gap: var(--space-1);
+  width: 8.5rem;
+  flex-shrink: 0;
+  font-size: var(--text-small);
+  color: var(--ink-muted);
 }
 
 .day-detail .value {
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--ink);
+  font-size: var(--text-tiny);
+  font-weight: var(--weight-semibold);
+  color: var(--ink-text);
 }
 
+.day-detail .unit {
+  font-size: var(--text-tiny);
+}
+
+/* The bearing chip's own rule pushes it to the end of a flex line; inside a fixed-width cell
+   that would strand it at the cell's edge rather than beside the period it belongs to. */
 .day-detail .bearing {
-  margin-left: auto;
+  margin-left: 0;
+  font-size: var(--text-micro);
+  padding: 0 var(--space-1);
 }
 
-/* How much was checked, not how much it moved. Deliberately the quietest thing on the card:
-   it qualifies the call above rather than competing with it, and it carries no number, so it
+/* The comparison, drawn rather than stated: a track across whatever room the line has left,
+   filled to this point's share of the largest one beside it.
+ *
+ * **One pair of rules for both bars**, the day row's and the series under a call's history. They
+ * were written twice and had already drifted a height apart; the history bar's own comment says
+ * it is "the same relative treatment the day rows use", which is a comment asking to be a shared
+ * class.
+ *
+ * **In the neutrals.** How one height compares with the tallest beside it is not a judgement
+ * about the sea, and a bar in the status colours would make "biggest day this week" and "book a
+ * flight" one signal — the confusion this page exists to prevent. `ink.test.ts` holds these two
+ * selectors to that. */
+.track {
+  flex: 1 1 4rem;
+  min-width: 2.5rem;
+  height: var(--space-2);
+  border-radius: var(--radius-badge);
+  background: var(--ink-border);
+  overflow: hidden;
+}
+
+.fill {
+  display: block;
+  height: 100%;
+  background: var(--ink-muted);
+}
+
+/* How much was checked, not how much it moved. Deliberately the quietest thing on the row: it
+   qualifies the call beside it rather than competing with it, and it carries no number, so it
    cannot be scanned as a second height beside the peak. */
 .day-agreement {
-  font-size: 0.7rem;
+  flex-shrink: 0;
+  font-size: var(--text-micro);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-  border-top: 1px dotted var(--rule, rgba(128, 128, 128, 0.35));
-  padding-top: 0.3rem;
+  letter-spacing: var(--tracking-wide);
+  color: var(--ink-muted);
+}
+
+/* The call, last and at a fixed width, so the badges line up down the right-hand edge and a
+   reader looking for a Go Call reads one column rather than sixteen row-ends. */
+.day .call {
+  width: 4.5rem;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+/* A Go or a Watch washes its whole row, which is what makes one day of sixteen visible at a
+   glance. The design spec puts day rows inside the status system for exactly this. The wash is
+   the only thing in the row that is not in the neutrals, and the badge it surrounds is what
+   names the verdict — the row says "look here", the badge says what it is. */
+.day-go,
+.day-confirmed {
+  background: var(--ink-go-dim);
+  border-color: var(--ink-go);
+}
+
+.day-watch {
+  background: var(--ink-watch-dim);
+  border-color: var(--ink-watch);
+}
+
+/* Where the measured forecast-error archive stops, and what that means for the rows under it.
+ *
+ * A stated boundary rather than a shorter list: trimming the range back to the days the archive
+ * covers would drop a day somebody could still book a flight for, to make the arithmetic neat. */
+.days-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 var(--space-2);
+  font-size: var(--text-tiny);
+  color: var(--ink-muted);
+}
+
+.days-divider::after {
+  content: '';
+  flex-grow: 1;
+  height: var(--rule);
+  background: var(--ink-border);
+}
+
+/* Dimmer, and hollow rather than filled: out here the plausible range is a line continued past
+   everything that was ever measured about it, and a row that looked like the ones above would
+   present an extrapolation as evidence.
+ *
+ * **Dimmed element by element rather than by fading the whole row.** An `opacity` on the row was
+ * the shorter way to write this and it takes the date, the period and the call down with the
+ * height — on days somebody can still book a flight for, which is the entire reason they are on
+ * the page rather than trimmed off the end of it. What is uncertain out here is the size, so that
+ * is what goes quiet. */
+.days.beyond .day {
+  background: transparent;
+  border-style: dashed;
+}
+
+.days.beyond .day-swell .value {
+  color: var(--ink-muted);
+  font-weight: var(--weight-regular);
+}
+
+.days.beyond .fill {
+  opacity: 0.55;
 }
 
 .hint {
-  color: var(--muted);
-  font-size: 0.9rem;
+  color: var(--ink-muted);
+  font-size: var(--text-meta);
+}
+
+/* --- the slot the days and one day's hours share (#118) ------------------- */
+
+/*
+ * One box, two states, and no height of its own.
+ *
+ * The detail used to open *beneath* the list. That grew the left column, and `.map-slot` is
+ * `height: 100%` of it — so clicking a row changed the map's proportion and moved the page
+ * under the reader's hands. Swapping the two states inside one box is what fixes that, and it
+ * is the whole of what this rule is for.
+ *
+ * **#118 gave this box a fixed height and its own scrollbar; #132 took both away.** They were
+ * right for as long as this was the only thing holding the column steady. Once
+ * `.column-scroll` caps the column's tail, a height here buys nothing and costs a scroller
+ * inside a scroller — and the room a focused row's ring needs belongs on the box that does the
+ * clipping, which is that one and not this.
+ */
+.day-slot {
+  min-width: 0;
+}
+
+/* The way back, and the first thing in the detail state. Styled as a control rather than as a
+   link: it changes what this box is showing, it does not navigate anywhere.
+ *
+ * **No arrow glyph on it.** `←` is not in `REPERTOIRE` — the subset carries `→` and not its
+ * mirror — so drawing one here would fall back to a system face for a single character, which
+ * is the defect #130 is open about elsewhere on this page. The words carry the direction. */
+.day-slot-back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  padding: var(--space-1) var(--space-3);
+  font: inherit;
+  font-size: var(--text-meta);
+  color: var(--ink-text);
+  background: var(--ink-panel);
+  border: var(--rule) solid var(--ink-border);
+  border-radius: var(--radius-badge);
+  cursor: pointer;
+}
+
+.day-slot-back:hover {
+  border-color: var(--ink-muted);
+}
+
+.day-slot-heading {
+  margin-top: 0;
 }
 
 /* The table is wider than a phone. It scrolls inside its own box so the page itself
@@ -255,31 +1262,36 @@ footer p {
    broken on mobile. */
 .hours-scroll {
   overflow-x: auto;
-  margin-top: 1rem;
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
-  background: var(--surface);
+  margin-top: var(--space-5);
+  border: var(--rule) solid var(--ink-border);
+  border-radius: var(--radius);
+  background: var(--ink-panel);
 }
 
 .hours-scroll table {
   border-collapse: collapse;
   width: 100%;
   min-width: 22rem;
-  font-size: 0.9rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
 }
 
 .hours-scroll caption {
   text-align: left;
-  padding: 0.6rem 0.75rem;
-  font-size: 0.8rem;
+  padding: var(--space-3) var(--space-4);
+  font-family: var(--font-text);
+  font-size: var(--text-tiny);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
+  letter-spacing: var(--tracking-wide);
+  color: var(--ink-muted);
 }
 
+/* `tabular-nums` is redundant against a monospaced face and kept anyway, here and on the
+   record tables: it is one declaration, and it is what stops a column of figures going ragged
+   if a later change ever points these cells at the text face. */
 .hours-scroll th,
 .hours-scroll td {
-  padding: 0.35rem 0.75rem;
+  padding: var(--space-2) var(--space-4);
   text-align: right;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -288,24 +1300,28 @@ footer p {
 .hours-scroll thead th,
 .hours-scroll tbody th {
   text-align: left;
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
 .hours-scroll thead th {
-  border-bottom: 1px solid var(--line);
-  font-size: 0.75rem;
+  border-bottom: var(--rule) solid var(--ink-border);
+  font-size: var(--text-tiny);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
+  letter-spacing: var(--tracking-wide);
+  color: var(--ink-muted);
 }
 
+/* Banding by tone rather than by tint: alternate rows sink to the deeper ground instead of
+   taking a tint, which separates them without introducing a colour that would then have to
+   mean something. Sinking rather than lifting, because a table of figures on this ground
+   should read as rows cut into it rather than as rows stacked on it. */
 .hours-scroll tbody tr:nth-child(even) {
-  background: #fafcfd;
+  background: var(--ink-deep);
 }
 
 .hours-scroll .unit {
-  font-size: 0.75rem;
-  margin-left: 0.15rem;
+  font-size: var(--text-tiny);
+  margin-left: var(--space-hair);
 }
 
 /* The wind's bearing sits in the wind cell rather than in a column of its own, because a
@@ -313,107 +1329,107 @@ footer p {
    be readable apart (#98). `margin-left: auto` does nothing outside a flex container, so the
    gap is stated here rather than inherited from the badge's own rule. */
 .hours-scroll .bearing {
-  margin-left: 0.4rem;
-  font-size: 0.7rem;
-  padding: 0.05rem 0.3rem;
-}
-
-/* Prominence relative to the rest of the range, so the standout day is visible at a
-   glance whether the week peaks at 1.2m or 12m. Selection is declared after these and
-   with a higher-specificity selector, because the earlier version let the size classes
-   override it and clicking a big day changed almost nothing. */
-.day.rank-ordinary .day-swell .value {
-  color: var(--muted);
-  font-weight: 500;
-}
-
-.day.rank-notable {
-  border-left-color: #6aa9c0;
-}
-
-.day.rank-leading {
-  border-left-color: #b5471f;
-  background: #fdf3ee;
-}
-
-.day.rank-leading .day-swell .value {
-  font-size: 1.7rem;
-  color: #8f3213;
+  margin-left: var(--space-2);
+  font-size: var(--text-micro);
+  padding: 0 var(--space-1);
 }
 
 .day.day.selected {
-  border-color: var(--accent);
-  border-left-color: var(--accent);
-  background: #e6f2f7;
-  box-shadow: inset 0 0 0 1px var(--accent);
+  border-color: var(--ink-text);
+  background: var(--ink-border);
+  box-shadow: inset 0 0 0 var(--rule) var(--ink-text);
 }
 
 /* --- calls ---------------------------------------------------------------- */
 
+/*
+ * The verdict, in the status system — which is the one place the loudest colour on the page is
+ * allowed to be, and never Ice.
+ *
+ * Two hues, three treatments, and the treatment is what separates statuses that share a hue:
+ *
+ * - **Go is the only filled chip on either page.** Pastel green, graphite text, the brightest
+ *   area of colour anywhere here. It is the one status that asks a reader to spend money.
+ * - **Confirmed** is the same green, washed and outlined rather than filled. It is happening,
+ *   which matters enormously to somebody already in Portugal and is not an instruction to
+ *   anybody else.
+ * - **Watch** is pastel yellow, washed and outlined for the same reason.
+ *
+ * Pastel green is a quieter Go Call than the vermilion it replaces, and that was chosen
+ * knowingly. **If it ever reads as too relaxed the fix is more weight or size on the Go row,
+ * not more saturation** — saturating it collapses the distinction between the three colour
+ * systems.
+ */
 .call {
   align-self: flex-start;
-  border-radius: 0.25rem;
-  padding: 0.05rem 0.35rem;
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  border-radius: var(--radius-badge);
+  padding: 0 var(--space-2);
+  border: var(--rule) solid transparent;
+  font-size: var(--text-micro);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-wider);
   text-transform: uppercase;
 }
 
-/* Staleness is not an error: the data is real, it is simply old, and the page still works.
-   Distinguished from `.alert`'s failure styling so the two do not read as the same thing —
-   one says "we could not load this", the other says "this loaded, but do not act on it". */
-.stale {
-  border-left: 4px solid #b5471f;
-  background: #fdf0d5;
-  color: #7a5410;
+.call-go {
+  background: var(--ink-go);
+  color: var(--ink-deep);
+}
+
+.call-confirmed {
+  background: var(--ink-go-dim);
+  border-color: var(--ink-go);
+  color: var(--ink-go);
+}
+
+.call-watch {
+  background: var(--ink-watch-dim);
+  border-color: var(--ink-watch);
+  color: var(--ink-watch);
 }
 
 .call-none {
-  background: #eef2f4;
-  color: var(--muted);
+  background: var(--ink-border);
+  color: var(--ink-muted);
 }
 
 /* A day nothing has judged. Deliberately paler and outlined rather than filled: it is an
    absence of advice, and it must not read as a verdict of "not worth travelling for". */
 .call-unjudged {
   background: transparent;
-  border: 1px dashed #c3ccd2;
-  color: var(--muted);
+  border-color: var(--ink-border);
+  border-style: dashed;
+  color: var(--ink-muted);
 }
 
-.call-watch {
-  background: #fdf0d5;
-  color: #7a5410;
-}
-
-.call-go {
-  background: #b5471f;
-  color: #fff;
-}
-
-.call-confirmed {
-  background: #0b5d7a;
-  color: #fff;
+/* Staleness is not an error: the data is real, it is simply old, and the page still works.
+   Kept apart from the failure styling so the two do not read as the same thing — one says "we
+   could not load this", the other says "this loaded, but do not act on it". It is a state of
+   the *data*, not of the sea, so like `.alert` it stays out of the status colours and is
+   marked by an edge in the neutrals instead. */
+.stale {
+  border-left: var(--edge-bold) solid var(--ink-muted);
+  background: var(--ink-panel);
+  color: var(--ink-text);
 }
 
 .call-detail {
-  margin-top: 1rem;
-  padding: 0.9rem 1rem;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
+  margin-top: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  background: var(--ink-panel);
+  border: var(--rule) solid var(--ink-border);
+  border-radius: var(--radius);
 }
 
 .call-detail p {
-  margin: 0 0 0.5rem;
+  margin: 0 0 var(--space-3);
 }
 
 .call-detail ul {
-  margin: 0 0 0.5rem;
-  padding-left: 1.1rem;
-  color: var(--muted);
-  font-size: 0.9rem;
+  margin: 0 0 var(--space-3);
+  padding-left: var(--space-5);
+  color: var(--ink-muted);
+  font-size: var(--text-meta);
 }
 
 /* How sure the forecast is: the plausible range, and the chance of clearing the height bar.
@@ -424,11 +1440,11 @@ footer p {
  * ticket #15 exists to end. The beyond-the-archive notice inside it keeps `.alert`, because
  * that one genuinely is a shortfall in what was measured. */
 .plausible-range {
-  margin: 0 0 0.5rem;
+  margin: 0 0 var(--space-3);
 }
 
 .plausible-range p {
-  margin: 0 0 0.5rem;
+  margin: 0 0 var(--space-3);
 }
 
 /* What the percentage above does not cover (#66).
@@ -436,9 +1452,19 @@ footer p {
  * Muted rather than an `.alert`: it is a scope note on an honest figure, not a warning that
  * something is wrong. Loud styling here would compete with the beyond-the-archive notice,
  * which is a genuine shortfall and has to stay the louder of the two. */
+/*
+ * The height-only caveat inside the day panel.
+ *
+ * It was `--ink-muted` at `--text-meta`: a step down the scale and a step toward the quiet tone,
+ * against a percentage rendered at full size in full colour. Smaller and dimmer than the figure
+ * it qualifies, which is the pair of things #116's criterion forbids and #119 asks to be true of
+ * every limit on the site rather than only the one the verdict carries.
+ *
+ * The verdict's copy of the same caveat was written correctly; this one predates it and was
+ * missed because nothing guarded it. `ink.test.ts` guards it now.
+ */
 .plausible-range-scope {
-  color: var(--muted);
-  font-size: 0.9rem;
+  color: var(--ink-text);
 }
 
 /* How the prediction has moved since the run before.
@@ -446,8 +1472,8 @@ footer p {
  * Quiet by design. It is context for the figures above rather than a finding of its own, and
  * a swell that grew half a metre between two runs is not news until it has kept doing it. */
 .shift {
-  color: var(--muted);
-  font-size: 0.9rem;
+  color: var(--ink-muted);
+  font-size: var(--text-meta);
 }
 
 /* That the verdict moved, not only the number under it (#84).
@@ -456,8 +1482,9 @@ footer p {
  * on this panel that asks a reader to stop doing something they have been doing all week, and
  * styling it as quietly as the height change would bury it under the number it outranks. */
 .tier-change {
-  margin: 0.25rem 0 0;
-  font-size: 0.95rem;
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-meta);
+  color: var(--ink-text);
 }
 
 /* The shape of a prediction across runs (#99).
@@ -474,37 +1501,37 @@ footer p {
  * reader scanning it is looking for where the series arrived, and every row at equal weight
  * makes the present indistinguishable from the superseded opinions above it. */
 .history {
-  margin: 0.5rem 0;
+  margin: var(--space-3) 0;
 }
 
 .history h4 {
-  margin: 0 0 0.35rem;
-  font-size: 0.8rem;
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-tiny);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-  font-weight: 600;
+  letter-spacing: var(--tracking-wide);
+  color: var(--ink-muted);
+  font-weight: var(--weight-semibold);
 }
 
 .history ol {
   margin: 0;
   padding: 0;
   list-style: none;
-  font-size: 0.9rem;
-  color: var(--muted);
+  font-size: var(--text-meta);
+  color: var(--ink-muted);
 }
 
 .history li {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.5rem;
-  padding: 0.25rem 0;
-  border-top: 1px solid var(--line);
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
+  border-top: var(--rule) solid var(--ink-border);
 }
 
 .history li.current {
-  color: inherit;
+  color: var(--ink-text);
 }
 
 /* Fixed widths so the columns line up down the ladder. A series read for its shape is read
@@ -514,49 +1541,37 @@ footer p {
    `lead_time_days` is whole days, so two rows commonly say "6 days out". */
 .history .run {
   flex: 0 0 7rem;
-  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
 }
 
 .history .lead {
   flex: 0 0 5.5rem;
-  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
 }
 
-/* The bar. Scaled against the largest point in this series, so it needs no domain knowledge
-   and no calibrated threshold — the same relative treatment the day cards use. Deliberately
-   not the plausible range: it encodes the one height the row is about, and a track that also
-   drew the range would put two lengths on one line that mean different things. */
-.history .track {
-  flex: 1 1 4rem;
-  min-width: 3rem;
-  height: 0.4rem;
-  border-radius: 0.2rem;
-  background: #eef2f4;
-  overflow: hidden;
-}
+/* The bar is `.track` and `.fill`, declared once with the day row's. Scaled against the largest
+   point in this series, so it needs no domain knowledge and no calibrated threshold.
+   Deliberately not the plausible range: it encodes the one height the row is about, and a track
+   that also drew the range would put two lengths on one line that mean different things.
 
-.history .fill {
-  display: block;
-  height: 100%;
-  background: var(--accent);
-  opacity: 0.45;
-}
-
+   What is local to the series is which point a reader is being shown. */
 .history li.current .fill {
-  opacity: 1;
+  background: var(--ink-text);
 }
 
 .history .range {
-  font-size: 0.85rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
 }
 
 /* The present row's label sits where the superseded rows carry a timestamp, so the column
    stays a column. */
 .history li.current .run {
-  font-weight: 600;
+  font-family: var(--font-text);
+  font-weight: var(--weight-semibold);
   text-transform: uppercase;
-  font-size: 0.7rem;
-  letter-spacing: 0.04em;
+  font-size: var(--text-micro);
+  letter-spacing: var(--tracking-wide);
 }
 
 /* How much the forecasters agree.
@@ -566,25 +1581,25 @@ footer p {
  * ordinary day look like something had gone wrong. The degraded notice inside it still uses
  * `.alert`, because that one genuinely is a shortfall. */
 .agreement {
-  margin-top: 0.6rem;
-  padding: 0.9rem 1rem;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--line);
-  border-radius: 0.5rem;
+  margin-top: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  background: var(--ink-panel);
+  border: var(--rule) solid var(--ink-border);
+  border-left: var(--edge) solid var(--ink-border);
+  border-radius: var(--radius);
 }
 
 .agreement h4 {
-  margin: 0 0 0.4rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--ink-muted);
 }
 
 .agreement p {
-  margin: 0 0 0.5rem;
+  margin: 0 0 var(--space-3);
 }
 
 .agreement p:last-child {
@@ -601,59 +1616,61 @@ footer p {
  * ------------------------------------------------------------------------ */
 
 .track-record .lead {
-  font-size: 1.05rem;
-  margin-bottom: 0.75rem;
+  font-size: var(--text-lead);
+  margin-bottom: var(--space-4);
 }
 
 .track-record h3 {
-  font-size: 1.05rem;
-  margin: 2rem 0 0.5rem;
+  font-size: var(--text-lead);
+  margin: var(--space-7) 0 var(--space-3);
 }
 
 .track-record h4 {
-  margin: 0 0 0.15rem;
-  font-size: 1rem;
+  margin: 0 0 var(--space-hair);
+  font-size: var(--text-body);
 }
 
-/* Not muted, not small, and given a border that makes it a block rather than a
-   footnote. This is the sentence that stops every figure below being read as an
-   operating history. */
+/* Not muted, not small, and given an edge that makes it a block rather than a footnote. This
+   is the sentence that stops every figure below being read as an operating history.
+ *
+ * The edge is bright rather than Ice: a caveat is not the brand, and it is not a state of the
+ * sea either. It gets its weight from tone, the way `.alert` does. */
 .caveat {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-left: 4px solid var(--accent);
-  border-radius: 0.5rem;
-  padding: 0.75rem 1rem;
-  margin: 0 0 1rem;
+  background: var(--ink-panel);
+  border: var(--rule) solid var(--ink-border);
+  border-left: var(--edge-bold) solid var(--ink-text);
+  border-radius: var(--radius);
+  padding: var(--space-4) var(--space-5);
+  margin: 0 0 var(--space-5);
 }
 
 .panel {
-  margin: 1rem 0 1.5rem;
+  margin: var(--space-5) 0 var(--space-6);
 }
 
 .panel-caption {
-  color: var(--muted);
-  font-size: 0.9rem;
-  margin: 0 0 0.5rem;
+  color: var(--ink-muted);
+  font-size: var(--text-meta);
+  margin: 0 0 var(--space-3);
 }
 
 .tiers {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
-  gap: 0.75rem;
+  gap: var(--space-4);
 }
 
 .tier {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
-  padding: 0.75rem 1rem;
+  background: var(--ink-panel);
+  border: var(--rule) solid var(--ink-border);
+  border-radius: var(--radius);
+  padding: var(--space-4) var(--space-5);
 }
 
 .tier-meaning {
-  color: var(--muted);
-  font-size: 0.85rem;
-  margin: 0 0 0.6rem;
+  color: var(--ink-muted);
+  font-size: var(--text-small);
+  margin: 0 0 var(--space-3);
 }
 
 .tier dl {
@@ -664,25 +1681,25 @@ footer p {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 0.75rem;
-  padding: 0.3rem 0;
-  border-top: 1px solid var(--line);
+  gap: var(--space-4);
+  padding: var(--space-1) 0;
+  border-top: var(--rule) solid var(--ink-border);
 }
 
 .tier dt {
-  color: var(--muted);
-  font-size: 0.85rem;
+  color: var(--ink-muted);
+  font-size: var(--text-small);
 }
 
 .tier dd {
   margin: 0;
   text-align: right;
-  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
 }
 
 .aside {
-  color: var(--muted);
-  font-size: 0.8rem;
+  color: var(--ink-muted);
+  font-size: var(--text-tiny);
   display: block;
 }
 
@@ -691,10 +1708,10 @@ footer p {
    pushes every caveat below it off the end of the page. */
 .record-table {
   overflow-x: auto;
-  margin: 0.75rem 0 1rem;
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
-  background: var(--surface);
+  margin: var(--space-4) 0 var(--space-5);
+  border: var(--rule) solid var(--ink-border);
+  border-radius: var(--radius);
+  background: var(--ink-panel);
 }
 
 .record-table.days {
@@ -706,21 +1723,23 @@ footer p {
   border-collapse: collapse;
   width: 100%;
   min-width: 24rem;
-  font-size: 0.9rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
 }
 
 .record-table caption {
   text-align: left;
-  padding: 0.6rem 0.75rem;
-  font-size: 0.8rem;
+  padding: var(--space-3) var(--space-4);
+  font-family: var(--font-text);
+  font-size: var(--text-tiny);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
+  letter-spacing: var(--tracking-wide);
+  color: var(--ink-muted);
 }
 
 .record-table th,
 .record-table td {
-  padding: 0.35rem 0.75rem;
+  padding: var(--space-2) var(--space-4);
   text-align: right;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -729,42 +1748,57 @@ footer p {
 .record-table thead th,
 .record-table tbody th {
   text-align: left;
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
+/* Sticky, so it needs an opaque ground of its own: the rows scrolling under it are the panel
+   colour, and a transparent heading would let them through it. */
 .record-table thead th {
-  border-bottom: 1px solid var(--line);
+  border-bottom: var(--rule) solid var(--ink-border);
   position: sticky;
   top: 0;
-  background: var(--surface);
+  background: var(--ink-panel);
+  font-size: var(--text-tiny);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--ink-muted);
 }
 
 .record-table tbody tr + tr th,
 .record-table tbody tr + tr td {
-  border-top: 1px solid var(--line);
+  border-top: var(--rule) solid var(--ink-border);
 }
 
 .record-table tr.gold th {
-  font-weight: 700;
+  font-weight: var(--weight-bold);
+  color: var(--ink-text);
 }
 
-/* Colour is a second signal, never the only one — the sign is already in the text,
-   so a reader who cannot distinguish these loses nothing. */
+/* Whether the model beat the baseline in a band.
+ *
+ * **The colour came out of these on purpose.** They used to be green and red, and neither is
+ * available now: a green here would be the Go Call's green spent on model performance, which
+ * is not a state of the sea, and the page would then have two greens meaning two unrelated
+ * things. The old rule beside them — "colour is a second signal, never the only one — the sign
+ * is already in the text" — is what makes that safe to withdraw. What remains is weight, on
+ * the band that lost, because a band where the model failed to beat a rule of thumb is the row
+ * worth stopping on. */
 .better {
-  color: #1c6b3f;
+  color: var(--ink-text);
 }
 
 .worse {
-  color: #96431c;
+  color: var(--ink-text);
+  font-weight: var(--weight-semibold);
 }
 
 .limitations {
-  margin: 0.5rem 0 1rem;
-  padding-left: 1.1rem;
+  margin: var(--space-3) 0 var(--space-5);
+  padding-left: var(--space-5);
 }
 
 .limitations li {
-  margin-bottom: 0.6rem;
+  margin-bottom: var(--space-3);
 }
 
 /* A caveat the source insists on, under the table it qualifies. Not muted into a
@@ -772,11 +1806,11 @@ footer p {
    is, and a note a reader skips is a note that has failed. */
 .band-caveats {
   margin: 0;
-  padding: 0.6rem 1rem 0.75rem 2rem;
-  border-top: 1px solid var(--line);
-  font-size: 0.85rem;
+  padding: var(--space-3) var(--space-5) var(--space-4) var(--space-7);
+  border-top: var(--rule) solid var(--ink-border);
+  font-size: var(--text-small);
 }
 
 .band-caveats li + li {
-  margin-top: 0.35rem;
+  margin-top: var(--space-2);
 }

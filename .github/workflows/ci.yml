@@ -94,6 +94,16 @@ jobs:
       - name: Test
         run: npm test
 
+      # Layout is measured in a real browser, because jsdom does none: there, every element is
+      # 0x0 and "nothing scrolls" passes against a page that scrolls. Only Chromium is installed
+      # — one engine is enough to catch a layout that broke, and three would treble the download
+      # for a site whose layout promises are about box heights rather than engine quirks.
+      - name: Install browser
+        run: npm run test:layout:install
+
+      - name: Layout
+        run: npm run test:layout
+
       - name: Build
         run: npm run build
 

@@ -665,6 +665,15 @@ opinion" is one query and no row under the real source is anything but a real re
 """
 
 
+GRID_UNAVAILABLE = "open-meteo-grid-unavailable"
+"""The `raw_response` source naming a run that came back without the map's wind field (#120).
+
+The same device as `ENSEMBLE_UNAVAILABLE` and for the same reason. The absence of grid rows
+cannot report this on its own: a store holding no grid looks identical whether a fetch failed
+or the installation has never run, and those are different facts.
+"""
+
+
 def attempted_url(error: httpx.HTTPError, fallback: str) -> str:
     """The URL a failed request was aimed at, as far as the exception knows it.
 
@@ -740,6 +749,13 @@ def _fetch_and_store(store: Store, client: httpx.Client, sleep, run_id: int) -> 
         run_id=run_id,
     )
 
+    # **Last, and deliberately after the forecast is already written.** The grid is the map's
+    # alone: no Go Call, no Watch and no forecast hour is made of it. Fetching it earlier
+    # would put two more provider requests between a validated forecast and its storage, so
+    # a slow or sulking endpoint could cost a traveller the thing they came for in order to
+    # protect the thing they did not.
+    refresh_conditions_grid(store, client, sleep, run_id)
+
 
 def fetch_spread_members(store: Store, client: httpx.Client, sleep, run_id: int) -> Ensemble:
     """The wave models Model Spread is measured across, or an empty ensemble if unreachable.
@@ -786,3 +802,96 @@ def fetch_spread_members(store: Store, client: httpx.Client, sleep, run_id: int)
         return {}
     store.record_raw_response(run_id, "open-meteo-ensemble", url, body)
     return collect_ensemble(body, models)
+
+
+def refresh_conditions_grid(store: Store, client: httpx.Client, sleep, run_id: int) -> None:
+    """Fetch the map's grid and replace the stored one, or leave both alone (#120).
+
+    **A grid that does not arrive degrades the map and never the run.** ADR 0003 already makes
+    this trade for the ensemble, where a missing model "degrades the uncertainty estimate
+    rather than the prediction". Here it is the easier call of the two: the ensemble at least
+    widens the range a reader sees, while nothing whatsoever that a traveller books a flight
+    on is made of this grid. Losing a forecast to protect a wind field would be the wrong way
+    round in both directions.
+
+    **A `ValueError` is caught here, and deliberately is not in `fetch_spread_members`.** The
+    difference is what each one can still be trusted to catch. The ensemble is the only reader
+    of its endpoint, so a payload it stops recognising has to be loud or nobody learns. The
+    grid rides the same two endpoints as the single offshore point, whose `validate` runs
+    first and *does* fail the run -- so a provider that genuinely changed the shape of its
+    readings is already caught, loudly, before this is reached. What is left for the grid's
+    own validator is the multi-coordinate envelope: the array, its length, and the per-point
+    completeness inside it. Failing an intact forecast over that would buy nothing.
+
+    Both are recorded either way, under the one source and carrying the vocabulary a failed
+    run would use, so `failure_kind` still separates a provider having a bad afternoon from
+    one this system has stopped understanding.
+
+    **The failure is recorded and the success is not**, which inverts what every other fetch
+    in this module does, for two reasons that only apply here. `raw_response` is retained
+    permanently and never pruned -- ADR 0005 keeps it so a prediction can be traced to the
+    inputs it was derived from, and #11 scores Go Calls against exactly those. No call, no
+    Watch and no forecast hour is derived from this grid, so a grid body in that table would
+    enlarge the set "the responses behind this call" with something that was never behind it.
+    And the grid is already stored in full, in its own table, with its own `fetched_at`: a
+    second permanent copy of twenty-five blocks per run would buy provenance nothing reads
+    back. The failure is the opposite case -- nothing else records it, because a store holding
+    no grid says nothing about why.
+
+    Nothing is written when the fetch fails, which is how the previous grid survives: the
+    store refuses an empty replacement precisely so that a caller cannot clear it by accident,
+    and the way this one avoids clearing it is by not calling at all.
+    """
+    # Which endpoint is in flight, because the record's URL is the whole provenance of a
+    # degradation nothing else reports. A `ValueError` carries no request to read it off --
+    # the response arrived, it just was not a grid -- so a single hardcoded fallback recorded
+    # a malformed *weather* grid against the marine API, sending the one person who ever
+    # reads this row to the wrong provider.
+    attempting = open_meteo.MARINE_URL
+    try:
+        marine_blocks, _ = open_meteo.fetch_grid_marine(client, sleep)
+        attempting = open_meteo.WEATHER_URL
+        weather_blocks, _ = open_meteo.fetch_grid_weather(client, sleep)
+    except (httpx.HTTPError, ValueError) as error:
+        store.record_raw_response(
+            run_id,
+            GRID_UNAVAILABLE,
+            attempted_url(error, attempting) if isinstance(error, httpx.HTTPError) else attempting,
+            {"failure_kind": failure_kind(error).value, "failure_detail": failure_detail(error)},
+        )
+        return
+
+    store.replace_conditions_grid(merge_grid(marine_blocks, weather_blocks))
+
+
+def merge_grid(
+    marine_blocks: list[dict[str, Any]], weather_blocks: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """One stored point per coordinate, carrying the sea and the air together.
+
+    **The coordinates come from `grid_points()` and never from the response.** Open-Meteo
+    answers with the centre of whichever of its own cells each request fell in, which can sit
+    a few kilometres from the point that was asked for. Those are the numbers a dart would be
+    drawn at, and a dart drawn at them could land outside the map the grid was defined to
+    cover -- the single thing sharing the bathymetry's bounds exists to prevent. It would also
+    do it invisibly, because a point a few kilometres out still looks like a point.
+
+    Zipping by index is safe because both grids were requested from the same `grid_points()`
+    in the same order and `validate_grid` has already refused any response that did not come
+    back one block per coordinate. `strict=True` says so rather than trusting it.
+
+    Each point is dated by the older of its two endpoints, the rule `earliest` exists for: the
+    marine and weather products observe at their own times, and dating the pair by the fresher
+    would overstate how current half of every dart is.
+    """
+    return [
+        {
+            "latitude": latitude,
+            "longitude": longitude,
+            "observed_at": earliest(marine["current"]["time"], weather["current"]["time"]),
+            "readings": collect(marine, MARINE_READINGS) | collect(weather, WEATHER_READINGS),
+        }
+        for (latitude, longitude), marine, weather in zip(
+            open_meteo.grid_points(), marine_blocks, weather_blocks, strict=True
+        )
+    ]

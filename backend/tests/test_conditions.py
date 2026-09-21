@@ -25,7 +25,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from helpers import ensemble_body_from, ingest, is_ensemble_request
+from helpers import ensemble_body_from, grid_from, ingest, is_ensemble_request, is_grid_request
 from nazarenow.api import CurrentConditions, Reading
 from nazarenow.sources.open_meteo import (
     MARINE_READINGS,
@@ -129,6 +129,12 @@ def provider(marine=MARINE_BODY, weather=WEATHER_BODY):
         if is_ensemble_request(request):
             return httpx.Response(200, json=ensemble)
         body = marine if "marine" in request.url.host else weather
+        # The map's grid (#120) goes to these same two endpoints and is told apart by asking
+        # for several coordinates at once. Answering it with the single point's body would
+        # not simulate a degraded provider but a contract change, and every run through this
+        # stub would then quietly lose its grid for a reason no test here means to exercise.
+        if is_grid_request(request):
+            return httpx.Response(200, json=grid_from(body, body["current_units"]))
         return httpx.Response(200, json=body)
 
     return httpx.MockTransport(handle)
@@ -233,6 +239,12 @@ def test_raw_provider_responses_are_retained(store) -> None:
         # only evidence for a stored Model Spread and the only way to re-derive one on a
         # different rule without asking the provider again.
         "open-meteo-ensemble",
+        # **And deliberately not the map's grid**, which is the one provider response this
+        # system fetches and does not retain. This table exists so a prediction can be traced
+        # to what it was derived from, and nothing a reader acts on is derived from the grid;
+        # it is also already kept in full in `conditions_grid`, so a permanent second copy of
+        # twenty-five blocks a run would be provenance for nobody. `refresh_conditions_grid`
+        # gives the argument, and the failure case *is* recorded, because nothing else says it.
     }
     assert all(entry["body"] for entry in raw)
 

@@ -22,6 +22,7 @@ from pydantic import BaseModel
 from nazarenow.cycle import STALE_AFTER_HOURS, STALE_AFTER_SECONDS
 from nazarenow.days import group_by_date
 from nazarenow.decision import Agreement, Status
+from nazarenow.pipeline import GRID_UNAVAILABLE
 from nazarenow.spread import BEARINGS, ORGANISATIONS, is_degraded
 from nazarenow.store import Store, StoreUnavailable
 from nazarenow.track_record import (
@@ -207,6 +208,87 @@ class CurrentConditions(BaseModel):
     air_temperature: Reading
     wind_speed: Reading
     wind_direction: Reading
+
+
+class GridPoint(BaseModel):
+    """One of the twenty-five places the map's wind and swell are drawn at (#120).
+
+    Its own model rather than a reuse of `CurrentConditions`, which carries the water and
+    air temperatures, the wave direction and the whole staleness apparatus. A grid point
+    needs none of those: it is drawn, not read, and twenty-five copies of a verdict that is
+    the same for all of them would invite an interface to believe they could differ.
+
+    The coordinates are the ones the grid was *defined* at, not the ones the provider
+    answered with. They are what a glyph is positioned by, and the guarantee that no glyph
+    lands outside the drawn map is the statement that these are the frame's own corners.
+    """
+
+    latitude: float
+    longitude: float
+
+    swell_height: Reading
+    swell_period: Reading
+    swell_direction: Reading
+    significant_wave_height: Reading
+    wave_period: Reading
+    wave_direction: Reading
+    water_temperature: Reading
+    # Modelled although the map draws neither temperature, because the run fetches, unit-checks
+    # and stores both for all twenty-five points -- and pydantic drops an unmodelled key
+    # without a word. A reading paid for with a provider request and written to disk should not
+    # be able to vanish between the store and the page in silence; if the grid should stop
+    # carrying these, the place to stop is the request, not the response model.
+    air_temperature: Reading
+    wind_speed: Reading
+    wind_direction: Reading
+
+
+class ConditionsGrid(BaseModel):
+    """The whole grid, under one set of stamps and one verdict on its age.
+
+    **The stamps are the grid's own and not the latest run's**, which is the distinction this
+    endpoint exists to keep. A run whose grid fetch failed is still a success: its forecast
+    arrived, and the previous grid stayed where it was. So the conditions beside this can be
+    minutes old while the wind on the map is two cycles old, and dating the grid by the run
+    would present last night's wind as this morning's.
+    """
+
+    observed_at: str
+    """The oldest observation time among the twenty-five points.
+
+    Each point carries its own -- the older of its two endpoints -- and this is the oldest of
+    those, so the sentence it supports is the one the single point's stamp supports too: the
+    whole picture is at least this old."""
+
+    fetched_at: str
+    """When the grid itself last arrived -- not when the last run finished."""
+
+    refresh_failed: bool
+    """Whether a refresh has been attempted and lost since this grid arrived (#139).
+
+    **A different question from `stale`, answered from a different kind of evidence, and kept
+    beside it rather than folded into it.** `stale` asks how old this is and answers by
+    arithmetic on `fetched_at` against a six-hour threshold -- deliberately two whole cycles,
+    because "one missed run is a blip ... and calling that stale would train users to ignore
+    the warning". That threshold is right and does not move.
+
+    This asks whether the last attempt *failed*, and the run already knew: it recorded the
+    endpoint, the moment and the failure kind under its own `raw_response` source the instant
+    it happened. Nothing served ever read it back, so a grid that stopped refreshing presented
+    as current for up to six hours. This is a reported fact rather than an inference from a
+    clock, which is why it can be true while `stale` is still false.
+
+    A failure older than the grid is a recovery, not a degradation, and is not reported.
+    """
+
+    stale: bool
+    """The backend's verdict on that stamp, reached the same way the other two endpoints
+    reach theirs. Never the reader's clock: a browser with the wrong time would otherwise
+    decide for itself whether the sea was current."""
+
+    stale_after_hours: int
+
+    points: list[GridPoint]
 
 
 class ForecastHour(BaseModel):
@@ -1091,4 +1173,55 @@ def current_conditions(store: Annotated[Store, Depends(get_store)]) -> CurrentCo
         latitude=latest["latitude"],
         longitude=latest["longitude"],
         **latest["readings"],
+    )
+
+
+@app.get("/api/conditions/grid")
+def conditions_grid(store: Annotated[Store, Depends(get_store)]) -> ConditionsGrid:
+    """The latest grid of conditions, for the map to draw its wind and swell from.
+
+    **503 when there is no grid, rather than an empty one.** An installation that has never
+    fetched a grid, or whose very first run lost it, has nothing to draw -- and a two hundred
+    carrying no points is a map a reader cannot tell from a map of a flat calm. Calm is a
+    claim about the sea; having no data is a claim about this software, and the two must not
+    look alike. It is the same refusal `current_conditions` makes, for the same reason.
+
+    Read-only, like everything in this layer: ADR 0005 puts every third-party call in the
+    Pipeline Run, so this serves what the last successful grid fetch left behind and never
+    reaches for a fresher one.
+    """
+    points = store.latest_conditions_grid()
+    if not points:
+        raise HTTPException(
+            status_code=503,
+            detail="No conditions grid has been ingested yet. Run the pipeline first.",
+        )
+
+    # `fetched_at` really is one value: `replace_conditions_grid` writes the whole grid in a
+    # single transaction under a single stamp, so any row speaks for all of them.
+    fetched_at = points[0]["fetched_at"]
+
+    # **`observed_at` is not, and taking the first row's was wrong.** Each point is dated by
+    # `merge_grid` from its own two endpoints, and nothing promises the provider refreshed all
+    # twenty-five of its cells in one pass. One time standing for twenty-five therefore has to
+    # be the oldest of them, or a corner that is hours behind hides under a fresh neighbour --
+    # the same overstatement `earliest` prevents between the two endpoints, one level up.
+    observed_at = min(point["observed_at"] for point in points)
+
+    return ConditionsGrid(
+        observed_at=observed_at,
+        fetched_at=fetched_at,
+        stale=is_stale(fetched_at),
+        # Strictly after the grid's own stamp, so the run that *stored* this grid cannot report
+        # itself as a failure, and a failure that was later recovered from stays silent.
+        refresh_failed=store.responses_since(GRID_UNAVAILABLE, fetched_at) > 0,
+        stale_after_hours=STALE_AFTER_HOURS,
+        points=[
+            GridPoint(
+                latitude=point["latitude"],
+                longitude=point["longitude"],
+                **point["readings"],
+            )
+            for point in points
+        ],
     )

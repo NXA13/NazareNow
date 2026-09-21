@@ -87,6 +87,23 @@ CREATE TABLE IF NOT EXISTS offshore_conditions (
     readings    TEXT NOT NULL
 );
 
+-- The grid the map is drawn over (#120). One row per point, replaced whole every run.
+--
+-- **Bounded by its own shape rather than by a prune step.** The key is the place, and the
+-- places are the twenty-five `open_meteo.grid_points()` returns, so the table is twenty-five
+-- rows however long this installation runs. That is deliberate: the alternative -- appending a
+-- snapshot per run and trimming later -- is the shape that grows without bound the first time
+-- the trim is skipped, and this table has no evaluation value to retain. ADR 0005's
+-- append-only rule is about predictions, which these are not: they are what the sea was.
+CREATE TABLE IF NOT EXISTS conditions_grid (
+    latitude    REAL NOT NULL,
+    longitude   REAL NOT NULL,
+    observed_at TEXT NOT NULL,
+    fetched_at  TEXT NOT NULL,
+    readings    TEXT NOT NULL,
+    PRIMARY KEY (latitude, longitude)
+);
+
 CREATE TABLE IF NOT EXISTS forecast_hour (
     valid_at    TEXT PRIMARY KEY,
     fetched_at  TEXT NOT NULL,
@@ -1179,6 +1196,97 @@ class Store:
             "longitude": row["longitude"],
             "readings": json.loads(row["readings"]),
         }
+
+    def replace_conditions_grid(self, points: list[dict[str, Any]]) -> None:
+        """Replace the whole grid, or leave the one that is there.
+
+        **Wholesale, in one transaction, and never point by point.** A half-written grid is
+        worse than an old one: it would draw a wind field where some squares were this run's
+        and some were last run's, with nothing on the page able to say which. The map would
+        look entirely plausible and be a composite of two moments.
+
+        An empty `points` is refused rather than obeyed, because the one thing a caller must
+        not be able to do by accident is clear the grid. A run whose grid fetch failed leaves
+        the previous grid in place (#120), and the way it does that is by not calling this.
+        """
+        if not points:
+            raise ValueError(
+                "replace_conditions_grid called with no points; a failed grid fetch should "
+                "leave the previous grid in place rather than clearing it"
+            )
+
+        connection = self._connect()
+        stamp = now()
+        with connection:
+            connection.execute("DELETE FROM conditions_grid")
+            connection.executemany(
+                "INSERT INTO conditions_grid "
+                "(latitude, longitude, observed_at, fetched_at, readings) "
+                "VALUES (?, ?, ?, ?, ?)",
+                [
+                    (
+                        point["latitude"],
+                        point["longitude"],
+                        point["observed_at"],
+                        stamp,
+                        json.dumps(point["readings"]),
+                    )
+                    for point in points
+                ],
+            )
+
+    def latest_conditions_grid(self) -> list[dict[str, Any]]:
+        """Every point of the stored grid, or an empty list if none was ever stored.
+
+        **An empty list is an honest answer and the caller has to treat it as one.** An
+        installation that has never fetched a grid has no grid; what it must not do is answer
+        with twenty-five zeroes, which on a wind field reads as a dead calm rather than as a
+        map with nothing on it yet.
+
+        Ordered north to south then west to east, the order `grid_points()` generates, so a
+        reader can lay the rows out without sorting them and two callers cannot disagree about
+        which corner comes first.
+        """
+        rows = (
+            self._connect()
+            .execute(
+                "SELECT latitude, longitude, observed_at, fetched_at, readings "
+                "FROM conditions_grid ORDER BY latitude DESC, longitude ASC"
+            )
+            .fetchall()
+        )
+        return [
+            {
+                "latitude": row["latitude"],
+                "longitude": row["longitude"],
+                "observed_at": row["observed_at"],
+                "fetched_at": row["fetched_at"],
+                "readings": json.loads(row["readings"]),
+            }
+            for row in rows
+        ]
+
+    def responses_since(self, source: str, moment: str) -> int:
+        """How many `raw_response` rows of one source were written after `moment` (#139).
+
+        **The one reader of `raw_response` in production, and it reads one fact.** The table
+        exists for provenance and nothing served ever looked at it, which is how a lost
+        conditions grid could present as current for up to six hours: the run recorded the
+        failure the instant it happened, under its own source, and nobody asked.
+
+        The comparison is lexicographic on the stored strings, which is sound here because
+        both sides are written by `now()` -- `datetime.now(UTC).isoformat()` -- so they share a
+        format and a zone. It would not be sound against a stamp from anywhere else.
+        """
+        row = (
+            self._connect()
+            .execute(
+                "SELECT COUNT(*) AS lost FROM raw_response WHERE source = ? AND fetched_at > ?",
+                (source, moment),
+            )
+            .fetchone()
+        )
+        return int(row["lost"])
 
     def raw_responses(self) -> Iterable[dict[str, Any]]:
         """Every raw provider response retained, oldest first.

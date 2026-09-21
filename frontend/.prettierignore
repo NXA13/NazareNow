@@ -2,3 +2,17 @@ dist
 node_modules
 coverage
 package-lock.json
+test-results
+playwright-report
+
+# The map's data (#121). `bathymetry.json` is 12,826 soundings that cost 129 requests against a
+# free API rate-limited to one a second — it is not source and must not be rewritten casually.
+# `map-geometry.json` is emitted with compact separators by `npm run map`; reformatting it adds
+# whitespace to a file whose whole point is to be small, and puts the working tree permanently
+# at odds with what the build step produces.
+scripts/map/bathymetry.json
+src/map-geometry.json
+# The soundings the refraction solve reads, emitted compact by the same build step (#122,
+# ADR 0016). Base64 on one long line: reformatting it would wrap the payload and put the tree
+# at odds with what `npm run map` produces, for a file chosen for its size.
+src/depth-grid.json

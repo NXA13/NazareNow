@@ -526,6 +526,67 @@ export async function fetchForecast(): Promise<Forecast> {
   return (await response.json()) as Forecast;
 }
 
+/**
+ * One of the twenty-five places the map draws wind at (#120, #123).
+ *
+ * The map reads `wind_speed` and `wind_direction` from these and nothing else: the crests come
+ * from `/api/conditions/current`, because they are drawn for one swell over the whole frame
+ * rather than one per point. The rest of the wave field is here because the grid endpoint
+ * serves the same shape the single point does, and `every-field-is-read.test.tsx` is where that
+ * is decided rather than assumed.
+ */
+export interface GridPoint {
+  latitude: number;
+  longitude: number;
+  swell_height: Reading;
+  swell_period: Reading;
+  swell_direction: Reading;
+  significant_wave_height: Reading;
+  wave_period: Reading;
+  wave_direction: Reading;
+  water_temperature: Reading;
+  air_temperature: Reading;
+  wind_speed: Reading;
+  wind_direction: Reading;
+}
+
+/** The grid of conditions the map draws its wind from, under one set of stamps. */
+export interface ConditionsGrid {
+  /** The oldest observation among the points: the whole picture is at least this old. */
+  observed_at: string;
+  /** When the grid itself last arrived — not when the last run finished. */
+  fetched_at: string;
+  /**
+   * Whether a refresh has been attempted and lost since this grid arrived (#139).
+   *
+   * **A different question from `stale`, and kept beside it rather than folded into it.**
+   * `stale` asks how old this is and answers by arithmetic on `fetched_at` against a six-hour
+   * threshold — deliberately two whole cycles, because one missed run is a blip. This asks
+   * whether the last attempt *failed*, which the run recorded the instant it happened. So it
+   * can be true while `stale` is still false, which is the entire point of it: it is how a
+   * reader learns inside one cycle rather than two. ADR 0018.
+   */
+  refresh_failed: boolean;
+  stale: boolean;
+  stale_after_hours: number;
+  points: GridPoint[];
+}
+
+/**
+ * The wind grid, or an error.
+ *
+ * **A 503 here is expected rather than exceptional.** The endpoint answers 503 when it has no
+ * grid to serve, because "a two hundred carrying no points is a map a reader cannot tell from a
+ * map of a flat calm". The caller must render the map without wind and say so, never a calm.
+ */
+export async function fetchConditionsGrid(): Promise<ConditionsGrid> {
+  const response = await fetch(`${API_BASE}/api/conditions/grid`);
+  if (!response.ok) {
+    throw new Error(`Conditions grid request failed with status ${response.status}`);
+  }
+  return (await response.json()) as ConditionsGrid;
+}
+
 export async function fetchCurrentConditions(): Promise<CurrentConditions> {
   const response = await fetch(`${API_BASE}/api/conditions/current`);
   if (!response.ok) {

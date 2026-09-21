@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 import {
   fetchTrackRecord,
@@ -10,6 +10,8 @@ import {
   type TierRecord,
   type TrackRecord,
 } from './api';
+import { Figure } from './Figure';
+import { ADDRESS } from './router';
 
 type LoadState =
   { status: 'loading' } | { status: 'loaded'; record: TrackRecord } | { status: 'failed' };
@@ -142,9 +144,15 @@ function Delivered({ tier }: { tier: TierRecord }) {
       <p data-testid="delivered-statement">
         The figure above asks whether a day was <em>recorded</em> as giant. This asks whether the
         ocean showed up. Across the same <strong>{tier.days_flagged}</strong> Go Calls, the lowest
-        peak any of them landed on was <strong>{metres(delivered.minimum_m)}</strong> of Significant
-        Wave Height — not one landed on a flat day — and the median was{' '}
-        <strong>{metres(delivered.median_m)}</strong>.
+        peak any of them landed on was{' '}
+        <strong>
+          <Figure>{metres(delivered.minimum_m)}</Figure>
+        </strong>{' '}
+        of Significant Wave Height — not one landed on a flat day — and the median was{' '}
+        <strong>
+          <Figure>{metres(delivered.median_m)}</Figure>
+        </strong>
+        .
       </p>
       <ul data-testid="delivered-ladder">
         {delivered.above.map((step) => (
@@ -152,7 +160,7 @@ function Delivered({ tier }: { tier: TierRecord }) {
             <strong>
               {step.days} of {step.of_days}
             </strong>{' '}
-            peaked above {metres(step.metres)}{' '}
+            peaked above <Figure>{metres(step.metres)}</Figure>{' '}
             <span className="aside">({percent(step.share)})</span>
           </li>
         ))}
@@ -320,7 +328,9 @@ function RangeTable({
   testId,
 }: {
   leads: RangeCalibration['leads'];
-  caption: string;
+  /** A node rather than a string: the big-swell caption carries a figure, and a figure in prose
+   * needs `Figure` around it to come out in the mono face. */
+  caption: ReactNode;
   subset: 'all_hours' | 'big_swell';
   testId: string;
 }) {
@@ -431,11 +441,12 @@ function RangeCalibrationSection({ calibration }: { calibration: RangeCalibratio
         <p data-testid="range-verdict">
           <strong>So the range is wider than the outcomes justify</strong>
           {grows ? ', and increasingly so the further ahead it looks' : ''}: a {longest.lead_days}
-          -day range spanning {metres(longest.all_hours.median_width_m)} would have held the same
-          share of outcomes at {metres(longest.all_hours.justified_width_m)}. That is the error
-          running in the forgiving direction — the system claims less certainty than it turns out to
-          have, so it stays quiet on days it could have called rather than calling days it should
-          not. It is still a statement that is not true, which is why it is on this page.
+          -day range spanning <Figure>{metres(longest.all_hours.median_width_m)}</Figure> would have
+          held the same share of outcomes at{' '}
+          <Figure>{metres(longest.all_hours.justified_width_m)}</Figure>. That is the error running
+          in the forgiving direction — the system claims less certainty than it turns out to have,
+          so it stays quiet on days it could have called rather than calling days it should not. It
+          is still a statement that is not true, which is why it is on this page.
         </p>
       ) : (
         <p data-testid="range-verdict">
@@ -460,9 +471,13 @@ function RangeCalibrationSection({ calibration }: { calibration: RangeCalibratio
         leads={calibration.leads}
         subset="big_swell"
         testId="range-big-swell"
-        caption={`Only the hours the buoy measured at ${metres(
-          calibration.big_swell_from_m,
-        )} or more — the bigger seas, and the kinder of the two`}
+        caption={
+          <>
+            Only the hours the buoy measured at{' '}
+            <Figure>{metres(calibration.big_swell_from_m)}</Figure> or more — the bigger seas, and
+            the kinder of the two
+          </>
+        }
       />
 
       {/* Rendered under the tables, in full. Both say the figures above are narrower evidence
@@ -480,6 +495,121 @@ function RangeCalibrationSection({ calibration }: { calibration: RangeCalibratio
         offshore — not the height of a wave face, and not convertible to one by any fixed ratio.
       </p>
     </section>
+  );
+}
+
+/**
+ * How often the printed range has actually held, in one sentence (#119).
+ *
+ * **A limit, so it stays on the forecast page; the tables behind it are teaching, so they did
+ * not.** #119's rule is that limits qualifying a number stay beside that number, and it lists
+ * the range-runs-wide admission among the things staying. It was not on that page at all: the
+ * whole finding lived on the reading page, under the tables that produced it, which left the
+ * verdict printing "plausibly 2.5m to 4.6m" with nothing beside it saying how often a range like
+ * that has held.
+ *
+ * **It takes the calibration rather than fetching it**, and it is rendered by `Verdict` rather
+ * than beside it. The first version did neither: it fetched `/api/track-record` itself while
+ * `TrackRecordLine` fetched the same endpoint as its sibling — two requests for one payload on
+ * one page — and it rendered unconditionally, so it could print "That range..." on a day the
+ * verdict prints no range at all, which is a limit qualifying nothing.
+ *
+ * **Every direction is stated, including the flattering one.** A component that spoke up only
+ * when the range ran wide would be silent in the case that matters most: a range holding *less*
+ * often than it claims makes the system look surer than it is. Silence would also be unreadable
+ * — a reader cannot tell "measured and fine" from "never measured".
+ *
+ * **The verdict is derived here rather than read off a field**, with the same function the
+ * reading page's tables use. The backend sends the claim and the measurement and no verdict, for
+ * the reason `verdictAcross` gives; deriving it once and rendering it twice keeps the two pages
+ * from disagreeing.
+ */
+export function RangeWidthAdmission({ calibration }: { calibration: RangeCalibration }) {
+  const verdict = verdictAcross(calibration.claimed, calibration.leads);
+  const claimed = percent(calibration.claimed);
+
+  return (
+    <p className="verdict-scope range-admission" data-testid="range-admission">
+      {verdict === 'narrow' ? (
+        <>
+          <strong>That range has held less often than it claims.</strong> It is drawn to cover{' '}
+          <Figure>{claimed}</Figure> of outcomes, and measured against what happened it covered less
+          — so treat it as the optimistic edge of the doubt rather than its width.
+        </>
+      ) : verdict === 'wide' ? (
+        <>
+          <strong>That range runs wider than the outcomes justify.</strong> It is drawn to cover{' '}
+          <Figure>{claimed}</Figure> of outcomes and has covered more, which is the error running in
+          the forgiving direction: the system claims less certainty than it turns out to have.
+        </>
+      ) : verdict === 'mixed' ? (
+        <>
+          <strong>How often that range holds depends on how far ahead it looks.</strong> It is drawn
+          to cover <Figure>{claimed}</Figure> of outcomes, and it holds more often than that at some
+          lead times and less often at others.
+        </>
+      ) : (
+        <>
+          That range is drawn to cover <Figure>{claimed}</Figure> of outcomes, and measured against
+          what happened it has covered about that.
+        </>
+      )}{' '}
+      <a href={ADDRESS['how-it-works']}>How that was measured, and what it rests on</a>.
+    </p>
+  );
+}
+
+/**
+ * One line of track record, on the forecast page (#119).
+ *
+ * **This is a debt #113 took on knowingly and #119 repays.** `App.test.tsx` used to assert that
+ * the track record was *on* the page rather than behind a link, and the reasoning was that a
+ * track record nobody navigates to is a limitation nobody reads. v2 moved it to its own page and
+ * left a link in its place, which is a weaker guarantee; the spec's answer is a line of it here,
+ * linking out.
+ *
+ * **What it states, and why those two numbers.** How often a Go Call landed on a day now known
+ * to have gone giant, and how often acting on one would have been wasted. A line carrying only
+ * the first is the flattering half of a pair, and this project exists to avoid that.
+ *
+ * **It names where the counterweight is rather than pretending it has one.** `TierRecord` says
+ * `wasted_upper_bound` and `delivered` must always be rendered together: waste is scored against
+ * ratified giant days, a bar so high that a rule flagging nothing but excellent days still reads
+ * as mostly wasted, and `delivered` is what the sea actually did on those same days. One line
+ * cannot carry both without becoming a paragraph, so this one says the counterweight exists and
+ * where to find it. Silently printing the waste figure alone would be the misreading that rule
+ * was written to prevent.
+ *
+ * **The held-out panel, not the whole record.** It is measured only on seasons the thresholds
+ * never saw, which is the one of the two that answers "would this have helped me".
+ */
+export function TrackRecordLine({ record: loaded }: { record: TrackRecord | null }) {
+  const state: LoadState = loaded ? { status: 'loaded', record: loaded } : { status: 'loading' };
+
+  // The link and nothing else, whether the record is still coming or never arrives. The calls
+  // above this line do not depend on it, so an alert here would read as the forecast having
+  // failed — and a sentence kept without its figures would be a claim with nothing behind it.
+  if (state.status !== 'loaded') {
+    return (
+      <p className="track-record-line" data-testid="track-record-line">
+        <a href={ADDRESS['how-it-works']}>How well these calls have done</a>.
+      </p>
+    );
+  }
+
+  const panel = state.record.held_out;
+  const tier = panel.go_call;
+
+  return (
+    <p className="track-record-line" data-testid="track-record-line">
+      Across <Figure>{panel.big_wave_seasons}</Figure> big-wave seasons the thresholds never saw, a
+      Go Call landed on <Figure>{tier.gold_days_called}</Figure> of the{' '}
+      <Figure>{tier.gold_days_in_panel}</Figure> days now confirmed giant, and at worst{' '}
+      <Figure>{percent(tier.wasted_upper_bound)}</Figure> of Go Calls would have been wasted —
+      measured against ratified days only, so what the sea actually did on them, and the whole
+      record beside it, is on{' '}
+      <a href={ADDRESS['how-it-works']}>the page that explains how this works</a>.
+    </p>
   );
 }
 
@@ -580,6 +710,17 @@ export function TrackRecordPage() {
         record, and {record.gold_days_fitted} were used to choose the thresholds, which leaves{' '}
         <strong>{record.gold_days_validated}</strong> the system had never seen. That is a small
         number, and it is the entire basis of everything on this page.
+      </p>
+
+      {/* Moved off the forecast page by #119. It sat under the call banner there, explaining why
+          the number of gold days is as small as it is — which is how the figure came to be
+          rather than what it means for a reader deciding whether to fly, so it belongs here,
+          directly under the counts it is about. The banner on the forecast page keeps the limit
+          and links to this. */}
+      <p data-testid="gold-day-scarcity">
+        That is a very small number of days, and not because the coast is quiet: far more giant days
+        are on record than these. The limit is the swell measurements the calls are written in,
+        which do not reach back far enough to cover the rest.
       </p>
 
       <Panel

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import {
   fetchForecast,
@@ -8,8 +8,13 @@ import {
   type Forecast,
   type ForecastDay,
   type HeightRange,
+  type ModelAgreement,
+  type RangeCalibration,
   type Reading,
 } from './api';
+import { Figure } from './Figure';
+import { ADDRESS } from './router';
+import { RangeWidthAdmission } from './TrackRecord';
 import { compassPoint, formatRange, formatReading, formatTimestamp, formatValue } from './format';
 
 type LoadState =
@@ -39,20 +44,6 @@ const CALL_MEANINGS: Record<CallStatus | typeof UNJUDGED, string> = {
   [UNJUDGED]: 'No pipeline run has assessed this day. Its hours below are still real.',
 };
 
-/** How a day compares with the rest of the range on screen.
- *
- * Relative, not absolute. An earlier version used fixed thresholds lifted from the surf
- * community's rule of thumb — which reimplemented ADR 0006's Heuristic Baseline in the
- * presentation layer, on swell height rather than the Significant Wave Height the
- * baseline is actually defined on, in a layer ADR 0005 says only reads. It also did
- * nothing useful: every day of a real summer week fell in the same bucket, so nine
- * tiles looked identical.
- *
- * Comparing each day with the largest day shown needs no domain knowledge and always
- * distinguishes the standout day, whether the week peaks at 1.2m or at 12m.
- */
-export type Prominence = 'leading' | 'notable' | 'ordinary';
-
 /**
  * A direction as its own number and the sector that number falls in.
  *
@@ -66,7 +57,7 @@ export type Prominence = 'leading' | 'notable' | 'ordinary';
  * `format.ts` has said since it was written that the name is "shown alongside the number rather
  * than instead of it: a reader should not need to know that 298° is west-north-west, and a surfer
  * checking the swell direction should not have to trust our rounding." The current panel and the
- * Model Spread arcs did that; the day card and both direction columns of this table rendered the
+ * Model Spread arcs did that; the day row and both direction columns of this table rendered the
  * name *instead of* the number, so one module stated a principle its main consumer declined.
  *
  * One component rather than the same three lines in three places, so the rule stays uniform — a
@@ -82,19 +73,33 @@ function Bearing({ reading }: { reading: Reading }) {
   );
 }
 
-function prominence(value: number, largest: number): Prominence {
-  if (largest <= 0) return 'ordinary';
-  const share = value / largest;
-  if (share >= 0.95) return 'leading';
-  if (share >= 0.6) return 'notable';
-  return 'ordinary';
+/** How much of a day row's comparison bar is filled, as a percentage.
+ *
+ * Measured against the largest day on screen rather than an absolute scale. The absolute
+ * version of this was three buckets with thresholds lifted from the surf community's rule of
+ * thumb — which reimplemented ADR 0006's Heuristic Baseline in the presentation layer, on swell
+ * height rather than the Significant Wave Height the baseline is actually defined on, in a layer
+ * ADR 0005 says only reads. It also did nothing useful: every day of a real summer week landed in
+ * the same bucket, so every row looked the same.
+ *
+ * Comparing each day with the largest day shown needs no domain knowledge and always
+ * distinguishes the standout day, whether the week peaks at 1.2m or at 12m. The bar carries that
+ * comparison continuously, so it says which of two ordinary days is the bigger one — which the
+ * buckets it replaced could not.
+ *
+ * Rounded to a tenth of a percent: the difference between two days is what this shows, and no
+ * bar is wide enough for the digits past that to be a difference anyone can see.
+ */
+function percentOfLargest(value: number, largest: number): number {
+  if (largest <= 0) return 0;
+  return Number(((value / largest) * 100).toFixed(1));
 }
 
 /** The day, as a weekday and date a reader can place without doing arithmetic.
  *
  * Built from the date's own parts as a *local* calendar day, not from an instant. Anchoring
  * at `T12:00:00Z` and converting was correct for most of the world and wrong past UTC+12: a
- * reader in Auckland saw noon UTC land at 01:00 the following day, so the card, its
+ * reader in Auckland saw noon UTC land at 01:00 the following day, so the row, its
  * `aria-label` and the hourly table caption named three-quarters of a different date than
  * the one the backend had grouped (#25).
  *
@@ -125,12 +130,12 @@ function dayLabel(date: string): string {
   return parsed.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
-/** What a day card says about the agreement behind it, or null when there is nothing to flag.
+/** What a day row says about the agreement behind it, or null when there is nothing to flag.
  *
  * **A marker, never a measurement.** The panel below carries the range, the contributing
- * organisations and the hour they belong to; none of that can come up here. A width on a card
+ * organisations and the hour they belong to; none of that can come up here. A width on a row
  * needs a narrow/wide threshold nobody has calibrated, and printing the range itself would put
- * a *median-hour* pair beside the card's *peak-hour* height — two numbers a reader would
+ * a *median-hour* pair beside the row's *peak-hour* height — two numbers a reader would
  * reasonably expect to match, which never will.
  *
  * What does belong here is the thing a reader who never clicks would otherwise miss: that the
@@ -143,7 +148,7 @@ function dayLabel(date: string): string {
  * about a measurement that was never attempted.
  *
  * A **refused Go Call outranks both**, because it is the only one of these that changed what
- * the card says. Read from `go_call_withheld` rather than from `model_agreement`, which cannot
+ * the row says. Read from `go_call_withheld` rather than from `model_agreement`, which cannot
  * carry it — `DayCall` in `api.ts` says why.
  */
 function agreementFlag(day: ForecastDay): string | null {
@@ -160,9 +165,9 @@ function agreementFlag(day: ForecastDay): string | null {
   return height.degraded ? 'partly checked' : null;
 }
 
-/** The same fact spelled out, for the label a screen reader hears instead of the card.
+/** The same fact spelled out, for the label a screen reader hears instead of the row.
  *
- * `aria-label` overrides the card's content, so a marker that lived only in the markup would
+ * `aria-label` overrides the row's content, so a marker that lived only in the markup would
  * be silently dropped for exactly the readers least able to go looking for the panel (#25). */
 const FLAG_MEANINGS: Record<string, string> = {
   unchecked: 'no second opinion — nothing was available to check this day against',
@@ -170,32 +175,59 @@ const FLAG_MEANINGS: Record<string, string> = {
   'models divided': 'the forecasters have not settled on this day, so no Go Call was issued',
 };
 
-function DaySummary({
+/**
+ * One day of the range, as a row (#117).
+ *
+ * **Four things, in one line, at any count.** The date, the height, how the height compares with
+ * the rest of the range, and the call. A grid cell fitted two of them and wrapped the rest, which
+ * is what made a week take three rows of cards; a row fits all four and stays one line, so the
+ * column's height is the number of days times a constant rather than something that has to be
+ * measured after the response arrives.
+ *
+ * Period and direction ride along in the middle, small. They are not among the four, and the
+ * design's row does without them — but an 8m short-period sea and an 8m groundswell are entirely
+ * different days, and the difference is the whole reason someone would get on a plane. They cost
+ * no height here, because the row is as tall as its tallest cell and they are not it.
+ */
+function DayRow({
   day,
   largest,
   selected,
   onSelect,
+  rowRef,
 }: {
   day: ForecastDay;
   largest: number;
   selected: boolean;
   onSelect: () => void;
+  /** Handed up so the slot can put focus back on this row when a reader returns to the
+   *  list (#118). The row it returns to is a *new* element — the list unmounts while a day
+   *  is open — so the slot cannot hold a reference of its own across the swap. */
+  rowRef: (element: HTMLButtonElement | null) => void;
 }) {
   const flag = agreementFlag(day);
+  const status = day.call?.status ?? UNJUDGED;
 
   return (
     <button
       type="button"
-      className={`day rank-${prominence(day.peak_swell_height.value, largest)}${selected ? ' selected' : ''}`}
-      aria-pressed={selected}
+      ref={rowRef}
+      className={`day day-${status}${selected ? ' selected' : ''}`}
+      // `aria-current`, not `aria-pressed`. This row was a toggle until #118 — clicking the
+      // open day closed it — and it cannot be one now, because the row is not on screen while
+      // its day is. What the mark means is "the day the slot is about", which is the current
+      // item of a set and not a button anybody can unpress. A screen reader announcing
+      // "pressed" for a control with no unpressed state describes an interface that is not
+      // there.
+      aria-current={selected ? 'true' : undefined}
       // The label carries every summarised figure. An earlier version named only the
-      // height, which overrode the card's content for screen readers and lost the
+      // height, which overrode the row's content for screen readers and lost the
       // period and direction entirely — the two values that separate a groundswell
       // worth travelling for from a big messy sea.
       //
-      // Every figure goes through `formatReading`, the same function the visible card uses.
+      // Every figure goes through `formatReading`, the same function the visible row uses.
       // Reading the raw values here meant a source carrying more than two decimals was
-      // announced as "4.23456m" while the card showed "4.23" — and because aria-label
+      // announced as "4.23456m" while the row showed "4.23" — and because aria-label
       // overrides the content, that reader had no way to reach the shorter one (#25).
       // Sharing the function is what stops the two drifting again.
       aria-label={
@@ -211,12 +243,6 @@ function DaySummary({
       <span className="day-date" data-testid={`day-label-${day.date}`}>
         {dayLabel(day.date)}
       </span>
-      <span
-        className={`call call-${day.call?.status ?? UNJUDGED}`}
-        data-testid={`call-${day.date}`}
-      >
-        {CALL_LABELS[day.call?.status ?? UNJUDGED]}
-      </span>
       <span className="day-swell" data-testid={`day-peak-${day.date}`}>
         <span className="value">{formatValue(day.peak_swell_height.value)}</span>
         <span className="unit">{day.peak_swell_height.unit}</span>
@@ -229,12 +255,117 @@ function DaySummary({
         <span className="unit">{day.swell_period_at_peak.unit}</span>
         <Bearing reading={day.swell_direction_at_peak} />
       </span>
+      {/* How this day compares with the largest day on screen, which is the one thing a list
+          of sixteen numbers does not give a reader at a glance. Relative to the range shown
+          rather than to a fixed scale, so it distinguishes the standout day whether the week
+          peaks at 1.2m or at 12m.
+
+          **In the neutrals.** A bar drawn in the status colours would make "biggest day this
+          week" and "book a flight" the same signal, on a page whose entire purpose is the
+          difference between them — the rule `ink.test.ts` holds the sheet to.
+
+          Hidden from the accessible tree because it states nothing the label does not: the
+          heights are all in it, and a screen reader comparing two of them does not need a
+          picture of the comparison. */}
+      <span className="track" aria-hidden="true">
+        <span
+          className="fill"
+          data-testid={`day-bar-${day.date}`}
+          style={{ width: `${percentOfLargest(day.peak_swell_height.value, largest)}%` }}
+        />
+      </span>
       {flag && (
         <span className="day-agreement" data-testid={`day-agreement-${day.date}`}>
           {flag}
         </span>
       )}
+      <span className={`call call-${status}`} data-testid={`call-${day.date}`}>
+        {CALL_LABELS[status]}
+      </span>
     </button>
+  );
+}
+
+/**
+ * Where the measured forecast-error archive stops covering this forecast, as an index into its
+ * days — or null when it covers every day the forecast has.
+ *
+ * **Read off each day's own flag, never by counting to seven.** The archive is seven days deep
+ * today and grows every season, so a page holding a copy of that number goes on drawing the
+ * boundary in last season's place, and nothing fails when it does.
+ *
+ * A *boundary* rather than a per-day filter, because the days arrive in date order and the
+ * archive covers a prefix of them: the first day the backend marks extrapolated is where its
+ * record ran out, and every later day is further out still.
+ *
+ * **So a day's own flag is not the last word on which side it lands** — its position is, and that
+ * is deliberate. Two days say nothing about the archive: one carrying no call at all, and one
+ * whose call was issued before the flag existed. Filtering on the flag alone would lift either of
+ * them back above a divider they sit below by date, claiming a measurement reaches a lead time
+ * the day before it has just said it does not. A prefix cannot do that. What it costs is that
+ * such a day below the line is described by a heading nobody measured it against — the quieter
+ * of the two errors, because it is the cautious one.
+ */
+function archiveBoundary(days: ForecastDay[]): number | null {
+  const first = days.findIndex((day) => day.call?.uncertainty_measured === false);
+  return first === -1 ? null : first;
+}
+
+/**
+ * Every day the forecast covers, one per row, split where the measured archive ends.
+ *
+ * The split is drawn rather than hidden. Trimming the list back to the days the archive covers
+ * was the alternative, and it would have dropped a day somebody could still book a flight for
+ * in order to make the arithmetic neat.
+ */
+function DayList({
+  days,
+  largest,
+  openDate,
+  onSelect,
+  rowRef,
+}: {
+  days: ForecastDay[];
+  largest: number;
+  openDate: string | null;
+  onSelect: (date: string) => void;
+  rowRef: (date: string, element: HTMLButtonElement | null) => void;
+}) {
+  const boundary = archiveBoundary(days);
+  const measured = boundary === null ? days : days.slice(0, boundary);
+  const beyond = boundary === null ? [] : days.slice(boundary);
+
+  const row = (day: ForecastDay) => (
+    <DayRow
+      key={day.date}
+      day={day}
+      largest={largest}
+      selected={day.date === openDate}
+      onSelect={() => onSelect(day.date)}
+      rowRef={(element) => {
+        rowRef(day.date, element);
+      }}
+    />
+  );
+
+  return (
+    <>
+      <div className="days">{measured.map(row)}</div>
+      {beyond.length > 0 && (
+        <>
+          {/* The heading and the reason in one element, so the group below cannot end up
+              labelled by a boundary it no longer describes. What it says is the whole of why
+              these days are dimmer: out here the plausible range is a line continued past
+              everything that was ever measured about it. */}
+          <p className="days-divider" id="beyond-the-archive">
+            Beyond the measured archive — the plausible range out here is extrapolated, not measured
+          </p>
+          <div className="days beyond" role="group" aria-labelledby="beyond-the-archive">
+            {beyond.map(row)}
+          </div>
+        </>
+      )}
+    </>
   );
 }
 
@@ -266,8 +397,10 @@ function CallDetail({ day, model }: { day: ForecastDay; model: string | null }) 
           <p className="provenance">
             Predicted significant wave height{' '}
             <strong>
-              {formatValue(day.call.predicted_significant_wave_height.value)}
-              {day.call.predicted_significant_wave_height.unit}
+              <Figure>
+                {formatValue(day.call.predicted_significant_wave_height.value)}
+                {day.call.predicted_significant_wave_height.unit}
+              </Figure>
             </strong>
             . That is the instrument's measure of the sea, not the height of the wave face a surfer
             rides — the canyon makes the face far larger, and this system does not yet predict it.
@@ -362,7 +495,10 @@ function PlausibleRange({ day }: { day: ForecastDay }) {
   return (
     <div className="plausible-range" data-testid={`plausible-range-${day.date}`}>
       <p>
-        Plausibly <strong>{formatRange(range)}</strong>
+        Plausibly{' '}
+        <strong>
+          <Figure>{formatRange(range)}</Figure>
+        </strong>
         {probability !== null && (
           <>
             {' '}
@@ -435,16 +571,25 @@ function Shift({ day }: { day: ForecastDay }) {
         {moved ? (
           <>
             <strong>
-              {formatValue(Math.abs(change))}
-              {now.unit} {change > 0 ? 'larger' : 'smaller'}
+              <Figure>
+                {formatValue(Math.abs(change))}
+                {now.unit}
+              </Figure>{' '}
+              {change > 0 ? 'larger' : 'smaller'}
             </strong>{' '}
-            than the run before, which put this day at {formatValue(before.value)}
-            {before.unit}
+            than the run before, which put this day at{' '}
+            <Figure>
+              {formatValue(before.value)}
+              {before.unit}
+            </Figure>
           </>
         ) : (
           <>
-            Unchanged since the run before, which also put this day at {formatValue(before.value)}
-            {before.unit}
+            Unchanged since the run before, which also put this day at{' '}
+            <Figure>
+              {formatValue(before.value)}
+              {before.unit}
+            </Figure>
           </>
         )}
         {/* The lead time the earlier run spoke at, because a range narrowing as a date
@@ -636,7 +781,9 @@ function History({ day }: { day: ForecastDay }) {
                 style={{ width: `${largest > 0 ? (point.height.value / largest) * 100 : 0}%` }}
               />
             </span>
-            <strong>{formatReading(point.height)}</strong>
+            <strong>
+              <Figure>{formatReading(point.height)}</Figure>
+            </strong>
             {/* Not a band of zero width where a call recorded none, which would read as total
                 certainty about the oldest and least informed point in the series. Those are
                 calls issued before the pipeline built distributions at all. */}
@@ -698,7 +845,7 @@ function spreadRange(spread: DaySpread): string {
  * typographic stroke, which is the overclaim this project keeps having to undo.
  *
  * The numbers are the day's *middle* hour, and the copy says so. They are not the peak hour
- * the card above summarises, so presenting them without that word would leave two swell
+ * the row above summarises, so presenting them without that word would leave two swell
  * heights on screen that a reader would reasonably expect to match and which never will. */
 function Agreement({ day }: { day: ForecastDay }) {
   const height = day.model_spread?.swell_height;
@@ -730,19 +877,28 @@ function Agreement({ day }: { day: ForecastDay }) {
             {height.providers.length} independent forecasters, and at this day's middle hour they
             are{' '}
             <strong>
-              {formatValue(height.spread)}
-              {height.unit}
+              <Figure>
+                {formatValue(height.spread)}
+                {height.unit}
+              </Figure>
             </strong>{' '}
-            apart on the swell — {spreadRange(height)}.
+            apart on the swell — <Figure>{spreadRange(height)}</Figure>.
             {period?.spread !== null && period !== undefined && (
               <>
                 {' '}
-                They differ by {formatValue(period.spread)}
-                {period.unit} on the period.
+                They differ by{' '}
+                <Figure>
+                  {formatValue(period.spread)}
+                  {period.unit}
+                </Figure>{' '}
+                on the period.
               </>
             )}
             {direction?.spread !== null && direction !== undefined && (
-              <> On the direction they span {spreadRange(direction)}.</>
+              <>
+                {' '}
+                On the direction they span <Figure>{spreadRange(direction)}</Figure>.
+              </>
             )}
           </p>
           <p className="provenance">
@@ -902,7 +1058,7 @@ function isCalled(day: ForecastDay): boolean {
  * failure this guards against is somebody booking five nights against a three-night event, so
  * where the two readings differ this takes the shorter one.
  *
- * **A window of one is not a window.** A single called day is already a card in the range, and
+ * **A window of one is not a window.** A single called day is already a row in the range, and
  * announcing it as a swell spanning one day is a sentence about nothing.
  *
  * **It invents no status.** The days inside keep their own calls, which is why this returns the
@@ -943,7 +1099,7 @@ function swellWindows(days: ForecastDay[]): SwellWindow[] {
     const previous = run.at(-1);
     const here = dayNumber(day.date);
     const before = previous ? dayNumber(previous.date) : null;
-    // A date this cannot place is not adjacent to anything. It still renders as its own card
+    // A date this cannot place is not adjacent to anything. It still renders as its own row
     // below; it simply cannot be grouped, which is the safe direction.
     if (here === null) {
       close();
@@ -1053,40 +1209,78 @@ function WindowSpan({ window }: { window: SwellWindow }) {
   );
 }
 
+/** What the wave models said, in a clause a reader can act on.
+ *
+ * Not derivable from anything else on the page, which is why the backend sends it. A day whose
+ * own swell period sits below the Go Call bar has every forecaster below it too, so it reports
+ * `divided` while the models decided nothing — and two Watch days that look identical from
+ * status alone are a swell the forecasters have not settled on and a swell that was never big
+ * enough. The verdict is where a reader decides to spend money, so it is said here rather than
+ * only inside a panel they have to open.
+ *
+ * `null` is said rather than skipped. A call issued before the backend consulted the models at
+ * all is not a call the models agreed with, and silence reads as agreement.
+ */
+function ModelVerdict({ agreement }: { agreement: ModelAgreement | null }) {
+  // No leading space in these fragments, and the separator is emitted at the call site as an
+  // explicit `{' '}` instead. A space that is only there because the string happens to fit on
+  // one line is a space Prettier can reflow away, and nothing would catch it: `toHaveTextContent`
+  // normalises whitespace, so "models agree.The independent" reads as a pass. `WindowSpan` below
+  // already does it this way.
+  if (agreement === 'agreed') return <>The independent wave models agree.</>;
+  if (agreement === 'divided') return <>The independent wave models are divided about this day.</>;
+  if (agreement === 'unmeasured') {
+    return <>Whether the wave models are divided could not be measured for this day.</>;
+  }
+  return <>This call was issued before the wave models were consulted.</>;
+}
+
 /**
- * The one sentence a Traveller came for: is there anything worth booking, and when.
+ * The verdict: the one thing on this page a Traveller came for.
  *
- * Story 23 of #1, which the range delivered only in the sense that a reader could assemble
- * the answer themselves by scanning fourteen dated cards. Story 28 asks for the current
- * status without navigating, and a scan is navigation.
+ * Story 23 of #1, rebuilt by #116 as the panel at the top of the left column. It replaces
+ * `EarliestWorthActingOn`, which said the date and the Lead Time and stopped there — most of
+ * what this says, which is why #116 rather than #119 removed it: shipping both would have left
+ * the page telling a reader to book the same day twice, in two voices. Everything below that
+ * is not marked as new came with it, because it was right.
  *
- * **The earliest, not the largest.** The largest day is where the eye lands in the range
- * below and it answers a different question. What makes a date actionable is that its flights
- * are still bookable, which is a fact about how soon it is.
+ * **Five parts, and the last three are #116's.** The date worth booking, the Lead Time the call
+ * was issued at, the predicted Significant Wave Height, the plausible range around it, and
+ * whether the wave models agreed.
  *
- * **A Watch is a fallback, never a substitute.** CONTEXT.md is explicit that a Watch tells a
- * reader to pay attention and a Go Call tells them to spend money, so an earlier Watch must
- * not outrank a Go Call behind it. Both branches say which they are.
+ * **Significant Wave Height, named in full.** *New.* CONTEXT.md lists "wave height" as
+ * ambiguous and "swell height" as a different variable, and this figure sits in the panel a
+ * reader reads first. Face Height — the number a reader has seen in news coverage — is several
+ * times this for the same sea and is not convertible to it by any fixed ratio, so a verdict
+ * that said "7.6m waves" would be the exact overclaim this project exists to avoid. (It is not
+ * the largest figure on the page: that is the Significant Wave Height on the tile below, at
+ * `--text-figure`. This one sits in a sentence at `--text-small`.)
+ *
+ * **The range travels with the prediction, and the caveat travels with the range.** *New.* A
+ * point estimate alone throws away the Predictive Distribution that is the point of the whole
+ * system, and a range presented without saying it prices the height condition alone invites a
+ * reader to take it for the chance of a giant day. The spec's rule is that limits qualifying a
+ * number stay beside that number; here they stay inside the same panel, at the same weight.
  *
  * **Confirmed is not on this ladder.** It is a short-range statement to somebody already
  * travelling and carries no booking recommendation, so it is not something to act on — and
  * #84 settled that the four statuses have no ordering that could promote it. That is why the
  * quiet sentence says *no Go Call and no Watch* rather than "the range is quiet": a Confirmed
- * day in range would make the second one false, and this sentence sits above the range that
- * would contradict it.
+ * day in range would make the second one false, and this sits above the range that would
+ * contradict it.
  *
- * **The date leads and the window follows, which is the arguable half of #86.** The ticket
- * says the earliest thing worth acting on is a window rather than a date, and a window is
- * indeed what somebody books — but only the Go Call day is a recommendation to spend money.
- * A sentence opening "book the three-day swell" would be recommending nights against days
- * that carry a Watch, which is the over-claim #85 took the shorter reading to avoid. So the
- * Go Call is the commitment, the window is the shape around it, and the two compose in that
- * order rather than competing.
+ * **The date leads and the window follows, which is the arguable half of #86.** The ticket says
+ * the earliest thing worth acting on is a window rather than a date, and a window is indeed
+ * what somebody books — but only the Go Call day is a recommendation to spend money. A
+ * sentence opening "book the three-day swell" would be recommending nights against days that
+ * carry a Watch, which is the over-claim #85 took the shorter reading to avoid. So the Go Call
+ * is the commitment, the window is the shape around it, and the two compose in that order
+ * rather than competing.
  *
  * **The Lead Time is `lead_time_days` and is not a countdown.** `DayCall` fixes it when the
- * call is issued rather than recomputing it against the clock, so it is stated as *issued
- * three days ahead* and never as "in three days" — which would be a claim about today that
- * this number does not make.
+ * call is issued rather than recomputing it against the clock, so it is stated as *issued three
+ * days ahead* and never as "in three days" — which would be a claim about today that this
+ * number does not make.
  *
  * **It does not restate staleness.** If the store is old the top of the page already says so
  * (story 10), and this renders below that banner. Nothing but document order holds that; the
@@ -1095,7 +1289,13 @@ function WindowSpan({ window }: { window: SwellWindow }) {
  * **Earliest means first in the range**, which arrives in date order from
  * `/api/conditions/forecast` — the same assumption `swellWindows` rests on.
  */
-function EarliestWorthActingOn({ days }: { days: ForecastDay[] }) {
+function Verdict({
+  days,
+  rangeCalibration,
+}: {
+  days: ForecastDay[];
+  rangeCalibration: RangeCalibration | null;
+}) {
   const first = (status: CallStatus) => days.find((day) => day.call?.status === status) ?? null;
 
   const go = first('go');
@@ -1104,45 +1304,155 @@ function EarliestWorthActingOn({ days }: { days: ForecastDay[] }) {
   // Named for what it is rather than `window`, which would shadow the browser global in a
   // component whose other reads are all of the DOM's.
   const containing = day ? (swellWindows(days).find((w) => w.days.includes(day)) ?? null) : null;
+  const call = day?.call ?? null;
 
   return (
-    <p className="earliest" data-testid="earliest-call">
-      {day === null ? (
+    <section
+      className={`verdict verdict-${call?.status ?? 'none'}`}
+      data-testid="verdict"
+      aria-labelledby="verdict-heading"
+    >
+      {day === null || call === null ? (
         <>
-          <strong>Nothing to book yet.</strong> No day in the next {days.length} days carries a Go
-          Call or a Watch. That is the ordinary state of this coast rather than a gap in the
-          forecast — most weeks of the year say exactly this.
-        </>
-      ) : go ? (
-        <>
-          <strong>
-            Book for{' '}
-            <time dateTime={go.date} data-testid="earliest-date">
-              {dayLabel(go.date)}
-            </time>
-            .
-          </strong>{' '}
-          The earliest Go Call in this range, issued {go.call!.lead_time_days} days ahead.
-          {containing && <WindowSpan window={containing} />}
+          <h2 id="verdict-heading" className="verdict-headline">
+            Nothing to book yet.
+          </h2>
+          {/* An answer, not a warning. Given `role="alert"` it would read as the system failing
+              to forecast rather than the ocean being ordinary, and this is the truthful answer
+              most weeks of the year. */}
+          <p className="verdict-detail">
+            No day in the next {days.length} days carries a Go Call or a Watch. That is the ordinary
+            state of this coast rather than a gap in the forecast — most weeks of the year say
+            exactly this.
+          </p>
         </>
       ) : (
         <>
-          <strong>Nothing to book yet.</strong> The earliest day worth attention is{' '}
-          <time dateTime={day.date} data-testid="earliest-date">
-            {dayLabel(day.date)}
-          </time>
-          , a Watch issued {day.call!.lead_time_days} days ahead. Start watching flights; do not
-          book on it.
-          {containing && <WindowSpan window={containing} />}
+          {/* Not `{CALL_LABELS[status]} Call`, which renders the Watch branch as "Watch Call".
+              CONTEXT.md keeps Watch and Go Call as separate entries on purpose — one says start
+              paying attention, the other says spend money — and "Watch Call" is a coined term
+              that appears nowhere else in the repo. It reads as a weaker Go Call, which is the
+              one thing a Watch must never be mistaken for. */}
+          <p className="verdict-status">
+            {go ? 'Go Call' : 'Watch'} · issued {call.lead_time_days}{' '}
+            {call.lead_time_days === 1 ? 'day' : 'days'} ahead
+          </p>
+
+          <h2 id="verdict-heading" className="verdict-headline">
+            {go ? (
+              <>
+                Book for{' '}
+                <time dateTime={go.date} data-testid="earliest-date">
+                  {dayLabel(go.date)}
+                </time>
+                .
+              </>
+            ) : (
+              <>
+                Nothing to book yet — the earliest day worth attention is{' '}
+                <time dateTime={day.date} data-testid="earliest-date">
+                  {dayLabel(day.date)}
+                </time>
+                .
+              </>
+            )}
+          </h2>
+
+          <p className="verdict-detail">
+            Predicted{' '}
+            <strong>
+              <Figure>{formatReading(call.predicted_significant_wave_height)}</Figure>
+            </strong>{' '}
+            significant wave height
+            {call.plausible_range && (
+              <>
+                , plausibly{' '}
+                <strong>
+                  <Figure>{formatRange(call.plausible_range)}</Figure>
+                </strong>
+              </>
+            )}
+            {call.height_bar_probability !== null && (
+              <>
+                {' '}
+                — about{' '}
+                <strong>
+                  <Figure>{Math.round(call.height_bar_probability * 100)}%</Figure>
+                </strong>{' '}
+                likely to clear the minimum significant wave height a giant day needs
+              </>
+            )}
+            . <ModelVerdict agreement={call.model_agreement} />
+            {watch && ' Start watching flights; do not book on it.'}
+            {containing && <WindowSpan window={containing} />}
+          </p>
+
+          {/* #66 and ADR 0004. A giant day needs four quantities to hold — height, swell
+              period, swell direction and wind — and the distribution prices one; the other
+              three have no archived forecast error to build a distribution from.
+
+              **It names both figures, because both price height alone.** #116 asks for "the
+              height-only caveat on the probability" and the first draft attached it to the
+              plausible range, which is true of the range and quietly silent about the
+              percentage — the figure a reader is most likely to read as the chance of a giant
+              day. Rendered from the same guard as the figures above, so the caveat cannot
+              outlive what it caveats, and in the same panel at the same size rather than below
+              the fold: a redesign is exactly the change that turns a disclaimer into elegant
+              grey fine print. */}
+          {/* Beside the range, and only when there is a range. Rendered from `plausible_range`
+              like the caveat above it, because a sentence opening "That range..." on a day the
+              panel prints no range is a limit qualifying nothing. */}
+          {call.plausible_range && rangeCalibration && (
+            <RangeWidthAdmission calibration={rangeCalibration} />
+          )}
+
+          {(call.plausible_range || call.height_bar_probability !== null) && (
+            <p className="verdict-scope">
+              Height only — the swell period, swell direction and wind a giant day also needs are
+              priced in{' '}
+              {call.plausible_range && call.height_bar_probability !== null
+                ? 'neither that range nor that figure'
+                : call.plausible_range
+                  ? 'no part of that range'
+                  : 'no part of that figure'}
+              .
+            </p>
+          )}
+
+          {/* Past the archive's seven days the width is an extrapolation, and an extrapolation
+              rendered identically to a measurement is the failure the flag exists to prevent.
+              It arrives as a flag rather than being inferred from the Lead Time, because
+              inferring it means keeping a copy here of how deep the archive currently is. */}
+          {call.uncertainty_measured === false && (
+            <p className="verdict-scope">
+              Nothing has been measured about how wrong a forecast this far ahead tends to be, so
+              that range is extrapolated rather than observed.
+            </p>
+          )}
         </>
       )}
-    </p>
+    </section>
   );
 }
 
-export function ForecastRange() {
+/**
+ * The swell windows, on the reading page (#119).
+ *
+ * **Why it is not on the forecast page any more.** Spec §2 lists five things down the home
+ * column — the verdict, the four tiles, the days, the hours, and one line of track record — and
+ * this was a sixth. Its actionable half is already in the verdict, which names the window a Go
+ * Call falls inside; what is left is the enumeration of every window in range and the paragraph
+ * explaining what a window is, and the second of those is teaching material by #119's own rule.
+ * Ruled 2026-09-19 to move the panel whole rather than split it, so the list and the sentence
+ * that explains the list stay together.
+ *
+ * **It fetches the forecast itself**, which is the one cost of the move: this page otherwise
+ * reads only `/api/track-record`. Passing the days down from the forecast page is not available
+ * — they are different routes — and deriving windows from the track record would be a second
+ * answer to "which days is this swell", which is exactly the drift #85 was written to prevent.
+ */
+export function SwellWindowsSection() {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
-  const [openDate, setOpenDate] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -1158,74 +1468,305 @@ export function ForecastRange() {
     return <p>Loading forecast...</p>;
   }
 
+  // An alert rather than nothing. This page is reachable when the forecast service is down, and
+  // a section that silently disappears reads as a page that failed to load rather than as one
+  // part of it being unavailable.
   if (state.status === 'failed') {
     return (
       <p role="alert" className="alert">
-        Could not load the forecast. The service may be unavailable, or no pipeline run has stored
-        one yet.
+        Could not load the forecast, so there is nothing to say about swell windows right now.
       </p>
     );
   }
 
-  const open = state.forecast.days.find((day) => day.date === openDate) ?? null;
-  const largest = Math.max(...state.forecast.days.map((day) => day.peak_swell_height.value));
+  return <SwellWindows days={state.forecast.days} />;
+}
+
+/**
+ * The forecast section: the verdict, the days, and what a selected day opens into.
+ *
+ * **`belowVerdict` is a slot, and it exists because the page interleaves two fetches.** The
+ * spec's order down the left column is verdict, then the four condition tiles, then the day list
+ * — and the verdict and the day list come from `/api/conditions/forecast` while the tiles come
+ * from `/api/conditions/current`. Something has to sit between two things this component owns.
+ *
+ * It was called `tiles` while the tiles were the only thing in it, and the name now says where
+ * the slot is rather than what happens to be in it.
+ *
+ * A slot rather than lifting the fetch into `Home`: this component is rendered bare, as
+ * `<ForecastRange />`, at scores of places across two suites, with msw at the network boundary.
+ * That is the seam this repo tests at, and turning it into a presentational component fed
+ * fixtures directly would trade a tested boundary for a prop. The slot is optional, so every one
+ * of those call sites still renders what it always did.
+ *
+ * `rangeCalibration` is a prop rather than a third slot because it is not laid out here — it
+ * reaches `Verdict`, which renders it directly under the range it qualifies. `Home` fetches it
+ * once and passes it to both this and the line of track record below.
+ */
+/**
+ * Which face the slot is showing, and which day it is about.
+ *
+ * One value rather than two fields, so "showing a day" cannot be true while the date it would
+ * show is null — the same shape as `LoadState` above, for the same reason.
+ *
+ * **`selected` survives the return to the list on purpose.** It is the day a reader has just
+ * come back from, still marked; together with the focus `DaySlot` restores, it is how somebody
+ * keeps their place among sixteen near-identical rows.
+ */
+type SlotView = { view: 'list'; selected: string | null } | { view: 'day'; date: string };
+
+/**
+ * The day list and one day's detail, sharing one slot of fixed height (#118).
+ *
+ * **Neither state ever sits under the other.** The detail used to render *beneath* the list,
+ * which grew the left column — and `.map-slot` is `height: 100%` of that column, so opening a
+ * day changed the map's proportion and moved the page under the reader at the moment they
+ * clicked. The cost, accepted knowingly when the spec chose this, is that the list and the
+ * hours cannot be read at once.
+ *
+ * **Everything a selection reveals is inside the slot**, the call detail and the agreement
+ * panel included. Either one left outside would grow the column exactly as the hours did,
+ * which is the defect rather than a tidier arrangement of it.
+ *
+ * **The slot no longer sets its own height (#132).** It had one — and its own scrollbar — for
+ * exactly as long as it was the only thing holding the column steady. Once the column itself is
+ * capped to the viewport and `.column-scroll` absorbs everything below the fold, a fixed height
+ * here buys nothing and costs a scroller inside a scroller: the days would scroll in the slot,
+ * inside a box that also scrolls, with two bars a reader has to tell apart. The invariant this
+ * component exists for is stronger now than it was, because the column's height stopped
+ * depending on the slot's contents at all.
+ */
+function DaySlot({
+  days,
+  largest,
+  model,
+}: {
+  days: ForecastDay[];
+  largest: number;
+  model: string | null;
+}) {
+  const [slot, setSlot] = useState<SlotView>({ view: 'list', selected: null });
+  const back = useRef<HTMLButtonElement | null>(null);
+  const rows = useRef(new Map<string, HTMLButtonElement>());
+  const previous = useRef<SlotView>(slot);
+
+  const open = slot.view === 'day' ? (days.find((day) => day.date === slot.date) ?? null) : null;
+
+  /*
+   * Focus follows the swap, because the element that had it has just been unmounted.
+   *
+   * Without this, clicking a day leaves focus on nothing at all and the next Tab starts again
+   * from the top of the document — which on this page is the site header, a whole landmark
+   * away from what just appeared. Returning is the same problem mirrored: the row a reader
+   * came from is a new element by then, so the slot looks it up by date rather than holding a
+   * reference across the swap.
+   */
+  useEffect(() => {
+    const was = previous.current;
+    previous.current = slot;
+    if (slot.view === 'day') back.current?.focus();
+    else if (was.view === 'day') rows.current.get(was.date)?.focus();
+  }, [slot]);
+
+  const toList = () => setSlot(slot.view === 'day' ? { view: 'list', selected: slot.date } : slot);
+
+  /*
+   * Escape as well as the control, so the way out is not one button wide.
+   *
+   * **On the document, and only while a day is open.** This rode on the slot element first, on
+   * the reasoning that focus is always inside it in the state where the key means anything.
+   * That reasoning was wrong and the browser said so: click the day's heading or its table —
+   * neither is focusable — and `document.activeElement` is `body`, from where a keydown never
+   * reaches a handler on a div. Escape silently did nothing, which is the failure mode a
+   * keyboard affordance can least afford.
+   *
+   * Listening on the document is safe here because the listener exists only in the day state
+   * and this page has nothing else Escape dismisses.
+   */
+  useEffect(() => {
+    if (slot.view !== 'day') return;
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSlot({ view: 'list', selected: slot.date });
+    };
+    document.addEventListener('keydown', dismiss);
+    return () => document.removeEventListener('keydown', dismiss);
+  }, [slot]);
 
   return (
-    <section aria-labelledby="forecast-heading">
-      <h2 id="forecast-heading">The next {state.forecast.days.length} days</h2>
-
-      {/* First, and above the windows: a reader who takes one sentence from this page should
-          take this one. The windows below give it its shape and the range below that gives
-          every day its own verdict, in that order of how much reading each costs. */}
-      <EarliestWorthActingOn days={state.forecast.days} />
-
-      <SwellWindows days={state.forecast.days} />
-
-      <div className="days">
-        {state.forecast.days.map((day) => (
-          <DaySummary
-            key={day.date}
-            day={day}
-            largest={largest}
-            selected={day.date === openDate}
-            onSelect={() => setOpenDate(day.date === openDate ? null : day.date)}
-          />
-        ))}
-      </div>
-
+    <div className="day-slot" data-testid="day-slot">
       {open ? (
         <>
-          <CallDetail day={open} model={state.forecast.amplification_model} />
+          {/* First, and focused: the way back is the thing a reader who arrived here by
+              keyboard needs before they need the table. */}
+          <button type="button" className="day-slot-back" ref={back} onClick={toList}>
+            Back to all {days.length} days
+          </button>
+          <h2 className="day-slot-heading">{dayLabel(open.date)}</h2>
+          <CallDetail day={open} model={model} />
           <Agreement day={open} />
           <HourTable day={open} />
         </>
       ) : (
-        <p className="hint">Select a day to see how it develops hour by hour.</p>
+        <>
+          {/* The count travels with the list it counts. Left outside the slot it would stand
+              over one day's hour table saying "the next 16 days", naming something no longer
+              on screen. */}
+          <h2>The next {days.length} days</h2>
+          <p className="hint">Select a day to see how it develops hour by hour.</p>
+          <DayList
+            days={days}
+            largest={largest}
+            openDate={slot.view === 'list' ? slot.selected : null}
+            onSelect={(date) => setSlot({ view: 'day', date })}
+            rowRef={(date, element) => {
+              if (element) rows.current.set(date, element);
+              else rows.current.delete(date);
+            }}
+          />
+        </>
       )}
+    </div>
+  );
+}
 
-      {!state.forecast.calibrated && (
-        <p role="status" className="alert">
-          These calls come from the surf community's rule of thumb, not from thresholds fitted to
-          days Nazaré is known to have gone giant. Treat them as a starting point rather than a
-          forecast.
-        </p>
-      )}
+export function ForecastRange({
+  belowVerdict,
+  belowDays,
+  rangeCalibration = null,
+}: {
+  /** The four gated tiles. They ride in the block that clears the fold. */
+  belowVerdict?: ReactNode;
+  /** The column's tail — the track-record line and the freshness stamps. They ride in the
+   *  block that scrolls, because a limit stranded below a scrolling box is a limit the page
+   *  has to grow to hold, which is the whole of what #132 is about. */
+  belowDays?: ReactNode;
+  rangeCalibration?: RangeCalibration | null;
+}) {
+  const [state, setState] = useState<LoadState>({ status: 'loading' });
 
-      {state.forecast.calibrated && state.forecast.calibration && (
-        <p role="status" className="alert">
-          These thresholds were fitted to {state.forecast.calibration.gold_days_total} days Nazaré
-          is known to have gone giant — {state.forecast.calibration.gold_days_fitted} to choose them
-          and {state.forecast.calibration.gold_days_validated} held back to check them. That is a
-          very small number of days: far more giant days are on record, but the swell measurements
-          these calls are written in do not reach back that far. Expect the calls to be roughly
-          right and individually uncertain.
-        </p>
-      )}
+  useEffect(() => {
+    let active = true;
+    fetchForecast()
+      .then((forecast) => active && setState({ status: 'loaded', forecast }))
+      .catch(() => active && setState({ status: 'failed' }));
+    return () => {
+      active = false;
+    };
+  }, []);
 
-      <p className="provenance">
-        Forecast fetched {formatTimestamp(state.forecast.fetched_at)}. The range ends where the
-        provider stops modelling swell, which is sooner than its wind forecast.
-      </p>
+  // The slot renders in every state, including the two where this component has no forecast.
+  // The tiles are current conditions and come from a different request: a forecast that is slow,
+  // or a forecast endpoint that is down, must not take the sea's present state off the page with
+  // it. ADR 0005's promise is that the site stays up and honest when a provider is unreachable,
+  // and a page that answered "could not load the forecast" while silently also dropping ten
+  // readings it *had* would be neither.
+  const forecast = state.status === 'loaded' ? state.forecast : null;
+  const largest = forecast
+    ? Math.max(...forecast.days.map((day) => day.peak_swell_height.value))
+    : 0;
+
+  /*
+   * One tree in every state, rather than an early return per state.
+   *
+   * **`tiles` has to keep the same position in the tree across all three.** It is the four
+   * condition tiles, which come from a different request than everything else here, and when it
+   * was rendered from three separate `return`s React tore the subtree down and rebuilt it the
+   * moment the forecast landed. Nothing looked wrong in a screenshot; what it cost was that the
+   * tiles a reader was already looking at were replaced by identical new ones, and any handle on
+   * them — a test's, a screen reader's cursor — pointed at detached nodes.
+   *
+   * **It renders even when this component has no forecast at all.** ADR 0005's promise is that
+   * the site stays up and honest when a provider is unreachable. A forecast endpoint that is
+   * slow or down must not take the sea's present state off the page with it, and a page saying
+   * "could not load the forecast" while silently also dropping ten readings it *had* would be
+   * neither up nor honest.
+   *
+   * **The section is named outright rather than by its heading.** The heading that used to
+   * label it is the day count, which now travels into the slot with the list it counts and is
+   * gone while a day is open — and a region whose accessible name disappears the moment a
+   * reader opens something is worse than one named for what it is.
+   */
+  return (
+    <section className="forecast" aria-label="Forecast">
+      {/* **The block the scoped promise is about (#132).** Everything in here clears the fold at
+          1440x900: the answer, the four numbers it turns on, and where those numbers came from.
+          Nothing in here scrolls, and nothing may be added to it without measuring again. */}
+      <div className="column-head">
+        {forecast && (
+          /* First on the page, above everything including the heading that used to sit over it:
+             a reader who takes one sentence from here should take this one. "The next 16 days"
+             was rendered above the verdict while it labelled the section as a whole, which put a
+             heading about a list over the answer the list exists to produce. It now sits with
+             the list it names, which is also the order the spec sets out — verdict, tiles,
+             days. */
+          <Verdict days={forecast.days} rangeCalibration={rangeCalibration} />
+        )}
+
+        {belowVerdict}
+      </div>
+
+      {/* **And the block that scrolls.** The days, the limits that qualify them, and the page's
+          own tail — the track record and the freshness stamps, handed in by `Home` as
+          `belowDays` so that they scroll with the days rather than being stranded below a box
+          that scrolls without them. That stranding is exactly what the first attempt at this
+          promise did: a scroller around the day list alone left four blocks outside it and on
+          the page, and the arithmetic could not close. */}
+      <div className="column-scroll">
+        {state.status === 'loading' && <p>Loading forecast...</p>}
+
+        {state.status === 'failed' && (
+          <p role="alert" className="alert">
+            Could not load the forecast. The service may be unavailable, or no pipeline run has
+            stored one yet.
+          </p>
+        )}
+
+        {forecast && (
+          <>
+            <DaySlot days={forecast.days} largest={largest} model={forecast.amplification_model} />
+
+            {/* **The limit stays; the explanation moved (#119).**
+
+              What these two sentences do is tell a reader what the calls above them rest on and
+              how far to trust them, which is a limit qualifying every call on the page. What
+              they used to also do is explain why the number of days is so small — that far more
+              giant days are on record than the swell measurements these calls are written in
+              reach back to cover. That is how it was computed rather than what it means, so it
+              is on the reading page now, under the same numbers.
+
+              All three counts stay here. They are what "how thin the basis is" is made of, and
+              a limit that said "fitted to a small number of days" without saying how small would
+              be the vaguer, more comfortable version of the same sentence. */}
+            {!forecast.calibrated && (
+              <p role="status" className="alert">
+                These calls come from the surf community's rule of thumb, not from thresholds fitted
+                to days Nazaré is known to have gone giant. Treat them as a starting point rather
+                than a forecast. <a href={ADDRESS['how-it-works']}>How the calls are made</a>.
+              </p>
+            )}
+
+            {forecast.calibrated && forecast.calibration && (
+              <p role="status" className="alert">
+                These thresholds were fitted to {forecast.calibration.gold_days_total} days Nazaré
+                is known to have gone giant — {forecast.calibration.gold_days_fitted} to choose them
+                and {forecast.calibration.gold_days_validated} held back to check them. Expect the
+                calls to be roughly right and individually uncertain.{' '}
+                <a href={ADDRESS['how-it-works']}>How the thresholds were fitted</a>.
+              </p>
+            )}
+
+            <p className="provenance">
+              Forecast fetched {formatTimestamp(forecast.fetched_at)}. The range ends where the
+              provider stops modelling swell, which is sooner than its wind forecast.
+            </p>
+          </>
+        )}
+
+        {/* Outside the `forecast &&`, because ADR 0005's promise does not have a forecast as a
+            condition. A forecast endpoint that is slow or down must not take the track record
+            and the freshness stamps off the page with it. */}
+        {belowDays}
+      </div>
     </section>
   );
 }

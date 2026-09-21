@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; background: #05070a; }
+    .sw-drift { animation: swDrift 3.6s ease-in-out infinite; }
+    .sw-drift.d2 { animation-delay: -0.9s; }
+    .sw-drift.d3 { animation-delay: -1.8s; }
+    .sw-drift.d4 { animation-delay: -2.7s; }
+    .wd-drift { animation: wdDrift 1.9s ease-in-out infinite; }
+    .wd-drift.e2 { animation-delay: -0.6s; }
+    .wd-drift.e3 { animation-delay: -1.2s; }
+    @keyframes swDrift {
+      0%   { transform: translateY(-9px); opacity: 0.3; }
+      50%  { transform: translateY(0px);  opacity: 1; }
+      100% { transform: translateY(9px);  opacity: 0.3; }
+    }
+    @keyframes wdDrift {
+      0%   { transform: translateY(-5px); opacity: 0.25; }
+      50%  { transform: translateY(0px);  opacity: 0.85; }
+      100% { transform: translateY(5px);  opacity: 0.25; }
+    }
+  </style>
+</helmet>
+
+<div style="width: 640px; height: 780px; box-sizing: border-box; position: relative; overflow: hidden; background: #05070a; color: #e9ecef; font-family: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;">
+
+  <svg viewBox="0 0 640 780" preserveAspectRatio="xMidYMid slice" style="position: absolute; inset: 0; width: 100%; height: 100%;" aria-hidden="true">
+    <defs>
+      <g id="swArrow" fill="none" stroke="#4fd1ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M0,-20 L0,14"></path>
+        <path d="M-5.5,5 L0,14 L5.5,5"></path>
+      </g>
+      <g id="wdArrow" fill="none" stroke="#d6e0ea" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M0,-10 L0,7"></path>
+        <path d="M-3.2,2.4 L0,7 L3.2,2.4"></path>
+      </g>
+    </defs>
+
+    <rect x="0" y="0" width="640" height="780" fill="#05070a"></rect>
+    <g fill="none" stroke="#222a32" stroke-width="1">
+      <path d="M470,0 L488,348 L502,390 L488,432 L470,780"></path>
+      <path d="M418,0 L436,332 L499,390 L436,448 L418,780"></path>
+      <path d="M360,0 L378,312 L496,390 L378,468 L360,780"></path>
+      <path d="M300,0 L318,292 L492,390 L318,488 L300,780"></path>
+      <path d="M238,0 L256,270 L488,390 L256,510 L238,780"></path>
+      <path d="M172,0 L190,245 L484,390 L190,535 L172,780"></path>
+      <path d="M104,0 L122,220 L480,390 L122,560 L104,780"></path>
+      <path d="M34,0 L52,194 L476,390 L52,586 L34,780"></path>
+    </g>
+
+    <g transform="translate(115,140) rotate(-18)"><g class="wd-drift"><use href="#wdArrow"></use></g></g>
+    <g transform="translate(225,140) rotate(-20)"><g class="wd-drift e2"><use href="#wdArrow"></use></g></g>
+    <g transform="translate(335,140) rotate(-22)"><g class="wd-drift e3"><use href="#wdArrow"></use></g></g>
+    <g transform="translate(430,140) rotate(-24)"><g class="wd-drift"><use href="#wdArrow"></use></g></g>
+    <g transform="translate(115,320) rotate(-18)"><g class="wd-drift e2"><use href="#wdArrow"></use></g></g>
+    <g transform="translate(225,320) rotate(-20)"><g class="wd-drift e3"><use href="#wdArrow"></use></g></g>
+    <g transform="translate(335,320) rotate(-22)"><g class="wd-drift"><use href="#wdArrow"></use></g></g>
+    <g transform="translate(430,320) rotate(-24)"><g class="wd-drift e2"><use href="#wdArrow"></use></g></g>
+    <g transform="translate(115,500) rotate(-18)"><g class="wd-drift e3"><use href="#wdArrow"></use></g></g>
+    <g transform="translate(225,500) rotate(-20)"><g class="wd-drift"><use href="#wdArrow"></use></g></g>
+    <g transform="translate(335,500) rotate(-22)"><g class="wd-drift e2"><use href="#wdArrow"></use></g></g>
+    <g transform="translate(430,500) rotate(-24)"><g class="wd-drift e3"><use href="#wdArrow"></use></g></g>
+    <g transform="translate(115,680) rotate(-18)"><g class="wd-drift"><use href="#wdArrow"></use></g></g>
+    <g transform="translate(225,680) rotate(-20)"><g class="wd-drift e2"><use href="#wdArrow"></use></g></g>
+    <g transform="translate(335,680) rotate(-22)"><g class="wd-drift e3"><use href="#wdArrow"></use></g></g>
+    <g transform="translate(430,680) rotate(-24)"><g class="wd-drift"><use href="#wdArrow"></use></g></g>
+
+    <g transform="translate(60,70) rotate(-58)"><g class="sw-drift"><use href="#swArrow"></use></g></g>
+    <g transform="translate(170,70) rotate(-56)"><g class="sw-drift d2"><use href="#swArrow"></use></g></g>
+    <g transform="translate(280,70) rotate(-54)"><g class="sw-drift d3"><use href="#swArrow"></use></g></g>
+    <g transform="translate(390,70) rotate(-52)"><g class="sw-drift d4"><use href="#swArrow"></use></g></g>
+    <g transform="translate(60,215) rotate(-54)"><g class="sw-drift d2"><use href="#swArrow"></use></g></g>
+    <g transform="translate(170,215) rotate(-52)"><g class="sw-drift d3"><use href="#swArrow"></use></g></g>
+    <g transform="translate(280,215) rotate(-50)"><g class="sw-drift d4"><use href="#swArrow"></use></g></g>
+    <g transform="translate(390,215) rotate(-47)"><g class="sw-drift"><use href="#swArrow"></use></g></g>
+    <g transform="translate(60,360) rotate(-50)"><g class="sw-drift d3"><use href="#swArrow"></use></g></g>
+    <g transform="translate(170,360) rotate(-49)"><g class="sw-drift d4"><use href="#swArrow"></use></g></g>
+    <g transform="translate(280,360) rotate(-47)"><g class="sw-drift"><use href="#swArrow"></use></g></g>
+    <g transform="translate(390,360) rotate(-44)"><g class="sw-drift d2"><use href="#swArrow"></use></g></g>
+    <g transform="translate(60,505) rotate(-45)"><g class="sw-drift d4"><use href="#swArrow"></use></g></g>
+    <g transform="translate(170,505) rotate(-43)"><g class="sw-drift"><use href="#swArrow"></use></g></g>
+    <g transform="translate(280,505) rotate(-41)"><g class="sw-drift d2"><use href="#swArrow"></use></g></g>
+    <g transform="translate(390,505) rotate(-38)"><g class="sw-drift d3"><use href="#swArrow"></use></g></g>
+    <g transform="translate(60,650) rotate(-40)"><g class="sw-drift"><use href="#swArrow"></use></g></g>
+    <g transform="translate(170,650) rotate(-38)"><g class="sw-drift d2"><use href="#swArrow"></use></g></g>
+    <g transform="translate(280,650) rotate(-36)"><g class="sw-drift d3"><use href="#swArrow"></use></g></g>
+    <g transform="translate(390,650) rotate(-33)"><g class="sw-drift d4"><use href="#swArrow"></use></g></g>
+
+    <path d="M560,0 L556,90 L548,170 L553,250 L546,320 L541,356 L508,392 L516,418 L548,448 L554,520 L547,600 L554,680 L549,780 L640,780 L640,0 Z" fill="#11161c" stroke="#333b45" stroke-width="1.2"></path>
+    <circle cx="524" cy="372" r="3.5" fill="#ff5f3d"></circle>
+    <text x="500" y="346" text-anchor="end" font-family="'Space Grotesk', sans-serif" font-size="12" font-weight="600" fill="#d3d9df">Praia do Norte</text>
+    <text x="196" y="730" font-family="'Space Grotesk', sans-serif" font-size="11" letter-spacing="2.8" fill="#59626b">NAZAR&Eacute; CANYON</text>
+  </svg>
+
+  <div style="position: absolute; left: 16px; bottom: 14px; display: flex; flex-direction: column; gap: 5px; background: rgba(5,7,10,0.8); border: 1px solid #232830; padding: 9px 12px;">
+    <span style="font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: #8f979f;">Arrow field</span>
+    <span style="display: flex; align-items: center; gap: 7px; font-size: 10.5px; color: #c7cdd4;"><span style="width: 20px; height: 2.2px; background: #4fd1ff;"></span>Swell &mdash; length by height</span>
+    <span style="display: flex; align-items: center; gap: 7px; font-size: 10.5px; color: #c7cdd4;"><span style="width: 20px; height: 1.3px; background: #d6e0ea;"></span>Wind &mdash; length by speed</span>
+    <span style="font-size: 9.5px; color: #767e86; max-width: 190px; line-height: 1.4;">One arrow per forecast grid point</span>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":640,"height":780}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

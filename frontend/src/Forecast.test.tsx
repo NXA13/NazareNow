@@ -14,11 +14,11 @@
 
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { delay, http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { type CallStatus, type EarlierCall } from './api';
-import { ForecastRange } from './Forecast';
+import { ForecastRange, SwellWindowsSection } from './Forecast';
 import { compassPoint } from './format';
 import { calibration, dayFrom, forecast, unmeasurableSpread } from './test/handlers';
 import { server } from './test/server';
@@ -35,6 +35,18 @@ const BIG_CALL = BIG.call!;
 /** Serve a forecast whose days are the ones given, leaving the rest of it alone. */
 function serveDays(days: (typeof forecast)['days']) {
   server.use(http.get('*/api/conditions/forecast', () => HttpResponse.json({ ...forecast, days })));
+}
+
+/** The control that puts the day list back in the slot, named as a reader sees it. */
+const backControl = () => screen.getByRole('button', { name: /back to all \d+ days/i });
+
+/** Put the day list back in the slot.
+ *
+ * Since #118 the list and one day's detail share a slot, so a second day cannot be reached
+ * from the first — its row is not on the screen to click. Every test that reads two days goes
+ * through here, which is also the path a reader has. */
+async function backToTheList() {
+  await userEvent.click(backControl());
 }
 
 describe('calls', () => {
@@ -187,6 +199,7 @@ describe('calls', () => {
     expect(await screen.findByRole('note')).toHaveTextContent(/worth booking/i);
 
     const easing = forecast.days[2]!;
+    await backToTheList();
     await userEvent.click(await screen.findByRole('button', { name: new RegExp(easing.date) }));
     const note = await screen.findByRole('note');
     expect(note).toHaveTextContent(/do not book yet/i);
@@ -263,7 +276,13 @@ describe('calls', () => {
     const note = await screen.findByRole('status');
     expect(note).toHaveTextContent(String(calibration.gold_days_total));
     expect(note).toHaveTextContent(String(calibration.gold_days_validated));
-    expect(note).toHaveTextContent(/very small number of days/i);
+    // The limit the counts are there to make, which is what a reader has to carry away from
+    // this page. **"That is a very small number of days" used to be asserted here too** and is
+    // now on the reading page, under the same counts: why the number is small is how the figure
+    // came to be rather than what it means for someone deciding whether to fly. #119 moved it,
+    // and `TrackRecord.test.tsx` asserts it where it landed rather than this dropping it.
+    expect(note).toHaveTextContent(/roughly right and individually uncertain/i);
+    expect(note).toHaveTextContent(/how the thresholds were fitted/i);
   });
 
   it('says which Gold Days chose the thresholds and which were held back to check them', async () => {
@@ -536,7 +555,7 @@ describe('how much the forecasters agree', () => {
   });
 });
 
-describe('the day card says how much was checked', () => {
+describe('the day row says how much was checked', () => {
   // The panel only exists once a day is selected, so a reader scanning the range sees a call
   // with nothing to say how much stood behind it. What can honestly go on a card is whether
   // the check happened, not how wide it came out: a width needs a threshold nobody has
@@ -711,42 +730,40 @@ describe('the day card says how much was checked', () => {
 });
 
 describe('the forecast range', () => {
-  it('marks the standout day so the overview can be scanned, not read', async () => {
-    // Asserted through the rendered class, not by calling the helper: the agreed seam
-    // is what a user sees. The scale is relative to the range on screen, so it works on
-    // a flat summer week as well as on a winter one.
+  it('draws each day against the largest one on screen, so the range can be scanned', async () => {
+    // The comparison bar, which is the third of the four things a row carries. Asserted on
+    // the rendered width rather than by calling the helper: the agreed seam is what a user
+    // sees. The three tiers of class this replaced could say which band a day fell in and
+    // never which of two ordinary days was the bigger one.
+    //
+    // Heights chosen so the shares are arithmetic a reader can check without doing any:
+    // against a peak of 8m, 4m is half the bar and 2m a quarter of it.
+    serveDays([
+      dayFrom('2026-02-12', 2, 9, 250, 'none', 1),
+      dayFrom('2026-02-13', 4, 12, 250, 'watch', 2),
+      dayFrom('2026-02-14', 8, 16, 250, 'go', 3),
+    ]);
+
     render(<ForecastRange />);
 
-    const quiet = await screen.findByRole('button', { name: new RegExp(QUIET.date) });
-    const big = await screen.findByRole('button', { name: new RegExp(BIG.date) });
-
-    expect(big.className).toContain('rank-leading');
-    expect(quiet.className).toContain('rank-ordinary');
-    // The middle tier is a real band, not decoration: a day at 70% of the peak must be
-    // neither leading nor ordinary. Without this, widening either threshold to swallow
-    // the tier passed every test.
-    const easing = await screen.findByRole('button', { name: new RegExp(forecast.days[2]!.date) });
-    expect(easing.className).toContain('rank-notable');
+    expect(await screen.findByTestId('day-bar-2026-02-14')).toHaveStyle({ width: '100%' });
+    expect(screen.getByTestId('day-bar-2026-02-13')).toHaveStyle({ width: '50%' });
+    expect(screen.getByTestId('day-bar-2026-02-12')).toHaveStyle({ width: '25%' });
   });
 
-  it('still marks a standout day when the whole range is small', async () => {
-    // The real database is a flat summer week where every day is 0.6-1.2m. Absolute
-    // thresholds put all nine in one bucket and distinguished nothing.
-    const flat = {
-      ...forecast,
-      days: forecast.days.map((day, index) => ({
-        ...day,
-        peak_swell_height: { value: index === 1 ? 1.2 : 0.7, unit: 'm' },
-      })),
-    };
-    server.use(http.get('*/api/conditions/forecast', () => HttpResponse.json(flat)));
+  it('still separates the days when the whole range is small', async () => {
+    // The real database is a flat summer week where every day is 0.6-1.2m. A bar on an
+    // absolute scale draws all seven as slivers and distinguishes nothing, which is the same
+    // failure the fixed thresholds before it had.
+    serveDays([
+      dayFrom('2026-02-12', 0.7, 9, 250, 'none', 1),
+      dayFrom('2026-02-13', 1.4, 10, 250, 'none', 2),
+    ]);
 
     render(<ForecastRange />);
 
-    const big = await screen.findByRole('button', { name: new RegExp(BIG.date) });
-    const quiet = await screen.findByRole('button', { name: new RegExp(QUIET.date) });
-    expect(big.className).toContain('rank-leading');
-    expect(quiet.className).toContain('rank-ordinary');
+    expect(await screen.findByTestId('day-bar-2026-02-13')).toHaveStyle({ width: '100%' });
+    expect(screen.getByTestId('day-bar-2026-02-12')).toHaveStyle({ width: '50%' });
   });
 
   it('names every summarised figure for a screen reader', async () => {
@@ -887,6 +904,31 @@ describe('the forecast range', () => {
     expect(days).toHaveLength(forecast.days.length);
   });
 
+  it('renders as many rows as the response has days, whether eight or sixteen', async () => {
+    // Nothing in the code chooses a count. `open_meteo.py` asks for sixteen days and the page
+    // renders whatever the merged marine and weather forecasts actually cover — about eleven
+    // today, eight if the provider shortens its horizon. A layout that assumes a count is a
+    // layout that breaks silently, which is this project's characteristic failure mode, so
+    // both ends of the range are rendered rather than the one this week happens to send.
+    for (const count of [8, 16]) {
+      serveDays(
+        Array.from({ length: count }, (_, index) =>
+          dayFrom(`2026-02-${String(12 + index).padStart(2, '0')}`, 2 + (index % 5), 9, 250),
+        ),
+      );
+      cleanup();
+
+      render(<ForecastRange />);
+
+      await screen.findByRole('heading', { name: `The next ${count} days` });
+      expect(screen.getAllByTestId(/^day-label-/)).toHaveLength(count);
+      // Every row complete, not merely present: a count is satisfied by sixteen empty boxes.
+      expect(screen.getAllByTestId(/^day-peak-/)).toHaveLength(count);
+      expect(screen.getAllByTestId(/^day-bar-/)).toHaveLength(count);
+      expect(screen.getAllByTestId(/^call-/)).toHaveLength(count);
+    }
+  });
+
   it('shows a quiet day rather than hiding it', async () => {
     // Omitting flat days would leave gaps a reader cannot tell from missing data, and
     // "nothing is coming" is a real answer to "when should I go".
@@ -963,7 +1005,7 @@ describe('the forecast range', () => {
   it('prints the degrees beside every bearing, not only the sector name', async () => {
     // #106. `compassPoint` has documented itself since it was written as "shown alongside the
     // number rather than instead of it … a surfer checking the swell direction should not have
-    // to trust our rounding" — and the forecast rendered the name alone on the day card and in
+    // to trust our rounding" — and the forecast rendered the name alone on the day row and in
     // both direction columns here.
     render(<ForecastRange />);
 
@@ -1004,7 +1046,7 @@ describe('the forecast range', () => {
     expect(next.textContent).not.toEqual(previous.textContent);
   });
 
-  it('gives the day card the peak swell direction in degrees as well as its sector', async () => {
+  it('gives the day row the peak swell direction in degrees as well as its sector', async () => {
     // The same fix on the summary above the table, where the figure is what a reader compares
     // one day against another on. `aria-label` carries it too, since that overrides the card's
     // content for exactly the readers who cannot go looking for the number elsewhere (#25).
@@ -1040,6 +1082,7 @@ describe('the forecast range', () => {
     render(<ForecastRange />);
 
     await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
+    await backToTheList();
     await userEvent.click(await screen.findByRole('button', { name: new RegExp(QUIET.date) }));
 
     // Read the swell cell of a specific row. Searching the whole table for a number
@@ -1052,36 +1095,47 @@ describe('the forecast range', () => {
     expect(swellCell).not.toHaveTextContent(String(BIG.hours[5]!.swell_height.value));
   });
 
-  it('marks the open day as selected', async () => {
+  it('marks the day it was last showing, once the list is back', async () => {
     // The commit that fixed the selection styling claimed this was asserted through the
     // rendered class. It was not: nothing referenced `selected` or aria-pressed, and
     // four mutants survived — the class never applied, always applied, and aria-pressed
     // pinned either way.
+    //
+    // **Asserted after the return rather than during (#118.)** The list and the open day now
+    // share a slot, so while a day is open its row is not rendered at all and there is nothing
+    // to mark. The mark earns its keep on the way back instead, which is the moment a reader
+    // is looking at sixteen near-identical rows wondering which one they just read.
     render(<ForecastRange />);
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
 
-    const big = await screen.findByRole('button', { name: new RegExp(BIG.date) });
-    const quiet = await screen.findByRole('button', { name: new RegExp(QUIET.date) });
-    expect(big).toHaveAttribute('aria-pressed', 'false');
+    await backToTheList();
 
-    await userEvent.click(big);
-
-    expect(big).toHaveAttribute('aria-pressed', 'true');
+    // Queried again: these are new elements, and the ones captured before the swap would
+    // carry whatever attributes they had when React detached them.
+    const big = screen.getByRole('button', { name: new RegExp(BIG.date) });
+    const quiet = screen.getByRole('button', { name: new RegExp(QUIET.date) });
+    // `aria-current`, not `aria-pressed`: the row stopped being a toggle when the list and the
+    // open day started sharing a slot, and a control with no unpressed state should not be
+    // announced as pressed. Absent rather than "false" on the others, which is how
+    // `aria-current` marks one item of a set.
+    expect(big).toHaveAttribute('aria-current', 'true');
     expect(big.className).toContain('selected');
-    expect(quiet).toHaveAttribute('aria-pressed', 'false');
+    expect(quiet).not.toHaveAttribute('aria-current');
+    expect(quiet).not.toHaveAttribute('aria-pressed');
     expect(quiet.className).not.toContain('selected');
   });
 
-  it('closes the open day when it is clicked again', async () => {
+  it('opens the same day again when its row is clicked a second time', async () => {
+    // This row used to be a toggle: clicking the open day closed it. It cannot be one now —
+    // the row is not on screen while its day is — and the risk in the state machine that
+    // replaced it is the mirror image, a row that reads as already open and does nothing.
     render(<ForecastRange />);
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(BIG.date) }));
+    await backToTheList();
 
-    const big = await screen.findByRole('button', { name: new RegExp(BIG.date) });
-    await userEvent.click(big);
+    await userEvent.click(screen.getByRole('button', { name: new RegExp(BIG.date) }));
+
     expect(await screen.findByRole('table')).toBeInTheDocument();
-
-    await userEvent.click(big);
-
-    expect(screen.queryByRole('table')).not.toBeInTheDocument();
-    expect(big).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('shows a readable date on each day, not the raw ISO string', async () => {
@@ -1136,6 +1190,121 @@ describe('the forecast range', () => {
     render(<ForecastRange />);
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/forecast/i);
+  });
+});
+
+describe('where the measured archive ends', () => {
+  /** The same day, with the flag that says its width was extrapolated rather than measured. */
+  const beyondArchive = (day: (typeof forecast)['days'][number]) => ({
+    ...day,
+    call: { ...day.call!, uncertainty_measured: false },
+  });
+
+  /** Four days across the boundary: two the archive covers, two past it. */
+  const across = (): (typeof forecast)['days'] => [
+    dayFrom('2026-02-12', 2.0, 9, 250, 'none', 1),
+    dayFrom('2026-02-13', 2.4, 9, 250, 'none', 7),
+    beyondArchive(dayFrom('2026-02-14', 2.2, 9, 250, 'none', 8)),
+    beyondArchive(dayFrom('2026-02-15', 2.6, 9, 250, 'none', 9)),
+  ];
+
+  it('gathers the days past it under a heading of their own', async () => {
+    // Past the archive the plausible range is extrapolated rather than measured, and the
+    // design uses the boundary rather than hiding it: trimming the list to a round number
+    // would drop a day somebody could still book a flight for, to make the arithmetic neat.
+    const days = across();
+    serveDays(days);
+
+    render(<ForecastRange />);
+
+    const beyond = await screen.findByRole('group', { name: /beyond the measured archive/i });
+    expect(within(beyond).getByTestId(`day-label-${days[2]!.date}`)).toBeInTheDocument();
+    expect(within(beyond).getByTestId(`day-label-${days[3]!.date}`)).toBeInTheDocument();
+    // And the measured days are not swept in with them. A group containing everything would
+    // satisfy the assertions above and say the opposite of what the heading promises.
+    expect(within(beyond).queryByTestId(`day-label-${days[0]!.date}`)).not.toBeInTheDocument();
+    expect(within(beyond).queryByTestId(`day-label-${days[1]!.date}`)).not.toBeInTheDocument();
+  });
+
+  it('reads the boundary off each day rather than counting to seven', async () => {
+    // The archive grows every season. A page holding a copy of how deep it currently is goes
+    // on drawing the divider in last season's place, and nothing fails when it does.
+    const days = [
+      dayFrom('2026-02-12', 2.0, 9, 250, 'none', 1),
+      beyondArchive(dayFrom('2026-02-13', 2.4, 9, 250, 'none', 2)),
+      beyondArchive(dayFrom('2026-02-14', 2.2, 9, 250, 'none', 3)),
+    ];
+    serveDays(days);
+
+    render(<ForecastRange />);
+
+    const beyond = await screen.findByRole('group', { name: /beyond the measured archive/i });
+    // A two-day archive, which no count to seven can produce.
+    expect(within(beyond).getByTestId(`day-label-${days[1]!.date}`)).toBeInTheDocument();
+    expect(within(beyond).queryByTestId(`day-label-${days[0]!.date}`)).not.toBeInTheDocument();
+  });
+
+  it('draws no divider at all when every day the forecast covers was measured', async () => {
+    // Eleven measured days out of a sixteen-day request is a real response, and a heading
+    // over an empty list would announce a limit that does not apply.
+    serveDays(
+      Array.from({ length: 11 }, (_, index) =>
+        dayFrom(`2026-02-${String(12 + index).padStart(2, '0')}`, 2, 9, 250, 'none', index),
+      ),
+    );
+
+    render(<ForecastRange />);
+
+    await screen.findByRole('heading', { name: 'The next 11 days' });
+    expect(
+      screen.queryByRole('group', { name: /beyond the measured archive/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('keeps a day whose call predates the flag above the divider, not below it', async () => {
+    // Null is "this call was issued before the backend measured any of this", not "this day
+    // is past the archive". Reading it as beyond would file a day the archive may well cover
+    // under a heading saying it does not.
+    const days = across();
+    days[1] = { ...days[1]!, call: { ...days[1]!.call!, uncertainty_measured: null } };
+    serveDays(days);
+
+    render(<ForecastRange />);
+
+    const beyond = await screen.findByRole('group', { name: /beyond the measured archive/i });
+    expect(within(beyond).queryByTestId(`day-label-${days[1]!.date}`)).not.toBeInTheDocument();
+  });
+
+  it('keeps a day past the boundary below it even when that day claims nothing', async () => {
+    // The other side of the case above, and the one that says the boundary is a position rather
+    // than a per-day filter. A day whose call predates the flag says nothing about the archive —
+    // so the day before it, which has just said the archive does not reach that far, is the
+    // better evidence. Lifting it back above the divider on the strength of its own silence
+    // would claim a measurement reaches a lead time the row above it denies.
+    const days = across();
+    days[3] = { ...days[3]!, call: { ...days[3]!.call!, uncertainty_measured: null } };
+    serveDays(days);
+
+    render(<ForecastRange />);
+
+    const beyond = await screen.findByRole('group', { name: /beyond the measured archive/i });
+    expect(within(beyond).getByTestId(`day-label-${days[3]!.date}`)).toBeInTheDocument();
+  });
+
+  it('keeps a day carrying no call at all on the side its date puts it', async () => {
+    // A gap in the call record is not a verdict about the archive either, and it arrives as an
+    // absent call rather than an absent flag — the branch `day.call?.uncertainty_measured` has
+    // to survive.
+    const days = across();
+    days[0] = { ...days[0]!, call: null };
+    days[3] = { ...days[3]!, call: null };
+    serveDays(days);
+
+    render(<ForecastRange />);
+
+    const beyond = await screen.findByRole('group', { name: /beyond the measured archive/i });
+    expect(within(beyond).getByTestId(`day-label-${days[3]!.date}`)).toBeInTheDocument();
+    expect(within(beyond).queryByTestId(`day-label-${days[0]!.date}`)).not.toBeInTheDocument();
   });
 });
 
@@ -1287,7 +1456,11 @@ describe('swells spanning more than a day', () => {
     server.use(
       http.get('*/api/conditions/forecast', () => HttpResponse.json({ ...forecast, days })),
     );
-    render(<ForecastRange />);
+    // The reading page's component, not the forecast page's. #119 moved the panel: its
+    // actionable half is in the verdict, and the paragraph explaining what a window is is
+    // teaching material. Every assertion below is unchanged — what moved is where it renders,
+    // and a suite rewritten at the same time as the thing it guards proves nothing about it.
+    render(<SwellWindowsSection />);
     return screen.findByTestId('swell-windows');
   }
 
@@ -1389,13 +1562,20 @@ describe('swells spanning more than a day', () => {
   it('leaves every day inside a window with the verdict it was given', async () => {
     // A window must invent no status. Story 12 requires a quiet day shown as quiet, and a
     // window that promoted its members would break it exactly where a reader is about to act.
+    //
+    // **Rendered through `ForecastRange`, not the panel, and that is the point.** The rows are
+    // what this asserts and they stayed on the forecast page when #119 moved the panel to the
+    // reading page. The two can no longer contradict each other on one screen, which makes this
+    // weaker than it was — but the guarantee it names is about the day list, so it is kept and
+    // pointed at the day list rather than deleted along with the coupling it used to catch.
     const days = [
       dayFrom('2026-02-12', 4.0, 14, 300, 'watch', 3),
       dayFrom('2026-02-13', 7.2, 17, 300, 'go', 2),
       dayFrom('2026-02-14', 5.1, 15, 300, 'watch', 1),
     ];
 
-    await windowsFor(days);
+    serveDays(days);
+    render(<ForecastRange />);
 
     for (const [date, label] of [
       ['2026-02-12', 'Watch'],
@@ -1462,11 +1642,81 @@ describe('swells spanning more than a day', () => {
   });
 });
 
-describe('the earliest date worth acting on', () => {
+describe('the slot the condition tiles sit in', () => {
   /**
-   * Story 23 of #1, finished. Every date already renders with its status, so the answer a
-   * Traveller actually wants — *is there anything worth booking, and when* — was reachable
-   * only by scanning a fourteen-day list and assembling it. Nothing stated it.
+   * The tiles are current conditions and come from a different request than anything else in
+   * this component, so they are passed in rather than fetched here. What that buys has to be
+   * asserted, because it is a promise about the *failure* states and nothing else exercises
+   * them: ADR 0005 says the site stays up and honest when a provider is unreachable, and a page
+   * answering "could not load the forecast" while silently also dropping ten readings it had
+   * would be neither.
+   */
+  const TILES = <p data-testid="stand-in-tiles">the tiles</p>;
+
+  it('renders them while the forecast is still on its way', async () => {
+    server.use(
+      http.get('*/api/conditions/forecast', async () => {
+        await delay(50);
+        return HttpResponse.json(forecast);
+      }),
+    );
+
+    render(<ForecastRange belowVerdict={TILES} />);
+
+    // Before the forecast lands, beside the loading line rather than instead of it.
+    expect(screen.getByTestId('stand-in-tiles')).toBeVisible();
+    expect(screen.getByText(/loading forecast/i)).toBeVisible();
+
+    await screen.findByTestId('verdict');
+    expect(screen.getByTestId('stand-in-tiles')).toBeVisible();
+  });
+
+  it('keeps them when the forecast request fails outright', async () => {
+    server.use(
+      http.get('*/api/conditions/forecast', () => new HttpResponse(null, { status: 503 })),
+    );
+
+    render(<ForecastRange belowVerdict={TILES} />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/could not load the forecast/i);
+    expect(screen.getByTestId('stand-in-tiles')).toBeVisible();
+  });
+
+  it('does not tear them down and rebuild them when the forecast arrives', async () => {
+    // The defect this shape was chosen to avoid. Rendered from separate early returns per load
+    // state, React replaced the subtree the moment the forecast landed: nothing looked wrong in
+    // a screenshot, but every handle on those nodes — a test's, a screen reader's cursor —
+    // pointed at elements no longer in the document.
+    server.use(
+      http.get('*/api/conditions/forecast', async () => {
+        await delay(50);
+        return HttpResponse.json(forecast);
+      }),
+    );
+
+    render(<ForecastRange belowVerdict={TILES} />);
+    const before = screen.getByTestId('stand-in-tiles');
+
+    await screen.findByTestId('verdict');
+
+    expect(before).toBeInTheDocument();
+    expect(screen.getByTestId('stand-in-tiles')).toBe(before);
+  });
+});
+
+describe('the verdict', () => {
+  /**
+   * Story 23 of #1, finished, and #116's rebuild of it. Every date already renders with its
+   * status, so the answer a Traveller actually wants — *is there anything worth booking, and
+   * when* — was reachable only by scanning a fourteen-day list and assembling it. Nothing
+   * stated it.
+   *
+   * #116 turned that sentence into the verdict panel at the top of the left column and gave it
+   * three things it never said: the predicted Significant Wave Height, the plausible range
+   * around it, and whether the wave models agreed. Everything below this line that predates
+   * #116 is unchanged apart from the name it looks the panel up by — the behaviour was right,
+   * and a rebuild is exactly when a suite should be made to prove that again rather than
+   * rewritten to match whatever shipped.
    *
    * Dates are asserted through `dateTime` rather than rendered text, for the reason the
    * windows suite above gives: the suite pins the zone and not the locale.
@@ -1476,8 +1726,79 @@ describe('the earliest date worth acting on', () => {
       http.get('*/api/conditions/forecast', () => HttpResponse.json({ ...forecast, days })),
     );
     render(<ForecastRange />);
-    return screen.findByTestId('earliest-call');
+    return screen.findByTestId('verdict');
   }
+
+  /** A Go Call day whose three new figures are all distinct from each other and from the
+   * fixture's other days, so a panel rendering the wrong one is visible rather than lucky. */
+  const GO_DAY = () => dayFrom('2026-02-13', 7.2, 17, 300, 'go', 3);
+
+  it('states the predicted Significant Wave Height, named as such', async () => {
+    // CONTEXT.md is explicit that "wave height" is ambiguous and "swell height" is a different
+    // variable, and this panel carries the largest figure on the page. A verdict that says
+    // "7.6m waves" is the overclaim the whole project exists to avoid: Face Height is several
+    // times this number for the same sea and is what a reader has seen in the news.
+    const day = GO_DAY();
+    const statement = await statementFor([day]);
+
+    expect(statement).toHaveTextContent(
+      new RegExp(`${day.call!.predicted_significant_wave_height.value}`),
+    );
+    expect(statement).toHaveTextContent(/significant wave height/i);
+  });
+
+  it('states the plausible range, not the prediction alone', async () => {
+    // The point of the Predictive Distribution, in the spec's own words: "6.1 metres, 78%
+    // confident" is not something a person can act on, and "most likely 6.1 m, plausibly 5.2
+    // to 7.0" is. A verdict carrying the point estimate alone throws away the distribution.
+    const day = GO_DAY();
+    const range = day.call!.plausible_range!;
+    const statement = await statementFor([day]);
+
+    expect(statement).toHaveTextContent(new RegExp(`${range.low}`));
+    expect(statement).toHaveTextContent(new RegExp(`${range.high}`));
+  });
+
+  it('says the wave models agreed, and says it differently when they did not', async () => {
+    // Not derivable here, which is why the backend sends it: two Watch days that look
+    // identical from status alone are a swell the forecasters have not settled on and a swell
+    // that was never big enough. The verdict is where a reader decides to spend money.
+    const agreed = await statementFor([GO_DAY()]);
+    expect(agreed).toHaveTextContent(/models agree/i);
+
+    cleanup();
+
+    const base = GO_DAY();
+    const divided = await statementFor([
+      { ...base, call: { ...base.call!, model_agreement: 'divided' as const } },
+    ]);
+    expect(divided.textContent).not.toMatch(/models agree/i);
+    expect(divided).toHaveTextContent(/models/i);
+  });
+
+  it('takes the status colour, which §4 of the spec licenses it for', async () => {
+    // Status colour is a state of the sea, and this panel is the page's loudest statement
+    // about one. The class rather than the computed colour: `ink.test.ts` owns which token a
+    // class resolves to, and asserting the colour here would pin it in two places.
+    const go = await statementFor([GO_DAY()]);
+    expect(go.className).toContain('verdict-go');
+
+    cleanup();
+
+    const watch = await statementFor([dayFrom('2026-02-14', 4.0, 14, 300, 'watch', 9)]);
+    expect(watch.className).toContain('verdict-watch');
+  });
+
+  it('prices the height condition alone, and says so beside the range', async () => {
+    // #66 and ADR 0004. A giant day needs four quantities to hold and the distribution prices
+    // one; the other three have no archived forecast error to build a distribution from. The
+    // caveat rides in the same panel as the figure rather than below the fold, because the
+    // ticket's own line is that a redesign is what turns a disclaimer into grey fine print.
+    const statement = await statementFor([GO_DAY()]);
+
+    expect(statement).toHaveTextContent(/height only/i);
+    expect(statement).toHaveTextContent(/period|direction|wind/i);
+  });
 
   it('names the earliest Go Call and says to book it', async () => {
     const statement = await statementFor([
@@ -1553,6 +1874,30 @@ describe('the earliest date worth acting on', () => {
     expect(statement.textContent).toContain(`issued ${days[0]!.call!.lead_time_days} days ahead`);
   });
 
+  it('counts one day as a day, not as 1 days', async () => {
+    // The shortest Lead Time is the one most worth reading correctly — a call issued a day out
+    // is the one a reader has least time to act on — and it is the case a fixture using three
+    // and nine never renders. It read "issued 1 days ahead" on the most prominent panel of the
+    // page for as long as this sentence has existed.
+    const statement = await statementFor([dayFrom('2026-02-13', 7.2, 17, 300, 'go', 1)]);
+
+    expect(statement.textContent).toContain('issued 1 day ahead');
+    expect(statement.textContent).not.toContain('1 days');
+  });
+
+  it('comes before the heading that names the list below it', async () => {
+    // The spec's order down the column is verdict, tiles, days. "The next 16 days" labelled the
+    // section as a whole and so rendered above the verdict, which put a heading about a list
+    // over the answer that list exists to produce.
+    const statement = await statementFor([
+      dayFrom('2026-02-12', 1.2, 7, 300, 'none', 3),
+      dayFrom('2026-02-13', 7.2, 17, 300, 'go', 2),
+    ]);
+
+    const heading = await screen.findByRole('heading', { name: /^The next \d+ days$/ });
+    expect(statement.compareDocumentPosition(heading)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
   it('says plainly when nothing in range carries either, as an answer and not a fault', async () => {
     // The quiet case is the common case. Story 12's reason, one level up again: a statement
     // that renders nothing is indistinguishable from a page that failed to load, and most of
@@ -1612,7 +1957,7 @@ describe('the earliest date worth acting on', () => {
   });
 
   it('sits above the range it summarises', async () => {
-    // Story 28: the answer should not need navigating to. Below fourteen day cards it is not
+    // Story 28: the answer should not need navigating to. Below fourteen day rows it is not
     // an answer, it is a footnote to the scan it exists to replace.
     const statement = await statementFor([
       dayFrom('2026-02-12', 1.2, 7, 300, 'none', 3),
@@ -2080,5 +2425,138 @@ describe('how the prediction has moved', () => {
 
       expect(history).not.toHaveTextContent(/withheld|because|swell period \d/i);
     });
+  });
+});
+
+/**
+ * The hours take the day list's slot (#118).
+ *
+ * Opening a day used to render its detail *beneath* the list, which grew the left column — and
+ * the map beside it is `height: 100%` of that column, so clicking a row changed the map's
+ * proportion and moved the page under the reader. Both states now share one slot, and
+ * everything a selection reveals lives inside it.
+ *
+ * **The heights themselves are in `e2e/layout.spec.ts`.** jsdom does no layout at all: every
+ * element is 0x0 and `scrollHeight` is 0, so "the column did not change height" passes here
+ * against a column that doubles. What this file can prove is what is in the document and what
+ * has focus, which is the rest of the ticket.
+ */
+describe('the hours take the day list’s slot', () => {
+  /** Open a day and settle on its detail. */
+  async function open(date: string) {
+    render(<ForecastRange />);
+    await userEvent.click(await screen.findByRole('button', { name: new RegExp(date) }));
+    return screen.findByTestId('day-slot');
+  }
+
+  it('replaces the list rather than opening the hours beneath it', async () => {
+    const slot = await open(BIG.date);
+
+    expect(within(slot).getByRole('table')).toBeInTheDocument();
+    // Not "still there but dimmed", and not "scrolled past": every other day has left the
+    // document. A row that stayed would keep its height and defeat the whole ticket.
+    expect(screen.queryByRole('button', { name: new RegExp(QUIET.date) })).not.toBeInTheDocument();
+    expect(screen.queryByTestId(`day-peak-${QUIET.date}`)).not.toBeInTheDocument();
+    // The invitation to pick a day is gone with the list it invited a reader into.
+    expect(screen.queryByText(/select a day/i)).not.toBeInTheDocument();
+  });
+
+  it('brings everything a selection reveals into the slot, not just the hours', async () => {
+    // The call detail and the agreement panel used to sit outside the swapped region. Left
+    // there they would grow the column exactly as the hours did, which is the defect itself
+    // rather than a tidier version of it.
+    const slot = await open(BIG.date);
+
+    expect(within(slot).getByRole('table')).toBeInTheDocument();
+    expect(within(slot).getByTestId(`spread-${BIG.date}`)).toBeInTheDocument();
+    expect(within(slot).getByRole('note')).toBeInTheDocument();
+  });
+
+  it('gives the list back, whole, from the back control', async () => {
+    await open(BIG.date);
+
+    await backToTheList();
+
+    for (const day of forecast.days) {
+      expect(screen.getByRole('button', { name: new RegExp(day.date) })).toBeInTheDocument();
+    }
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(screen.getByText(/select a day/i)).toBeInTheDocument();
+  });
+
+  it('gives the list back on Escape, so the way out is not one button wide', async () => {
+    await open(BIG.date);
+
+    await userEvent.keyboard('{Escape}');
+
+    expect(screen.getByRole('button', { name: new RegExp(QUIET.date) })).toBeInTheDocument();
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+  });
+
+  it('takes Escape after a click on something that cannot hold focus', async () => {
+    // The handler rode on the slot element first, on the reasoning that focus is always inside
+    // it while a day is open. Chromium disagreed: clicking the day's heading or its table —
+    // neither focusable — leaves `document.activeElement` as `body`, and a keydown there never
+    // reaches a handler on a div. Escape did nothing at all, silently, which is the one thing
+    // a keyboard affordance must not do.
+    const slot = await open(BIG.date);
+    // The day's own heading, which is the first in the slot — the agreement panel below it
+    // brings one of its own.
+    await userEvent.click(within(slot).getAllByRole('heading')[0]!);
+    expect(document.activeElement).toBe(document.body);
+
+    await userEvent.keyboard('{Escape}');
+
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: new RegExp(QUIET.date) })).toBeInTheDocument();
+  });
+
+  it('moves focus into the slot when a day opens, and back to that day on return', async () => {
+    // "Works from the keyboard" is not the same as "the buttons are buttons". Without this,
+    // opening a day leaves focus on a element that has just been unmounted, and the next Tab
+    // starts again from the top of the document — which on this page is the site header.
+    render(<ForecastRange />);
+    const big = await screen.findByRole('button', { name: new RegExp(BIG.date) });
+
+    big.focus();
+    await userEvent.keyboard('{Enter}');
+
+    expect(backControl()).toHaveFocus();
+
+    await userEvent.keyboard('{Enter}');
+
+    // Queried again rather than reused: the row this returns to is a new element, and a
+    // reference to the old one would pass against focus landing nowhere.
+    expect(screen.getByRole('button', { name: new RegExp(BIG.date) })).toHaveFocus();
+  });
+
+  it('gives every hour all five Offshore Conditions, not only the hours a test names', async () => {
+    // CONTEXT.md defines Offshore Conditions as swell height, swell period, swell direction,
+    // wind speed and wind direction. The existing coverage checks hours 0, 7 and 23, which a
+    // table rendering the first hour's values into every later row would survive.
+    const slot = await open(BIG.date);
+    const rows = within(within(slot).getByRole('table')).getAllByRole('row').slice(1);
+
+    expect(rows).toHaveLength(BIG.hours.length);
+    rows.forEach((row, index) => {
+      const hour = BIG.hours[index]!;
+      const cells = within(row).getAllByRole('cell');
+      expect(cells[0]).toHaveTextContent(`${hour.swell_height.value}${hour.swell_height.unit}`);
+      expect(cells[1]).toHaveTextContent(`${hour.swell_period.value}${hour.swell_period.unit}`);
+      expect(cells[2]).toHaveTextContent(compassPoint(hour.swell_direction.value));
+      expect(cells[3]).toHaveTextContent(`${hour.wind_speed.value}${hour.wind_speed.unit}`);
+      expect(cells[3]).toHaveTextContent(compassPoint(hour.wind_direction.value));
+    });
+  });
+
+  it('keeps the day count heading with the list it counts', async () => {
+    // "The next 16 days" standing over one day's hour table names something that is no longer
+    // on screen. It belongs to the list, so it travels with it.
+    render(<ForecastRange />);
+    await screen.findByRole('heading', { name: `The next ${forecast.days.length} days` });
+
+    await userEvent.click(screen.getByRole('button', { name: new RegExp(BIG.date) }));
+
+    expect(screen.queryByRole('heading', { name: /^The next \d+ days$/ })).not.toBeInTheDocument();
   });
 });
