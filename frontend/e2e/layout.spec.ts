@@ -441,6 +441,40 @@ test.describe('the map slot', () => {
     expect(await scrollsSideways(page)).toBe(false);
   });
 
+  test('pays for that note out of the map rather than out of the column', async ({ page }) => {
+    /**
+     * **The claim, on its own, where nothing else can fail first.** Every assertion in the test
+     * above is satisfied by a map that never shrinks and a column that grows to hold the note
+     * instead — which is exactly what this page did until `grid-template-rows: minmax(0, 1fr)`.
+     * It only stayed above the fold there because the caption assertion caught it, and an
+     * assertion that can only fail after another one has failed is not pinning anything.
+     *
+     * No pixel figure is written down. What is asserted is the direction: the same column, and
+     * less map in it.
+     */
+    const slot = page.locator('.map-slot');
+    const map = page.locator('svg.bathymetry');
+
+    await loadHome(page);
+    await expect(slot.locator('.map-slot-note-old')).toHaveCount(0);
+    const healthySlot = (await slot.boundingBox())!;
+    const healthyMap = (await map.boundingBox())!;
+
+    // Registered after the `beforeEach` stub, so it is matched first.
+    await page.route('**/api/conditions/grid', (route) =>
+      route.fulfill({ json: { ...conditionsGrid, stale: true, refresh_failed: true } }),
+    );
+    await loadHome(page);
+    await expect(slot.locator('.map-slot-note-old')).toHaveCount(1);
+    const oldSlot = (await slot.boundingBox())!;
+    const oldMap = (await map.boundingBox())!;
+
+    // The column did not move.
+    expect(Math.round(oldSlot.height)).toBe(Math.round(healthySlot.height));
+    // The drawing paid for the paragraph.
+    expect(oldMap.height).toBeLessThan(healthyMap.height);
+  });
+
   test('is present before the conditions arrive, so the page does not jump', async ({ page }) => {
     // A column that appeared only on success would move the page at the moment a reader is
     // deciding whether to trust it.

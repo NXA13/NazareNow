@@ -83,11 +83,19 @@ export function MapSlot({ swell, grid, windUnavailable }: MapSlotProps) {
           while `stale` is still false, which is how a reader learns inside one cycle rather than
           two — and the reason folding them into one sentence would throw the fix away. ADR 0018.
 
+          **The heading claims no age, and that is deliberate.** `refresh_failed` fires on a
+          single lost run, and ADR 0018's reason for keeping the six-hour threshold where it is
+          is that "one missed run is a blip ... and calling that stale would train users to
+          ignore the warning". A bolded "out of date" over one blip does that in the one place
+          the decision was trying to protect. What is true in both cases is that this is not the
+          current picture — the phrase the conditions banner already uses one column over — and
+          the age claim is left to the clause that has the evidence for it.
+
           `role="status"` rather than `alert`: this qualifies a picture already on the page, and
           it does not interrupt. */}
       {sayOld ? (
         <p role="status" className="map-slot-note map-slot-note-old">
-          <strong>This wind is out of date.</strong> It arrived{' '}
+          <strong>This wind is not the current picture.</strong> It arrived{' '}
           <time dateTime={grid.fetched_at}>{formatTimestamp(grid.fetched_at)}</time>.
           {grid.stale
             ? ` Nothing newer has arrived for at least ${grid.stale_after_hours} hours.`

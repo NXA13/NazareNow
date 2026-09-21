@@ -72,7 +72,7 @@
  * provenance of the fit rather than its size; `TierRecord.precision_lower_bound`, whose
  * complement is printed instead because the page would rather be judged on the unkind number;
  * `DeliveryRecord.maximum_m`, the one figure of three that flatters; eight of `GridPoint`'s
- * eleven, which are the grid endpoint serving the same shape the single point does while the
+ * twelve, which are the grid endpoint serving the same shape the single point does while the
  * map draws one swell over the whole frame; and `ConditionsGrid.observed_at`, because the map's
  * note dates the wind by when it arrived rather than by the oldest observation inside it. Both
  * arms are verified in both directions — rendering a field declared unread fails its test, and
@@ -81,8 +81,8 @@
  * **That count is checked, not remembered.** It was fourteen until #122 and #123 added the two
  * map registries without moving it, and #139 moved it again by turning four of the grid's five
  * entries read. A number in a comment beside the thing it counts is the drift this repo has
- * been bitten by elsewhere; `grep -c 'read: false'` less the two mentions in this prose is the
- * way to settle it.
+ * been bitten by elsewhere; `grep -c 'read: false'` less the three mentions of it in this
+ * file's prose — this line and two below — is the way to settle it. Twenty-six less three.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -1952,7 +1952,7 @@ describe('ConditionsGrid', () => {
 
 describe('GridPoint', () => {
   /**
-   * **The map reads four of these eleven**, and the other seven are the grid endpoint serving
+   * **The map reads four of these twelve**, and the other eight are the grid endpoint serving
    * the same shape the single point does. They are not dropped from the wire: the pipeline
    * fetches and unit-checks a whole wave field per point, and #122 draws the crests from
    * `/api/conditions/current` instead — one swell over the whole frame rather than one per

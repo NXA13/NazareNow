@@ -496,7 +496,15 @@ footer p {
      the columns to 919px and put the caption 76px below the fold, with every test green.
      `minmax(0, 1fr)` pins the row to the container, `.map-slot` inherits a real height, and
      `.bathymetry` — the `flex: 1` in it — finally absorbs what the prose below always claimed
-     it did. Map at 1440x900: 639px normally, 552px with the note. */
+     it did. Map at 1440x900: 639px normally, 573px with a lost refresh, 552px with both
+     clauses.
+
+     **Every figure above was measured at #139 and none of them is pinned.** They date this
+     paragraph rather than defining behaviour, and they will drift the next time anything in
+     the column changes size. What is pinned is the direction, in two browser tests that write
+     no pixel figure down at all: neither column exceeds the box capping them, and the note is
+     paid for out of the map. Re-measure before believing these; do not tune anything to
+     them. */
   grid-template-rows: minmax(0, 1fr);
   gap: var(--space-6);
   /* Both columns to the height of the taller, which is what "equal height" is. It is the grid
@@ -848,6 +856,14 @@ footer p {
 @media (max-width: 60rem) {
   .home {
     grid-template-columns: minmax(0, 1fr);
+    /* **And the row cap is released, explicitly.** Stacked, this grid has two rows rather than
+       one, and `minmax(0, 1fr)` above would name only the first — leaving the map in an
+       implicit `auto` row beneath a forecast told to take everything. It happens to render
+       correctly today because the page is allowed to scroll here, so the container's height is
+       indefinite and `1fr` resolves to content. Depending on that is the same implicit
+       dependency that hid the 14px overflow above. Below this breakpoint the page scrolls and
+       both rows take their content, which is what `auto` says. */
+    grid-template-rows: auto;
   }
 }
 

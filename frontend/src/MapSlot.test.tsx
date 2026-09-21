@@ -58,7 +58,9 @@ describe('how old the map says its wind is', () => {
     // failures at all, so `refresh_failed` stays false while the wind ages past six hours.
     const { getByRole } = slotFor({ stale: true, refresh_failed: false });
     const note = getByRole('status');
-    expect(note).toHaveTextContent(/nothing newer has arrived for at least 6 hours/i);
+    expect(note).toHaveTextContent(
+      new RegExp(`nothing newer has arrived for at least ${GRID.stale_after_hours} hours`, 'i'),
+    );
     expect(note).not.toHaveTextContent(/refresh since then failed/i);
   });
 
@@ -71,7 +73,9 @@ describe('how old the map says its wind is', () => {
 
   it('says both when both are true, because they are two different facts', () => {
     const note = slotFor({ stale: true, refresh_failed: true }).getByRole('status');
-    expect(note).toHaveTextContent(/nothing newer has arrived for at least 6 hours/i);
+    expect(note).toHaveTextContent(
+      new RegExp(`nothing newer has arrived for at least ${GRID.stale_after_hours} hours`, 'i'),
+    );
     expect(note).toHaveTextContent(/refresh since then failed/i);
   });
 
