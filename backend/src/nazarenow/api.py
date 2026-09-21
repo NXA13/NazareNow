@@ -22,6 +22,7 @@ from pydantic import BaseModel
 from nazarenow.cycle import STALE_AFTER_HOURS, STALE_AFTER_SECONDS
 from nazarenow.days import group_by_date
 from nazarenow.decision import Agreement, Status
+from nazarenow.pipeline import GRID_UNAVAILABLE
 from nazarenow.spread import BEARINGS, ORGANISATIONS, is_degraded
 from nazarenow.store import Store, StoreUnavailable
 from nazarenow.track_record import (
@@ -261,6 +262,24 @@ class ConditionsGrid(BaseModel):
 
     fetched_at: str
     """When the grid itself last arrived -- not when the last run finished."""
+
+    refresh_failed: bool
+    """Whether a refresh has been attempted and lost since this grid arrived (#139).
+
+    **A different question from `stale`, answered from a different kind of evidence, and kept
+    beside it rather than folded into it.** `stale` asks how old this is and answers by
+    arithmetic on `fetched_at` against a six-hour threshold -- deliberately two whole cycles,
+    because "one missed run is a blip ... and calling that stale would train users to ignore
+    the warning". That threshold is right and does not move.
+
+    This asks whether the last attempt *failed*, and the run already knew: it recorded the
+    endpoint, the moment and the failure kind under its own `raw_response` source the instant
+    it happened. Nothing served ever read it back, so a grid that stopped refreshing presented
+    as current for up to six hours. This is a reported fact rather than an inference from a
+    clock, which is why it can be true while `stale` is still false.
+
+    A failure older than the grid is a recovery, not a degradation, and is not reported.
+    """
 
     stale: bool
     """The backend's verdict on that stamp, reached the same way the other two endpoints
@@ -1193,6 +1212,9 @@ def conditions_grid(store: Annotated[Store, Depends(get_store)]) -> ConditionsGr
         observed_at=observed_at,
         fetched_at=fetched_at,
         stale=is_stale(fetched_at),
+        # Strictly after the grid's own stamp, so the run that *stored* this grid cannot report
+        # itself as a failure, and a failure that was later recovered from stays silent.
+        refresh_failed=store.responses_since(GRID_UNAVAILABLE, fetched_at) > 0,
         stale_after_hours=STALE_AFTER_HOURS,
         points=[
             GridPoint(

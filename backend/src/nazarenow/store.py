@@ -1266,6 +1266,28 @@ class Store:
             for row in rows
         ]
 
+    def responses_since(self, source: str, moment: str) -> int:
+        """How many `raw_response` rows of one source were written after `moment` (#139).
+
+        **The one reader of `raw_response` in production, and it reads one fact.** The table
+        exists for provenance and nothing served ever looked at it, which is how a lost
+        conditions grid could present as current for up to six hours: the run recorded the
+        failure the instant it happened, under its own source, and nobody asked.
+
+        The comparison is lexicographic on the stored strings, which is sound here because
+        both sides are written by `now()` -- `datetime.now(UTC).isoformat()` -- so they share a
+        format and a zone. It would not be sound against a stamp from anywhere else.
+        """
+        row = (
+            self._connect()
+            .execute(
+                "SELECT COUNT(*) AS lost FROM raw_response WHERE source = ? AND fetched_at > ?",
+                (source, moment),
+            )
+            .fetchone()
+        )
+        return int(row["lost"])
+
     def raw_responses(self) -> Iterable[dict[str, Any]]:
         """Every raw provider response retained, oldest first.
 
