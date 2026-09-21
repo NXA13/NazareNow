@@ -123,6 +123,19 @@ scikit-learn. All the fitting happens in `analysis/` on a development machine an
 JSON (`amplification.json`, `thresholds.json`, `forecast_error.json`, `track_record.json`),
 which is what makes an ARM host with modest memory a perfectly reasonable place to run this.
 
+Those four files are installed *into the package*, beside the modules that read them, so
+confirm they arrived — an install that drops them imports perfectly and then dies on the first
+Pipeline Run:
+
+```bash
+P=/opt/nazarenow/venv/lib/python3.13/site-packages/nazarenow
+ls -l $P/*.json
+```
+
+Four files, or something is wrong with the build rather than with this host.
+`test_runtime_data_files_are_packaged.py` is the guard that is supposed to make that
+impossible, and it exists because this failure reached a host once.
+
 Node is needed only to build the frontend. Building on the Pi is fine; building elsewhere
 and copying `dist/` across is also fine.
 

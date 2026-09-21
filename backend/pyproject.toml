@@ -27,6 +27,16 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# The four calibrated JSONs are code as far as the runtime is concerned: `thresholds.py`,
+# `forecast_error.py`, `track_record.py` and `models/learned.py` each resolve theirs relative
+# to `__file__`, so the file has to sit beside the module in site-packages. setuptools does
+# not carry a data file inside a package unless it is told to, and without this the wheel
+# contained none of them — an installed package that imports cleanly and dies on the first
+# Pipeline Run. `amplification.json` has no override environment variable, so there is no
+# host-side workaround for its absence.
+[tool.setuptools.package-data]
+nazarenow = ["*.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
