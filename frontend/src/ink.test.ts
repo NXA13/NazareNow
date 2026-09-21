@@ -87,10 +87,24 @@ describe('every colour, font and size lives in one place', () => {
 });
 
 describe('the three colour systems stay apart', () => {
-  /** The whole of Ice's licence: the wordmark, the nav, and links. */
-  const ICE_BELONGS_TO = ['header h1', 'header nav a', 'a'];
+  /**
+   * The whole of Ice's licence: the wordmark, the nav, links — and, since #122, the swell.
+   *
+   * The crests are not an exception grudgingly made. `tokens.css` has said since #114 that Main
+   * carries "the swell crests when the map arrives", and the base map is greyscale precisely so
+   * that colour on it can mean live data. What this list still forbids is the thing that would
+   * actually hurt: Ice on the verdict panel or a call badge, where the brand would compete with
+   * the call for attention.
+   */
+  const ICE_BELONGS_TO = [
+    'header h1',
+    'header nav a',
+    'a',
+    '.bathymetry-crest-deep',
+    '.bathymetry-crest-shoaling',
+  ];
 
-  it('puts Ice on the wordmark, the nav and links, and nowhere else', () => {
+  it('puts Ice on the wordmark, the nav, links and the swell, and nowhere else', () => {
     const misuse = rules(APP)
       .filter((rule) => rule.body.includes('var(--ink-main)'))
       .map((rule) => rule.selector)
@@ -453,5 +467,30 @@ describe('contrast is measured against the ground, not assumed', () => {
     for (const status of statuses) {
       expect(status.ratio).toBeGreaterThan(4.5);
     }
+  });
+});
+
+describe('every token a rule names actually exists', () => {
+  /**
+   * `--size-fine` was written into `App.css` during #123 and is not a token. Nothing failed:
+   * `font-size: var(--size-fine)` resolves to nothing, the declaration is dropped, and the
+   * element quietly inherits — so the rule above ("a font-size is named nowhere but tokens.css")
+   * was satisfied by a size that did not exist.
+   *
+   * This closes that: a `var()` naming a token `tokens.css` does not define is a typo with a
+   * visual consequence, and typos in custom property names are invisible by design.
+   */
+  it('defines every custom property App.css reads', () => {
+    const defined = new Set([...TOKENS.matchAll(/^\s*(--[a-z0-9-]+):/gm)].map((m) => m[1]!));
+    // Sanity: the sweep found the token file, rather than an empty set that would pass on
+    // anything at all.
+    expect(defined.size).toBeGreaterThan(20);
+    expect(defined).toContain('--ink-wind');
+
+    const used = new Set([...APP.matchAll(/var\((--[a-z0-9-]+)/g)].map((m) => m[1]!));
+    expect(used.size).toBeGreaterThan(20);
+
+    const undefinedTokens = [...used].filter((token) => !defined.has(token)).sort();
+    expect(undefinedTokens).toEqual([]);
   });
 });

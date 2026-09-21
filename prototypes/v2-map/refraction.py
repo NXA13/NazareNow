@@ -28,17 +28,18 @@ chosen so the fronts are legible; their SHAPE, which is the informative part, is
 
 from __future__ import annotations
 
+import base64
 import heapq
 import json
 import math
+import struct
 import sys
 from pathlib import Path
 
-# `bathymetry.json` and `contours.py` were promoted into `frontend/scripts/map/` by #121, where
-# the build step that ships the map can own them. This prototype still reads them from there,
-# so there is one copy of the soundings and one tracer rather than two of each. The path goes on
-# `sys.path` before `contours` is imported, which is why this sits above the import rather than
-# beside the other constants.
+# `contours.py` was promoted into `frontend/scripts/map/` by #121, where the build step that
+# ships the map can own it, so there is one tracer rather than two. The path goes on `sys.path`
+# before `contours` is imported, which is why this sits above the import rather than beside the
+# other constants. The soundings no longer come from `bathymetry.json` beside it — see below.
 PROMOTED = Path(__file__).resolve().parents[2] / "frontend" / "scripts" / "map"
 sys.path.insert(0, str(PROMOTED))
 
@@ -46,33 +47,77 @@ from contours import join, path_data, simplify  # noqa: E402
 
 HERE = Path(__file__).parent
 
-GRID = json.loads((PROMOTED / "bathymetry.json").read_text(encoding="utf-8"))
-CONTOURS = json.loads((HERE.parents[1] / "frontend" / "src" / "map-geometry.json").read_text(encoding="utf-8"))
+# **The soundings come from the file the page ships, not from `bathymetry.json`.**
+# This file is the reference implementation the browser port is pinned against
+# (ADR 0016, `frontend/src/refraction.parity.test.ts`), and a reference that reads different
+# inputs is not a reference. The shipped grid is rounded to whole metres; reading the raw
+# floats here moved 30 of 381 crests by up to 6.7 view units — not by drifting, but because a
+# near-straight crest's Douglas-Peucker arg-max flips between two nearly-equidistant points
+# under the smallest nudge. One grid, one answer.
+PACKED = json.loads((HERE.parents[1] / "frontend" / "src" / "depth-grid.json").read_text(encoding="utf-8"))
 
-VIEW_W, VIEW_H = (float(v) for v in CONTOURS["viewBox"].split()[2:])
-ROWS, COLS = GRID["rows"], GRID["cols"]
-Z = GRID["elevation_m"]
+VIEW_W, VIEW_H = PACKED["viewWidth"], PACKED["viewHeight"]
+ROWS, COLS = PACKED["rows"], PACKED["cols"]
+
+
+def _unpack_soundings() -> list[list[int]]:
+    deltas = struct.unpack(f"<{ROWS * COLS}h", base64.b64decode(PACKED["deltas"]))
+    flat, running = [], 0
+    for d in deltas:
+        running += d
+        flat.append(running)
+    return [flat[r * COLS : (r + 1) * COLS] for r in range(ROWS)]
+
+
+Z = _unpack_soundings()
 
 G = 9.81
 FRAMES = 16
-CREST_SPACING_PX = 38.0
+CREST_SPACING_PX = 58.0
 
 
-def metres_per_px() -> float:
-    lat_span_m = (GRID["lat_top"] - GRID["lat_bottom"]) * 111_320.0
-    return lat_span_m / VIEW_H
-
-
-M_PER_PX = metres_per_px()
+# Derived by `scripts/map/contours.py` from the same soundings and shipped beside them, so the
+# page and this file cannot hold different opinions about how big the frame is.
+M_PER_PX = PACKED["metresPerUnit"]
 
 
 def to_view(col: float, row: float) -> tuple[float, float]:
     return col / (COLS - 1) * VIEW_W, row / (ROWS - 1) * VIEW_H
 
 
+MIN_DEPTH_M = 2.0
+NEWTON_STEPS = 4
+
+
+def celerity(depth_m: float, period: float) -> float:
+    """Speed of the front in water of a given depth, from the dispersion relation.
+
+        omega^2 = g * k * tanh(k * d)        c = omega / k
+
+    **This replaced `c = min(c_deep, sqrt(g*d))`, and the replacement is the difference between
+    a map that shows refraction and one that draws ruled diagonal lines.** That law is exactly
+    deep-water celerity for every depth below c_deep^2/g -- 47 m at 13.75 s -- so the Nazare
+    shelf (100-200 m) and the canyon (over 1000 m) ran at identical speed, and the contrast
+    between them is the entire reason the front bends. Median crest bow on the real sea floor:
+    7.85 view units under that law, 10.96 under this one.
+
+    Newton from a kappa = x / sqrt(tanh x) start, which reaches machine precision in three
+    steps (checked against bisection over 77 depth/period pairs: worst relative error 1.3e-15).
+    `frontend/src/refraction.ts` runs the identical iteration from the identical start; they
+    must agree to the last decimal, and `refraction.parity.test.ts` is what says so.
+    """
+    depth = max(depth_m, MIN_DEPTH_M)
+    omega = 2 * math.pi / period
+    x = omega * omega * depth / G
+    kappa = x / math.sqrt(math.tanh(x))
+    for _ in range(NEWTON_STEPS):
+        tanh = math.tanh(kappa)
+        kappa -= (kappa * tanh - x) / (tanh + kappa * (1 - tanh * tanh))
+    return omega * depth / kappa
+
+
 def celerity_grid(period: float) -> list[list[float | None]]:
     """Wave speed at every wet cell; None on land, which blocks the front entirely."""
-    deep = G * period / (2 * math.pi)
     out: list[list[float | None]] = []
     for r in range(ROWS):
         row: list[float | None] = []
@@ -81,9 +126,7 @@ def celerity_grid(period: float) -> list[list[float | None]]:
             if elevation is None or elevation >= 0:
                 row.append(None)
             else:
-                # A 2 m floor keeps the shore cells from costing infinity and stalling
-                # the whole front on one pixel of surf zone.
-                row.append(min(deep, math.sqrt(G * max(-elevation, 2.0))))
+                row.append(celerity(-elevation, period))
         out.append(row)
     return out
 
@@ -152,8 +195,13 @@ def travel_time(period: float, heading_deg: float) -> list[list[float | None]]:
     return [[None if v == math.inf else v for v in row] for row in best]
 
 
-def isochrone(field: list[list[float | None]], level: float) -> list[str]:
-    """Marching squares over the travel-time field: one crest at one instant."""
+def isochrone_segments(field: list[list[float | None]], level: float) -> list:
+    """Marching squares over the travel-time field: one crest at one instant, as loose segments.
+
+    Split out of `isochrone` so the crests can be inspected before simplification decides
+    which of them survive. The port in `frontend/src/refraction.ts` is checked against this
+    file, and a question about *which chains are dropped* cannot be asked of path strings.
+    """
     segments = []
 
     def interp(ca, ra, va, cb, rb, vb):
@@ -193,10 +241,30 @@ def isochrone(field: list[list[float | None]], level: float) -> list[str]:
                 segments.append((top, right))
                 segments.append((left, bottom))
 
+    return segments
+
+
+# A chain shorter than two grid cells is an artefact of the tracer rather than a front: the
+# soundings are about 342 m apart and nothing smaller than a couple of cells is resolved by
+# them. This replaced a `len(reduced) < 3` test, which used vertex count as a proxy for length
+# and got it backwards — a crest that is perfectly STRAIGHT simplifies to two points, so the
+# old rule discarded 83 real fragments across a 16-frame loop, the longest of them 67.5 view
+# units (about 4 km of front), and dropped every crest of a flat sea entirely.
+MIN_CREST_LENGTH = 2 * math.hypot(VIEW_W / (COLS - 1), VIEW_H / (ROWS - 1))
+
+
+def chain_length(points: list[tuple[float, float]]) -> float:
+    return sum(math.dist(a, b) for a, b in zip(points, points[1:]))
+
+
+def isochrone(field: list[list[float | None]], level: float) -> list[str]:
+    """One crest at one instant, simplified and formatted as SVG path data."""
     paths = []
-    for chain in join(segments):
+    for chain in join(isochrone_segments(field, level)):
+        if chain_length(chain) < MIN_CREST_LENGTH:
+            continue
         reduced = simplify(chain, 0.7)
-        if len(reduced) < 3:
+        if len(reduced) < 2:
             continue
         paths.append(path_data(reduced, False))
     return paths
@@ -220,7 +288,7 @@ def crest_frames(period: float, heading_deg: float) -> dict:
             level += interval
         frames.append(paths)
     return {
-        "viewBox": CONTOURS["viewBox"],
+        "viewBox": f"0 0 {VIEW_W} {VIEW_H}",
         "period_s": period,
         "from_direction_deg": (heading_deg + 180) % 360,
         "frames": frames,

@@ -12,3 +12,7 @@ playwright-report
 # at odds with what the build step produces.
 scripts/map/bathymetry.json
 src/map-geometry.json
+# The soundings the refraction solve reads, emitted compact by the same build step (#122,
+# ADR 0016). Base64 on one long line: reformatting it would wrap the payload and put the tree
+# at odds with what `npm run map` produces, for a file chosen for its size.
+src/depth-grid.json

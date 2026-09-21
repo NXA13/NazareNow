@@ -1,34 +1,77 @@
 /**
- * The map's slot — a placeholder until #121, and the sea floor since.
+ * The map's slot — a placeholder until #121, the sea floor since, and the swell since #122.
  *
  * The right column existed before its contents did, so the shell's promises — two columns of
  * equal height, a stable split, the page not scrolling on desktop — could be tested before there
  * was anything expensive inside it. That is why #115 came first, and the placeholder it held is
- * gone now: `Bathymetry` draws the canyon from soundings.
+ * gone now: `Bathymetry` draws the canyon from soundings and `Crests` bends today's swell over
+ * it.
  *
- * **What is here is the base only.** The swell refracting over the canyon is #122 and the wind
- * across it is #123, so this map is a sea floor and says nothing about today. That is the line
- * the caption under it has to hold: the tone this map is drawn in carries depth, and colour on
- * it will mean live data when there is any. A reader must not take a permanent feature of the
- * sea bed for a forecast.
+ * **The note under the figure is not decoration, and two of its sentences are required.** The
+ * ticket and the spec both say they travel together wherever this map is explained: the crest
+ * *shape* is computed and the crest *spacing* is exaggerated, and the model is refraction alone.
+ * `Bathymetry.test.tsx` fails if either goes missing. The second matters more now than it did
+ * when the crests were going to be precomputed — a model that runs live, on the reader's own
+ * machine, against this morning's sea, is far easier to mistake for a forecast of the surf.
  *
  * It is SVG that fits whatever box it is given, which is why this slot still has no aspect ratio
  * of its own on desktop: it takes the height of the column beside it.
  */
 
 import { Bathymetry } from './Bathymetry';
+import { WindLegend } from './Wind';
+import type { ConditionsGrid } from './api';
+import type { Swell } from './refraction';
 
-export function MapSlot() {
+interface MapSlotProps {
+  swell: Swell | null;
+  grid: ConditionsGrid | null;
+  /** True once the grid request has failed, which is distinct from it not having arrived. */
+  windUnavailable: boolean;
+}
+
+export function MapSlot({ swell, grid, windUnavailable }: MapSlotProps) {
+  /**
+   * **A grid with no points in it counts as no grid.**
+   *
+   * The endpoint answers 503 rather than an empty grid precisely because "a two hundred
+   * carrying no points is a map a reader cannot tell from a map of a flat calm" — but that is
+   * the backend's promise, and a page that draws nothing and says nothing whenever the promise
+   * is broken is trusting a contract instead of checking one. A 200 with `points: []` gets the
+   * same sentence a 503 gets.
+   */
+  const haveWind = grid !== null && grid.points.length > 0;
+  const sayMissing = windUnavailable || (grid !== null && !haveWind);
+
   return (
     <aside className="map-slot" aria-label="Map">
-      <Bathymetry />
-      {/* Outside the figure, and saying the two things a reader could otherwise get wrong: that
-          this is the sea bed rather than the sea, and where the shape came from. ADR 0012's
-          rule is that prose says whether a number is current; the same obligation applies to a
-          picture, and this one is not current at all — it is permanent. */}
+      <Bathymetry swell={swell} grid={haveWind ? grid : null} />
+
+      {/* The key, only where there is wind to key. It drifts at the rates it names, from the
+          same function the map uses, so it cannot disagree with the darts above it. */}
+      {haveWind ? <WindLegend /> : null}
+
+      {/* **Said, not left blank.** The endpoint answers 503 rather than an empty grid because
+          "a two hundred carrying no points is a map a reader cannot tell from a map of a flat
+          calm" — and a map that silently lost its darts is the same lie one layer up. */}
+      {sayMissing ? (
+        <p className="map-slot-note map-slot-note-missing">
+          <strong>Wind unavailable.</strong> The map is showing the sea floor and the swell only —
+          not a calm.
+        </p>
+      ) : null}
+      {/* Outside the figure, and saying the things a reader could otherwise get wrong: where
+          the shape came from, what the drawn spacing is and is not, and how little of the sea
+          this model contains. ADR 0012's rule is that prose says whether a number is current;
+          the same obligation applies to a picture, and this picture is now half permanent and
+          half live, which is the harder case. */}
       <p className="map-slot-note">
         The sea floor, from <strong>GEBCO soundings</strong> — the Nazaré Canyon reaching almost to
-        the beach. Depth only: nothing here is today&rsquo;s sea.
+        the beach. The crests are today&rsquo;s swell bent over it:{' '}
+        <strong>their shape is computed, their spacing is exaggerated</strong> — the true spacing
+        here would be about 160 crests. The model is <strong>refraction alone</strong>. It ignores
+        diffraction, reflection, currents and non-linearity, and a real swell is a spread of periods
+        and directions rather than the single one drawn. It does not say how big the waves will be.
       </p>
     </aside>
   );

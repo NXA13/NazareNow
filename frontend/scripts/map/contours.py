@@ -22,8 +22,10 @@ Lagoa de Obidos, a real lagoon that would otherwise be painted as dry land.
 
 from __future__ import annotations
 
+import base64
 import json
 import math
+import struct
 from pathlib import Path
 
 HERE = Path(__file__).parent
@@ -335,6 +337,54 @@ def band(level: float) -> str:
     return "".join(pieces)
 
 
+def packed_depth_grid() -> dict:
+    """The soundings themselves, for the refraction solve that runs in the page (ADR 0016).
+
+    The contours below are a *drawing* of this grid and cannot be solved over; the solve needs
+    every reading. Shipped as little-endian int16 deltas in base64 — 11.00 kB gzipped against
+    13.72 kB as JSON numbers, because neighbouring soundings are close in value and that is
+    what gzip is good at.
+
+    Metres, rounded to whole metres, sign as stored: negative below sea level. One metre and
+    not five: celerity is sqrt(g*d), so a five-metre quantum is a 50% speed error in ten metres
+    of water, which is precisely the shoaling zone the map exists to explain.
+
+    `src/depth-grid.ts` is the other half. The round trip is checked here rather than trusted.
+    """
+    values = [int(round(v)) for row in GRID["elevation_m"] for v in row]
+    deltas = [values[0]] + [values[i] - values[i - 1] for i in range(1, len(values))]
+    packed = struct.pack(f"<{len(deltas)}h", *deltas)
+
+    running, restored = 0, []
+    for d in struct.unpack(f"<{len(deltas)}h", packed):
+        running += d
+        restored.append(running)
+    if restored != values:
+        raise SystemExit("depth grid does not survive its own round trip")
+
+    # The frame's scale travels with the grid, because the solve needs metres and the viewBox
+    # is in view units. Derived here, from the same soundings, so the page cannot hold a
+    # different opinion about how big the frame is than the tracer does.
+    metres_per_unit = (GRID["lat_top"] - GRID["lat_bottom"]) * 111_320.0 / VIEW_H
+
+    return {
+        "rows": GRID["rows"],
+        "cols": GRID["cols"],
+        # The frame's corners on the earth, so the page can place a lat/lon inside the viewBox
+        # without a second opinion about where this map is. `open_meteo.py` fetches its wind
+        # grid over exactly these bounds so that "a wind glyph can never sit outside the drawn
+        # map" — a promise the page can only keep if it is told what they are.
+        "latTop": GRID["lat_top"],
+        "latBottom": GRID["lat_bottom"],
+        "lonLeft": GRID["lon_left"],
+        "lonRight": GRID["lon_right"],
+        "viewWidth": round(VIEW_W, 1),
+        "viewHeight": round(VIEW_H, 1),
+        "metresPerUnit": round(metres_per_unit, 6),
+        "deltas": base64.b64encode(packed).decode("ascii"),
+    }
+
+
 def main() -> None:
     flat = [v for row in GRID["elevation_m"] for v in row if v is not None]
     print(f"viewBox 0 0 {VIEW_W:.0f} {VIEW_H:.0f}")
@@ -363,6 +413,14 @@ def main() -> None:
     destination = HERE.parents[1] / "src" / "map-geometry.json"
     destination.write_text(json.dumps(out, separators=(",", ":")), encoding="utf-8")
     print(f"wrote {destination.relative_to(HERE.parents[2])}")
+
+    grid = packed_depth_grid()
+    grid_destination = HERE.parents[1] / "src" / "depth-grid.json"
+    grid_destination.write_text(json.dumps(grid, separators=(",", ":")), encoding="utf-8")
+    print(
+        f"wrote {grid_destination.relative_to(HERE.parents[2])} "
+        f"({grid['rows']}x{grid['cols']} soundings, {len(grid['deltas'])} chars of base64)"
+    )
 
 
 if __name__ == "__main__":
