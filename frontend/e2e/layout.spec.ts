@@ -16,7 +16,7 @@ import { DESKTOP, NARROW } from '../playwright.config';
 // The same reader the contrast script and `ink.test.ts` use, so a hex in the sheet and the
 // `rgb()` the browser reports for it compare as the one colour they are.
 import { parseColour } from '../scripts/check-contrast.mjs';
-import { FIXTURE_BY_PATH, longForecast } from '../src/test/handlers';
+import { FIXTURE_BY_PATH, conditionsGrid, longForecast } from '../src/test/handlers';
 
 /**
  * The whole API surface, stubbed from the shared table.
@@ -150,6 +150,15 @@ test.describe(`the two columns, at ${DESKTOP.width}x${DESKTOP.height}`, () => {
     // reader sees.
     expect(Math.round(slotBox.height)).toBe(Math.round(forecastBox.height));
     expect(Math.round(slotBox.width)).toBe(Math.round(trackBox.width));
+
+    // **And neither of them is taller than the box that caps them**, which "equal height" on
+    // its own does not say: two columns that overflow `.home` by the same amount are still
+    // equal. They did, by 14px, from #115 until #139 — under the fold with 11px to spare, so
+    // nothing here saw it, and `.map-slot`'s `height: 100%` was resolving against a column
+    // that grew instead of one that held. `grid-template-rows: minmax(0, 1fr)` is what fixed
+    // it; this is what keeps it fixed.
+    const homeBox = (await page.locator('.home').boundingBox())!;
+    expect(Math.round(slotBox.height)).toBeLessThanOrEqual(Math.round(homeBox.height));
   });
 
   test('give neither column a scrollbar of its own', async ({ page }) => {
@@ -383,6 +392,53 @@ test.describe('the map slot', () => {
 
     const note = (await slot.locator('.map-slot-note').boundingBox())!;
     expect(note.y + note.height).toBeLessThanOrEqual((await viewport(page)).height + 1);
+  });
+
+  test('says the wind is out of date without costing the page a scrollbar', async ({ page }) => {
+    /**
+     * #139's note is a paragraph that appears only sometimes, which is exactly the shape of
+     * thing the no-scroll promise gets broken by: every measurement in this file was taken
+     * against a healthy grid, and a healthy grid does not print it.
+     *
+     * It must come out of the *drawing*, not out of the page. `.map-slot` is a flex column of
+     * the column's height and `.bathymetry` is the `flex: 1` inside it, so the map shrinks and
+     * the column stands still. jsdom cannot see any of that — it gives every element no height
+     * — so this is the only place the claim can be made.
+     */
+
+    // Added after the `beforeEach` stub, so it is matched first.
+    await page.route('**/api/conditions/grid', (route) =>
+      route.fulfill({ json: { ...conditionsGrid, stale: true, refresh_failed: true } }),
+    );
+
+    const { slot } = await loadHome(page);
+    const note = slot.locator('.map-slot-note-old');
+    await expect(note).toContainText(/refresh since then failed/i);
+
+    const { height: viewportHeight } = await viewport(page);
+
+    // **Visible, not merely rendered.** The page is `height: 100vh` by construction, so an
+    // extra paragraph cannot lengthen it — it can only push something off the bottom. A
+    // warning below the fold is a warning nobody reads, which is the failure this whole
+    // ticket is about, one layer along.
+    const noteBox = (await note.boundingBox())!;
+    expect(noteBox.height).toBeGreaterThan(0);
+    expect(noteBox.y + noteBox.height).toBeLessThanOrEqual(viewportHeight + 1);
+
+    // And the caption under it, which the note now has to share the column's tail with.
+    const caption = (await slot.locator('.map-slot-note').last().boundingBox())!;
+    expect(caption.y + caption.height).toBeLessThanOrEqual(viewportHeight + 1);
+
+    // The map is still a map rather than a strip above two paragraphs. `.bathymetry` is the
+    // `flex: 1` in the slot, so the note comes out of the drawing — this is how much of the
+    // drawing there is left to come out of.
+    const slotBox = (await slot.boundingBox())!;
+    const mapBox = (await page.locator('svg.bathymetry').boundingBox())!;
+    expect(mapBox.height).toBeGreaterThan(slotBox.height / 2);
+
+    const height = await page.evaluate(() => document.documentElement.scrollHeight);
+    expect(height).toBeLessThanOrEqual(viewportHeight);
+    expect(await scrollsSideways(page)).toBe(false);
   });
 
   test('is present before the conditions arrive, so the page does not jump', async ({ page }) => {
