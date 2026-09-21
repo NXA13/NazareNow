@@ -258,7 +258,7 @@
     "range_calibration": {
       "claimed": 0.9,
       "big_swell_from_m": 3.0,
-      "understates_because": "The range this system actually prints is wider still. Every distribution measured here was built without the wave models' disagreement term, which only ever widens a range. Out to six days that means the real coverage is higher than the figures above and the gap is larger than they show. At seven days there is no gap left to widen \u2014 the figures there sit just under what they claim \u2014 so the missing term is what would close that shortfall rather than what hides it.",
+      "understates_because": "At short notice the range this system actually prints is wider still. Every distribution measured here was built without the wave models' disagreement term, and the shipped range takes whichever is larger, that term or this archive's own drift. The disagreement is the larger of the two only in the first days out, so the early figures above understate the real coverage. By six days this archive's drift is the larger term and the missing one would change little, which is why the seven-day figures \u2014 a shade under what they claim \u2014 should be read as they stand.",
       "rests_on": "It rests on one partial Big-Wave Season. The 1,593 hours run from 2025-11-26 to 2026-02-20 and cluster into a few dozen swells rather than standing as independent chances to be wrong, and the window holds a single confirmed giant day. Nothing here says how the range behaves on the days this system exists for.",
       "leads": [
         {
