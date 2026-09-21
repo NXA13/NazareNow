@@ -37,11 +37,21 @@ describe('driftSeconds', () => {
     // dropped — leaving a dart drifting at whatever the previous rule said. A calm has to be
     // a decision, not a division.
     expect(Number.isFinite(driftSeconds(0))).toBe(true);
-    // The law is that nothing drifts slower than a calm. Not "slower than 1 km/h": the cap
-    // and the rule meet exactly at 1 km/h (33 / 1 = 33), so those two are legitimately equal.
+    // The law is that nothing drifts slower than a calm.
     for (const speed of [1, 5, 20, 50]) {
       expect(driftSeconds(speed)).toBeLessThanOrEqual(driftSeconds(0));
     }
+  });
+
+  it('holds a dart still below a kilometre an hour, and obeys the rule above it', () => {
+    // The first version of this was `Math.min(33, 33 / speed)`, which made 0.5 km/h drift at
+    // 33 s per hop instead of 66 — twice the rate the rule names, silently, in the one place
+    // speed appears on the map. The review of #123 caught it. Below the threshold the dart is
+    // still BY DECISION; above it the rule is exactly `33 / speed` with no ceiling.
+    expect(driftSeconds(0.5)).toBe(33);
+    expect(driftSeconds(1)).toBe(33);
+    expect(driftSeconds(1.5)).toBeCloseTo(22, 5);
+    expect(driftSeconds(2)).toBeCloseTo(16.5, 5);
   });
 });
 

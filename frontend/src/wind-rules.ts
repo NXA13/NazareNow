@@ -16,12 +16,23 @@
 const SECONDS_PER_HOP_AT_UNIT_SPEED = 33;
 
 /**
- * The slowest a dart may drift, in seconds per hop.
+ * The speed at or below which the map draws a dart still.
  *
- * `33 / speed` is Infinity at a dead calm, which reaches CSS as `animation-duration: Infinitys`,
- * fails to parse, and leaves the dart drifting at whatever the previous rule set — a calm
- * rendered as the last wind there happened to be. A flat calm is a fact and gets a number.
- * 33 s per hop is slow enough to read as still without being a division by zero.
+ * **A stated rule, not a clamp, and the difference matters.** This was `Math.min(33, 33/speed)`,
+ * which silently made every speed under 1 km/h drift at 33 s per hop — so a 0.5 km/h wind moved
+ * at twice the rate `33 / speed` names, in the one place on the map where speed appears at all.
+ * The review of #123 caught it. Below a kilometre an hour there is nothing to show, so the map
+ * says so by holding the dart still, and `wind-rules.test.ts` asserts that boundary from both
+ * sides rather than only at zero.
+ */
+const CALM_KMH = 1;
+
+/**
+ * Seconds per hop for a calm.
+ *
+ * `33 / 0` is Infinity, which reaches CSS as `animation-duration: Infinitys`, fails to parse,
+ * and leaves the dart drifting at whatever the previous rule set — a calm rendered as the last
+ * wind there happened to be. A flat calm is a fact and gets a number.
  */
 const STILLEST = 33;
 
@@ -32,8 +43,8 @@ const STILLEST = 33;
  * ordering as well as the arithmetic.
  */
 export function driftSeconds(speedKmh: number): number {
-  if (!(speedKmh > 0)) return STILLEST;
-  return Math.min(STILLEST, SECONDS_PER_HOP_AT_UNIT_SPEED / speedKmh);
+  if (!(speedKmh > CALM_KMH)) return STILLEST;
+  return SECONDS_PER_HOP_AT_UNIT_SPEED / speedKmh;
 }
 
 /**

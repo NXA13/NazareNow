@@ -96,8 +96,14 @@
  *   render in every state including "the conditions never arrived". The bundled import matches
  *   how `map-geometry.json` already reaches the page.
  *
- * 145 kB leaves about 4.1 kB, which is deliberately not enough for a library. #123's wind will
- * need its own raise, measured the same way.
+ * **#123's wind fits inside the same 145 kB, and this is that measurement.** The darts, the
+ * legend, the grid types and the fetch cost **0.89 kB gzipped** — 141.00 kB before them and
+ * 141.89 kB after, against a real build both times. No raise was needed, which is why the
+ * budget did not move for the second time in one branch: the wind ships no data of its own.
+ * Every dart is drawn from a response the page already had to fetch, and the twenty-five points
+ * are 25 readings rather than 12,826 soundings.
+ *
+ * 145 kB now leaves about **3.11 kB**, which is still deliberately not enough for a library.
  */
 
 import { gzipSync } from 'node:zlib';
@@ -105,7 +111,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/** Compressed kilobytes the whole first load may cost. Today it is about 141, of which 43 is
+/** Compressed kilobytes the whole first load may cost. Today it is about 142, of which 43 is
  * the two fonts and 12 the soundings. See the note above for why it moved. */
 const BUDGET_KB = 145;
 

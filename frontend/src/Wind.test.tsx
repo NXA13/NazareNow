@@ -10,6 +10,7 @@
 import { render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
+import { MapSlot } from './MapSlot';
 import { Wind, WindLegend } from './Wind';
 import { conditionsGrid } from './test/handlers';
 import { dartHeadingDeg, driftSeconds } from './wind-rules';
@@ -101,5 +102,27 @@ describe('WindLegend', () => {
     [10, 25, 45].forEach((speed, index) => {
       expect(samples[index]!.style.animationDuration).toBe(`${driftSeconds(speed)}s`);
     });
+  });
+});
+
+describe('a grid with nothing in it', () => {
+  // The backend answers 503 rather than an empty grid, for exactly the reason this guards: a
+  // map with no darts cannot be told from a map of a flat calm. That is the backend's promise,
+  // and the page should not need it to be kept.
+  it('says the wind is unavailable rather than drawing nothing quietly', () => {
+    const empty = { ...GRID, points: [] };
+    const { container, getByText } = render(
+      <MapSlot swell={null} grid={empty} windUnavailable={false} />,
+    );
+    expect(container.querySelectorAll('.wind-dart')).toHaveLength(0);
+    expect(getByText(/wind unavailable/i)).toBeInTheDocument();
+  });
+
+  it('still draws the legend and the darts when there are points', () => {
+    const { container, queryByText } = render(
+      <MapSlot swell={null} grid={GRID} windUnavailable={false} />,
+    );
+    expect(container.querySelectorAll('.wind-dart').length).toBeGreaterThan(25);
+    expect(queryByText(/wind unavailable/i)).toBeNull();
   });
 });

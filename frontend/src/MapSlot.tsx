@@ -31,18 +31,30 @@ interface MapSlotProps {
 }
 
 export function MapSlot({ swell, grid, windUnavailable }: MapSlotProps) {
+  /**
+   * **A grid with no points in it counts as no grid.**
+   *
+   * The endpoint answers 503 rather than an empty grid precisely because "a two hundred
+   * carrying no points is a map a reader cannot tell from a map of a flat calm" — but that is
+   * the backend's promise, and a page that draws nothing and says nothing whenever the promise
+   * is broken is trusting a contract instead of checking one. A 200 with `points: []` gets the
+   * same sentence a 503 gets.
+   */
+  const haveWind = grid !== null && grid.points.length > 0;
+  const sayMissing = windUnavailable || (grid !== null && !haveWind);
+
   return (
     <aside className="map-slot" aria-label="Map">
-      <Bathymetry swell={swell} grid={grid} />
+      <Bathymetry swell={swell} grid={haveWind ? grid : null} />
 
       {/* The key, only where there is wind to key. It drifts at the rates it names, from the
           same function the map uses, so it cannot disagree with the darts above it. */}
-      {grid ? <WindLegend /> : null}
+      {haveWind ? <WindLegend /> : null}
 
       {/* **Said, not left blank.** The endpoint answers 503 rather than an empty grid because
           "a two hundred carrying no points is a map a reader cannot tell from a map of a flat
           calm" — and a map that silently lost its darts is the same lie one layer up. */}
-      {windUnavailable ? (
+      {sayMissing ? (
         <p className="map-slot-note map-slot-note-missing">
           <strong>Wind unavailable.</strong> The map is showing the sea floor and the swell only —
           not a calm.

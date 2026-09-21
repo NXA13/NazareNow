@@ -1848,7 +1848,16 @@ async function mapFor(grid: ConditionsGrid): Promise<string> {
   server.use(http.get('*/api/conditions/grid', () => HttpResponse.json(grid)));
 
   const view = render(<App />);
+  // **Every asynchronous thing on this page, not just the one this block is about.** The map's
+  // grid, the conditions and the forecast arrive on three separate requests, and this file
+  // compares two renders byte for byte — so anything still in flight when the snapshot is taken
+  // is a difference between the two that has nothing to do with the field being mutated. An
+  // earlier version of this helper waited only for `freshness` and the darts, leaving the
+  // verdict to land whenever it landed, and CI failed once on `GridPoint.swell_direction` —
+  // a field nothing reads. That failure did not reproduce locally, so this is the cause it
+  // could have been rather than the cause it was proven to be.
   await screen.findByTestId('freshness');
+  await screen.findByTestId('verdict');
   await waitFor(() => {
     expect(view.container.querySelector('.wind-dart')).not.toBeNull();
   });
