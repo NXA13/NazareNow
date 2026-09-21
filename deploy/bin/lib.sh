@@ -40,6 +40,37 @@ restart_services() {
   sudo systemctl restart nazarenow-api.service
 }
 
+# How long the API gets to answer after that restart before it is called dead, and where it
+# is asked. Generous against a Pi that has just finished a build; short against a human
+# watching a deploy that is never going to come good.
+API_WAIT_SECONDS="${API_WAIT_SECONDS:-30}"
+API_HEALTH_URL="${API_HEALTH_URL:-http://127.0.0.1:8000/api/conditions/current}"
+
+# One request, separated from the waiting so a test can replace it without a port, a server
+# or a network.
+api_responds() {
+  curl -fsS --max-time 10 "$API_HEALTH_URL" >/dev/null 2>&1
+}
+
+# Wait for the API to start answering, and fail if it does not.
+#
+# `systemctl restart` returns once systemd has forked the process, not once uvicorn has bound
+# its socket. On this host those are about a second apart, and the deploy script asked exactly
+# once, immediately — so a deployment where everything worked reported the API as down, with a
+# connection refused rather than a timeout, which is why `--max-time` did not help.
+#
+# The deadline is the whole point. A longer sleep would hide the same race behind a bigger
+# number and still tell a deploy nothing about an API that is genuinely failing to start;
+# this returns as soon as the API answers, and still fails when it never does.
+wait_for_api() {
+  local deadline=$((SECONDS + API_WAIT_SECONDS))
+  while true; do
+    api_responds && return 0
+    ((SECONDS < deadline)) || return 1
+    sleep 1
+  done
+}
+
 # Grandfather-father-son retention over a directory of snapshots.
 #
 #   prune_snapshots <dir> <keep_daily> <keep_weekly> <keep_monthly> [rclone_remote]
