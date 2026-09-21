@@ -15,4 +15,4 @@ ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
 NoNewPrivileges=true
-ReadWritePaths=/mnt/ssd/nazarenow
+ReadWritePaths=/var/lib/nazarenow

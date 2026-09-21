@@ -1,0 +1,24 @@
+[Unit]
+# The tunnel that makes this host reachable. See ADR 0019.
+#
+# Modelled on the two cloudflared units already on this Pi, deliberately: same shape, same
+# flags, one unit per tunnel. `--no-autoupdate` matches them — cloudflared is updated by the
+# host's existing cloudflared-update.timer, not by each tunnel separately.
+#
+# No `After=nginx.service`. cloudflared retries a refused connection on localhost:80 for as
+# long as it takes, so the ordering buys nothing, and a hard dependency would mean an nginx
+# failure took the tunnel down with it rather than leaving it up to report a 502.
+Description=Cloudflare Tunnel client (nazarenow)
+Documentation=https://github.com/NXA13/NazareNow/blob/main/deploy/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+TimeoutStartSec=15
+Type=notify
+ExecStart=/usr/local/bin/cloudflared --no-autoupdate --config /etc/cloudflared/nazarenow.yml tunnel run
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

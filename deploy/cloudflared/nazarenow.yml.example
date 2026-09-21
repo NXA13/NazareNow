@@ -1,0 +1,32 @@
+# The route in. See ADR 0019.
+#
+# Copy to /etc/cloudflared/nazarenow.yml on the host and replace both <tunnel-id> values
+# with the id printed by `cloudflared tunnel create nazarenow`. The real file is not in the
+# repository, only because it names an id; it holds no secret. The credentials JSON beside
+# it does, and that one never leaves the host.
+#
+# This is a THIRD tunnel, with its own config and its own systemd unit, deliberately. The
+# two already on this Pi each have their own. Adding these hostnames to one of theirs would
+# be two files cheaper and would require restarting a `cloudflared` that is currently
+# serving a live site.
+
+tunnel: <tunnel-id>
+credentials-file: /etc/cloudflared/<tunnel-id>.json
+
+# localhost:80, not :8000. Requests go through nginx, not straight to uvicorn — nginx is
+# what holds the password, the security headers and the built frontend. Pointing the tunnel
+# at the API directly would publish the store with no wall in front of it, which is the
+# exact failure ADR 0007 puts the API behind the same wall to prevent.
+#
+# Host headers are preserved across the tunnel, so the two hostnames below are what
+# nazarenow.conf's `server_name` lines match on.
+ingress:
+  - hostname: nazarenow.com
+    service: http://localhost:80
+  - hostname: www.nazarenow.com
+    service: http://localhost:80
+
+  # Required: cloudflared refuses a config whose last rule has a hostname. Nothing should
+  # reach this — Cloudflare only routes hostnames that have a CNAME to this tunnel — so an
+  # answer here means a DNS record outlived the ingress rule that justified it.
+  - service: http_status:404
