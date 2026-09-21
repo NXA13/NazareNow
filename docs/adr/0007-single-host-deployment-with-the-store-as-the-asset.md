@@ -13,6 +13,11 @@ scheduler, the API, and a reverse proxy serving the built frontend and terminati
 Cheap, boring, and the same shape locally as in production, which means a fault can be
 reproduced on a laptop.
 
+**Superseded in part by ADR 0019.** On the host this actually deploys to, the reverse proxy
+does not terminate TLS — a Cloudflare Tunnel does, at the edge. Everything else in this
+decision stands. The sentence above is left exactly as written, because it records what was
+believed about the host at the time the choice was made.
+
 ## What is actually being protected
 
 The instinct is to treat a deployment as a way to show the site to people. Here the more

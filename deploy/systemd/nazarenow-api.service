@@ -1,10 +1,14 @@
 [Unit]
 # The read-only API, bound to localhost only.
 #
-# Nothing reaches this directly. nginx terminates TLS, checks the password and proxies to
-# it — ADR 0007 puts the API behind the same wall as the page, on the same origin, because
-# a private page in front of a public /api/conditions/forecast is not private: that
-# endpoint *is* the store.
+# Nothing reaches this directly. nginx checks the password and proxies to it — ADR 0007 puts
+# the API behind the same wall as the page, on the same origin, because a private page in
+# front of a public /api/conditions/forecast is not private: that endpoint *is* the store.
+#
+# TLS is not nginx's job on this host. ADR 0019: it terminates at Cloudflare's edge and the
+# tunnel delivers plain HTTP to localhost, which is why `--forwarded-allow-ips 127.0.0.1`
+# below is sufficient — the only thing that can ever set the forwarded headers uvicorn
+# trusts is the nginx on this machine.
 #
 # `After=` the scheduler, which orders boot only. It does nothing for a `systemctl restart`
 # of this unit alone, so it is not the mechanism that makes the ordering hold — `Restart=`
@@ -52,7 +56,7 @@ ProtectSystem=strict
 ProtectHome=true
 # Read-only here: ADR 0005 says the API is strictly a reader, and SQLite enforces it
 # already. This makes the filesystem agree.
-ReadOnlyPaths=/mnt/ssd/nazarenow
+ReadOnlyPaths=/var/lib/nazarenow
 
 [Install]
 WantedBy=multi-user.target

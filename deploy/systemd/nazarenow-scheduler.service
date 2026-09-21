@@ -39,7 +39,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/mnt/ssd/nazarenow
+ReadWritePaths=/var/lib/nazarenow
 
 [Install]
 WantedBy=multi-user.target

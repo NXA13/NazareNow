@@ -338,7 +338,7 @@ Full instructions are in [`deploy/README.md`](./deploy/README.md); the short for
 cd /opt/nazarenow && sudo -u nazarenow git pull && ./deploy/bin/deploy.sh
 
 # To put a snapshot back — asks before touching the live store
-./deploy/bin/restore-store.sh /mnt/ssd/nazarenow/backups/nazarenow-<stamp>.db.gz
+./deploy/bin/restore-store.sh /var/lib/nazarenow/backups/nazarenow-<stamp>.db.gz
 ```
 
 The store is the thing being protected, not the site. It accumulates the only unbiased

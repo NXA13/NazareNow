@@ -1,8 +1,15 @@
 # Deploying NazaréNow
 
-The host is a Raspberry Pi 5 with a 1TB SSD, running Raspberry Pi OS Lite, already serving
-another site on ports 80 and 443. NazaréNow is added alongside it: its own nginx server
-block, its own systemd units, its own user, its own directory on the SSD.
+The host is a Raspberry Pi 5 running Raspberry Pi OS Lite from a 1TB SSD — the SSD is the
+root filesystem, not a separate mount, so there is no SD card to keep writes off. It already
+serves two other sites, each reached through its own Cloudflare Tunnel, with nginx bound to
+port 80 only and nothing listening on 443. NazaréNow is added alongside them: its own tunnel,
+its own nginx server block, its own systemd units, its own user, its own directory.
+
+**The binding constraint is that those two sites are not disturbed.** nginx is the only
+component genuinely shared with them. `sudo nginx -t` before every reload, `reload` and never
+`restart`, and if `-t` fails, remove our symlink and nothing changes — the running nginx keeps
+serving them from the config already in memory.
 
 Read [ADR 0007](../docs/adr/0007-single-host-deployment-with-the-store-as-the-asset.md)
 first. It explains why this shape and not another, and — more importantly — what the
@@ -21,7 +28,8 @@ Everything else here is in service of that file staying alive.
 | `nazarenow-scheduler.service` | `python -m nazarenow schedule` | A Pipeline Run every three hours, forever. The unit that matters. |
 | `nazarenow-api.service` | uvicorn on `127.0.0.1:8000` | Read-only API. Never exposed directly. |
 | `nazarenow-backup.timer` | Daily at 03:20 | Snapshots the store and copies it off the host. |
-| nginx server block | TLS, password, one origin | Serves the built page and proxies `/api` to uvicorn. |
+| nginx server block | Password, one origin | Serves the built page and proxies `/api` to uvicorn, on port 80. |
+| `cloudflared-nazarenow.service` | The tunnel | The only route in. TLS terminates at Cloudflare's edge — [ADR 0019](../docs/adr/0019-reach-the-host-through-a-tunnel.md). |
 
 Three facts that explain most of the configuration:
 
@@ -40,17 +48,26 @@ Three facts that explain most of the configuration:
 
 ### 0. Packages
 
-Pi OS Lite has none of these. `sqlite3` is the one worth calling out: both `backup-store.sh`
-and `restore-store.sh` depend on it, and without it the first backup fails at 03:20 on a
-night nobody is watching.
+`sqlite3` is the one worth calling out: both `backup-store.sh` and `restore-store.sh` depend
+on it, and without it the first backup fails at 03:20 on a night nobody is watching.
+
+**Install only what is actually missing, one package at a time, and never `apt upgrade`.** On
+a host already serving other sites, `nodejs` and `npm` are the real hazard: if the neighbours
+build against a node from nvm or NodeSource, the distro packages can shadow it and break them
+silently. Check before installing anything:
 
 ```bash
-sudo apt update
-sudo apt install -y nginx sqlite3 rsync curl git python3-venv apache2-utils certbot \
-  python3-certbot-nginx nodejs npm rclone
+for t in nginx sqlite3 rsync curl git node npm rclone htpasswd cloudflared; do
+  printf '%-11s %s\n' "$t" "$(command -v $t || echo MISSING)"
+done
+python3 -m venv --help >/dev/null 2>&1 && echo "python3-venv: OK" || echo "python3-venv: MISSING"
 ```
 
-### 1. Users, directories, SSD
+The full set this deployment needs is `nginx sqlite3 rsync curl git python3-venv
+apache2-utils nodejs npm rclone`, plus `cloudflared`. There is **no certbot**: ADR 0019 puts
+TLS at Cloudflare's edge, so no certificate is ever issued on this machine.
+
+### 1. Users and directories
 
 Two identities, and the split matters — getting it wrong is the difference between a deploy
 that runs and one that cannot read its own configuration.
@@ -69,19 +86,22 @@ sudo usermod -aG nazarenow "$USER"
 # Group membership only applies to new sessions. Log out and back in, or `exec newgrp
 # nazarenow`, before going further — otherwise step 7 fails on a file you can plainly see.
 
-# The store lives on the SSD, never the SD card. A Pipeline Run writes every three hours
-# forever, and an SD card's write endurance is finite.
-sudo mkdir -p /mnt/ssd/nazarenow/backups
-sudo chown -R nazarenow:nazarenow /mnt/ssd/nazarenow
+# /var/lib is the right home for state a service owns. On this host it is also already on
+# the SSD, because the SSD *is* the root filesystem — confirm that with `lsblk` before
+# trusting it on any other machine, since a Pipeline Run writes every three hours forever
+# and an SD card's write endurance is finite.
+sudo mkdir -p /var/lib/nazarenow/backups
+sudo chown -R nazarenow:nazarenow /var/lib/nazarenow
 # setgid, so anything created here keeps the group and both you and the services can write
 # the backups directory.
-sudo chmod -R 2775 /mnt/ssd/nazarenow
+sudo chmod -R 2775 /var/lib/nazarenow
 ```
 
-Confirm the SSD is actually mounted at boot (`/etc/fstab`, by UUID — a device name can move
-between reboots). If the mount is missing at start-up the scheduler will happily create a
-fresh empty database on the SD card underneath the mount point, and the real one will
-reappear, apparently empty, the next time the SSD mounts.
+If you ever move the store onto a *separate* disk, mount it by UUID in `/etc/fstab` — a
+device name can move between reboots, and if the mount is missing at start-up the scheduler
+will happily create a fresh empty database underneath the mount point. The real one then
+reappears, apparently empty, the next time the disk mounts. On this host there is no separate
+mount and the failure cannot occur.
 
 ### 2. The checkout and its virtualenv
 
@@ -134,9 +154,13 @@ sleep 30
 sudo systemctl enable --now nazarenow-api.service
 ```
 
-If the SSD is mounted somewhere other than `/mnt/ssd`, edit the `ReadWritePaths=` and
-`ReadOnlyPaths=` lines in the unit files to match — systemd will otherwise deny the write
-and the failure reads as a permissions problem rather than a path one.
+If `NAZARENOW_DB` points anywhere other than `/var/lib/nazarenow`, edit the
+`ReadWritePaths=` and `ReadOnlyPaths=` lines in the unit files to match — systemd will
+otherwise deny the write and the failure reads as a permissions problem rather than a path
+one.
+
+The `*.service` glob above also copies `cloudflared-nazarenow.service` into place. It is not
+enabled here; step 6 does that, once its config file exists.
 
 ### 5. The password
 
@@ -147,23 +171,61 @@ sudo chown root:www-data /etc/nginx/nazarenow.htpasswd
 sudo chmod 640 /etc/nginx/nazarenow.htpasswd
 ```
 
-### 6. nginx and TLS
+### 6. DNS, the tunnel, and nginx
 
-**DNS first.** Point both `nazarenow.com` and `www.nazarenow.com` at the Pi's public address
-before going further — certbot proves control of the name over port 80, so the names have to
-resolve. On a home connection that means the router forwards 80 and 443 to the Pi, and a
-dynamic address needs a DDNS updater, or the renewal fails one night months from now.
+**This is the step that differs most from what you would expect**, and
+[ADR 0019](../docs/adr/0019-reach-the-host-through-a-tunnel.md) is the reason. There is no
+certbot, no certificate and no port 443 anywhere on this host. Cloudflare terminates TLS at
+its edge and `cloudflared` dials *outward* to reach it, so nothing inbound is ever opened.
 
-The order below is not interchangeable, and the reason is worth knowing: `nazarenow.conf`
-listens on 443 and names certificate files, and nginx refuses to start a TLS listener whose
-certificate does not exist. Installing it before certbot has run fails `nginx -t` — and
-certbot then has no enabled block to work with either. `nazarenow-bootstrap.conf` breaks
-that cycle by serving nothing but the ACME challenge.
+#### 6a. Put the domain on Cloudflare
+
+A tunnel hostname is a CNAME to `<tunnel-id>.cfargotunnel.com`, and only Cloudflare's own DNS
+will issue one — so the zone has to live there. The domain stays registered at Fasthosts;
+only the nameservers change.
+
+1. Add `nazarenow.com` as a site in the Cloudflare dashboard and let it scan the existing
+   records.
+2. **Check the imported records before continuing, MX especially.** Anything the scan missed
+   stops working the moment the nameservers change, and email is the usual casualty.
+3. Change the nameservers at Fasthosts to the pair Cloudflare gives you.
+4. Wait for the zone to read **Active**. Nothing below works until it does.
+
+#### 6b. Create the tunnel
 
 ```bash
-# Somewhere to serve the ACME challenge from, and somewhere for the site itself.
-sudo mkdir -p /var/www/certbot /var/www/nazarenow
-sudo chown -R www-data:www-data /var/www/certbot /var/www/nazarenow
+# Authorises this machine for the zone. It prints a URL to open in a browser — the Pi does
+# not need one. This refreshes ~/.cloudflared/cert.pem, which is safe: the tunnels already
+# running authenticate with their own credentials JSON at runtime, not with cert.pem.
+cloudflared tunnel login
+
+# Prints the tunnel id and writes ~/.cloudflared/<tunnel-id>.json. That file is the secret.
+cloudflared tunnel create nazarenow
+
+# Match how the existing tunnels are stored: root-owned, unreadable by anyone else.
+sudo install -m 400 -o root -g root ~/.cloudflared/<tunnel-id>.json /etc/cloudflared/
+
+# The CNAMEs. This is what makes the names resolve to the tunnel.
+cloudflared tunnel route dns nazarenow nazarenow.com
+cloudflared tunnel route dns nazarenow www.nazarenow.com
+```
+
+Then the config, with both `<tunnel-id>` placeholders replaced:
+
+```bash
+sudo cp /opt/nazarenow/deploy/cloudflared/nazarenow.yml.example /etc/cloudflared/nazarenow.yml
+sudo nano /etc/cloudflared/nazarenow.yml
+```
+
+#### 6c. nginx, before the tunnel comes up
+
+nginx should already be answering on the two hostnames when the tunnel starts, or the first
+requests through it get a 502.
+
+```bash
+# Where the built site is served from. No /var/www/certbot — there is no ACME challenge.
+sudo mkdir -p /var/www/nazarenow
+sudo chown -R www-data:www-data /var/www/nazarenow
 
 # The headers snippet, included by the server block and by every location that sets a
 # header of its own — see the comment at the top of the file for why that repetition is
@@ -171,33 +233,28 @@ sudo chown -R www-data:www-data /var/www/certbot /var/www/nazarenow
 sudo mkdir -p /etc/nginx/snippets
 sudo cp /opt/nazarenow/deploy/nginx/nazarenow-headers.conf /etc/nginx/snippets/
 
-# Port 80 only, to get the first certificate.
-sudo cp /opt/nazarenow/deploy/nginx/nazarenow-bootstrap.conf /etc/nginx/sites-available/
-sudo ln -s /etc/nginx/sites-available/nazarenow-bootstrap.conf /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl reload nginx
-
-sudo certbot certonly --webroot -w /var/www/certbot   -d www.nazarenow.com -d nazarenow.com
-
-# Now the certificate exists, so the real config will load. Swap it in.
-sudo rm /etc/nginx/sites-enabled/nazarenow-bootstrap.conf
 sudo cp /opt/nazarenow/deploy/nginx/nazarenow.conf /etc/nginx/sites-available/
 sudo ln -s /etc/nginx/sites-available/nazarenow.conf /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-`certonly --webroot` rather than `--nginx` on purpose: `--nginx` rewrites the config file,
-and this one is version-controlled and full of comments explaining itself. Renewals use the
-ACME location that `nazarenow.conf` keeps ahead of its redirects in both port-80 blocks, so
-nothing has to be swapped back.
+**`nginx -t` tests the whole config, not just this file.** A pre-existing error in a
+neighbouring site fails *your* test. Do not fix it on impulse — it means something on this
+host was already broken and reloading would have exposed it either way. If `-t` fails for any
+reason, `sudo rm /etc/nginx/sites-enabled/nazarenow.conf` puts the host back exactly as it
+was, because the running nginx is still serving from the config in memory.
 
-certbot installs its own renewal timer. Confirm it, rather than assuming — this is the
-"renews without intervention" criterion, and a dry run is the only thing that actually
-demonstrates it:
+#### 6d. Start the tunnel
 
 ```bash
-sudo certbot renew --dry-run
-systemctl list-timers | grep certbot
+sudo systemctl enable --now cloudflared-nazarenow.service
+systemctl status cloudflared-nazarenow --no-pager
 ```
+
+Two registered connections in the log means it is up. Renewal needs no timer and no dry run:
+the certificate is Cloudflare's, at the edge, and there is nothing on this host that could
+quietly stop renewing it. That is ADR 0007's "renews without intervention" criterion met by
+removing the component that could fail, rather than by trusting one.
 
 ### 7. Build and publish the site
 
@@ -219,6 +276,8 @@ makes about its own honesty and no test can confirm they survived the journey:
 - [ ] The measured-range-runs-wide statement renders in the track record's limitations
 - [ ] The page is usable on a phone — story 26 of #1, which is intrinsically responsive and
       has no automated check because jsdom cannot do layout
+- [ ] **The two neighbouring sites still load.** They share nginx with this one and nothing
+      else; this is the check that the shared component survived the change.
 
 ## Deploying again
 
@@ -330,28 +389,36 @@ invisible until something needs them.
 
 ## Logs
 
-**Turn persistent journald on first, or most of this is fiction.** Pi OS Lite ships
-`Storage=auto` with no `/var/log/journal` directory, which means the journal lives in memory
-and is emptied by every reboot. #28 asks that "logs from the scheduler are readable after the
-fact, so a wrong prediction can be traced to the run that made it" — after a reboot, on the
-default configuration, they are not. Reboot survival is a criterion in its own right, so this
-is precisely the case that matters.
+**Check whether the journal is persistent before assuming either way.** Pi OS Lite ships
+`Storage=auto`, which keeps the journal in memory and empties it on every reboot *unless*
+`/var/log/journal` exists. #28 asks that "logs from the scheduler are readable after the
+fact, so a wrong prediction can be traced to the run that made it" — on the default
+configuration, after a reboot, they are not.
+
+```bash
+ls -ld /var/log/journal && journalctl --disk-usage
+```
+
+If that directory exists and the usage is non-zero, the journal is already persistent and
+**there is nothing to do here.** That is the case on the current host.
+
+If it does not exist:
 
 ```bash
 sudo mkdir -p /var/log/journal
 sudo systemd-tmpfiles --create --prefix /var/log/journal
-printf '[Journal]
-Storage=persistent
-SystemMaxUse=200M
-'   | sudo tee /etc/systemd/journald.conf.d/nazarenow.conf
 sudo systemctl restart systemd-journald
 
 # Prove it survives, rather than assuming — reboot, then look for entries from before it.
 journalctl --list-boots
 ```
 
-`SystemMaxUse=200M` is a cap, not a target: unbounded journals on a small host are their own
-failure mode, and at one Pipeline Run every three hours this holds many months.
+**Deliberately no `SystemMaxUse=` here.** An earlier version of this file wrote a 200M cap
+into `/etc/systemd/journald.conf.d/`. That setting is global: on a host shared with other
+sites it would shorten *their* retention too, to suit this one, which is a change to shared
+state that nothing here justifies. At one Pipeline Run every three hours the journal grows
+slowly enough to be a non-issue against a 1TB disk. Revisit it only if
+`journalctl --disk-usage` says otherwise.
 
 ```bash
 journalctl -u nazarenow-scheduler -f          # runs as they happen
