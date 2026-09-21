@@ -174,17 +174,26 @@ profile module's dependencies for one float, and the pin only needs the literal.
 
 RANGE_UNDERSTATES_BECAUSE = (
     "The range this system actually prints is wider still. Every distribution measured here "
-    "was built without the wave models' disagreement term, which only ever widens a range, so "
-    "the real coverage at short notice is higher than the figures above and the gap is larger "
-    "than they show."
+    "was built without the wave models' disagreement term, which only ever widens a range. "
+    "Out to six days that means the real coverage is higher than the figures above and the "
+    "gap is larger than they show. At seven days there is no gap left to widen — the figures "
+    "there sit just under what they claim — so the missing term is what would close that "
+    "shortfall rather than what hides it."
 )
-"""Why the measurement is a floor rather than an estimate.
+"""Why the measurement is a floor rather than an estimate, and why that cuts both ways.
 
 `analysis/distribution_coverage/README.md`, "What this cannot settle": every distribution in
 that run was built with `model_spread=None`, because no per-Lead-Time ensemble archive exists,
-and `_drift_floor` can only raise the drift. So this moves finding 1 in the direction it
-already points. It lives in that README's prose and `--check` cannot verify it, which is the
-same position `GOLD_DAY_CAVEAT` is in.
+and `_drift_floor` can only raise the drift. It lives in that README's prose and `--check`
+cannot verify it, which is the same position `GOLD_DAY_CAVEAT` is in.
+
+The closing clause is Lead-Time qualified since #82. It used to say flatly that the gap is
+larger than the figures show, which was written when every row ran wide and the excess appeared
+to grow with Lead Time. Corrected, the far end runs marginally *narrow* in both subsets, so
+there is no gap there for the missing term to widen — it would close a shortfall instead. The
+sentence points in the reader's favour either way, but it points at different things at the two
+ends of the table, and saying only the flattering half is the failure `TierRow` exists to
+prevent.
 """
 
 RANGE_RESTS_ON = (
@@ -198,6 +207,29 @@ RANGE_RESTS_ON = (
 Same README, same section. The hours are correlated, the span is one winter, and the only Gold
 Day inside it is 2025-12-13. A reader who takes "1,593 hours" as the sample size has been told
 the flattering half of a two-part fact — the same failure `TierRow` exists to prevent.
+"""
+
+RANGE_LOSES_ITS_SLACK_AT = 7
+"""The first Lead Time, in days, at which the range stops running wider than the outcomes justify.
+
+Measured, not chosen: in `interval_coverage.csv` every Lead Time from one to six clears the
+claimed coverage with a widening factor under 1.0, in **both** subsets, and seven clears
+neither in either. The boundary falls in the same place for all four combinations, which is why
+it can be one number rather than a rule per subset.
+
+`RANGE_UNDERSTATES_BECAUSE` is written around this boundary, so `--check` pins it. If a refit
+moves it, that sentence describes a table that no longer exists and has to be rewritten before
+the page is published again — the position the whole page was in between #80 and #82.
+"""
+
+FAR_END_SHORTFALL_LIMIT = 0.02
+"""How far under its claim the far end may sit before "just under" stops being honest.
+
+`RANGE_UNDERSTATES_BECAUSE` tells a reader the seven-day figures "sit just under what they
+claim". The measured shortfalls are 0.04 points all hours and 1.15 points on big swell, so this
+allows roughly twice the worse of them and no more. It is a bound on the published wording
+rather than on the model: a wider miss is a finding that belongs in the body of the page, not a
+qualifier at the end of a sentence.
 """
 
 GOLD_DAY_CAVEAT = (
@@ -933,36 +965,61 @@ def check() -> int:
             "falls as the forecast reaches further is a column read in the wrong order",
         )
 
-    #     The second are directional, and they are pinned on purpose even though #82 exists to
-    #     change them. Today every row says the same thing: the range holds the outcome more
-    #     often than it claims to, at every Lead Time, and increasingly so. The page derives
-    #     that direction from the numbers rather than asserting it — but the two caveats
-    #     published beside them are written for a range that runs wide, and a refit that
-    #     reverses the finding must not slip past with the old prose still attached.
+    #     The second are directional, and they are pinned on purpose. They pin the shape #82
+    #     corrected, not the one #80 published: the range runs wide out to six days and has no
+    #     slack left at seven, in both subsets. The page derives its direction from the numbers
+    #     rather than asserting it — but `RANGE_UNDERSTATES_BECAUSE` is written around that
+    #     boundary in as many words, and a refit that moves it must not slip past with prose
+    #     describing the old one.
+    #
+    #     These are not looser than what they replace. The previous pair asserted that every
+    #     row ran wide and that the excess grew with Lead Time, which is what the defect in
+    #     `coverage.readings_at` manufactured; they failed the moment it was fixed, which is
+    #     what they were for. Re-aiming them at the corrected finding keeps the tripwire and
+    #     moves it to where the claim now is.
     for lead in leads:
         for subset in RANGE_SUBSETS.values():
             measured = lead[subset]
-            expect(
-                measured["covered"] >= claim,
-                f"{lead['lead_days']} d {subset}: the range held {measured['covered']:.1%} of "
-                f"outcomes against the {claim:.0%} it claims. If this is a genuine refit "
-                "(#82), RANGE_UNDERSTATES_BECAUSE and RANGE_RESTS_ON are written for a range "
-                "that runs wide and no longer describe it",
-            )
-            expect(
-                measured["widening_factor"] < 1.0,
-                f"{lead['lead_days']} d {subset}: widening factor "
-                f"{measured['widening_factor']}, so the range is at or under the width the "
-                "outcomes justify — see the note above",
-            )
+            if lead["lead_days"] < RANGE_LOSES_ITS_SLACK_AT:
+                expect(
+                    measured["covered"] >= claim,
+                    f"{lead['lead_days']} d {subset}: the range held "
+                    f"{measured['covered']:.1%} of outcomes against the {claim:.0%} it "
+                    f"claims, short of nominal before {RANGE_LOSES_ITS_SLACK_AT} d. "
+                    "RANGE_UNDERSTATES_BECAUSE tells a reader the gap runs in their favour "
+                    "out to six days; if that is no longer true it must not stay published",
+                )
+                expect(
+                    measured["widening_factor"] < 1.0,
+                    f"{lead['lead_days']} d {subset}: widening factor "
+                    f"{measured['widening_factor']}, so the range is already at or under the "
+                    f"width the outcomes justify before {RANGE_LOSES_ITS_SLACK_AT} d — see "
+                    "the note above",
+                )
+            else:
+                expect(
+                    measured["widening_factor"] >= 1.0,
+                    f"{lead['lead_days']} d {subset}: widening factor "
+                    f"{measured['widening_factor']}, so the far end has slack again. "
+                    "RANGE_UNDERSTATES_BECAUSE says there is no gap left to widen there; if "
+                    "there is, the sentence is wrong in the flattering direction",
+                )
+                expect(
+                    claim - measured["covered"] <= FAR_END_SHORTFALL_LIMIT,
+                    f"{lead['lead_days']} d {subset}: the range held "
+                    f"{measured['covered']:.1%} against the {claim:.0%} it claims, a "
+                    f"shortfall past the {FAR_END_SHORTFALL_LIMIT:.0%} this page calls "
+                    "'just under'. A range that misses by more than that at the Lead Time a "
+                    "Traveller books on is a finding, not a caveat",
+                )
     for subset in RANGE_SUBSETS.values():
         expect(
-            leads[-1][subset]["widening_factor"] < leads[0][subset]["widening_factor"],
-            f"{subset}: the excess width no longer grows with Lead Time "
+            leads[-1][subset]["widening_factor"] > leads[0][subset]["widening_factor"],
+            f"{subset}: the excess width no longer shrinks with Lead Time "
             f"({leads[0][subset]['widening_factor']} at 1 d against "
-            f"{leads[-1][subset]['widening_factor']} at {leads[-1]['lead_days']} d). That "
-            "growth is #80's sharper finding and the reason a single scale factor is not the "
-            "repair",
+            f"{leads[-1][subset]['widening_factor']} at {leads[-1]['lead_days']} d). #80 "
+            "reported the opposite and #82 found that was the defect talking; a table that "
+            "reads the old way again needs explaining before it is published",
         )
 
     # 8. The committed file is the one this script would write now. Everything above checks
