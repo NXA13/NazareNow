@@ -401,7 +401,10 @@ turns out to be close to calibrated and a correction to it is a smaller, sharper
 The Proxy Target carried an **instrument fault on 2026-01-24, 25 and 26**. The seven largest
 hour-to-hour changes in the whole 14-year record — 4.17 m to 6.99 m — all fall on those three
 days, against a median hourly change of 0.103 m and a 99th percentile of 0.791 m over 73,412
-consecutive-hour pairs; the eighth largest is 2.33 m, in 2014. The buoy oscillates between 4.5 m
+consecutive-hour pairs; the eighth largest is 2.33 m, in 2014. (#145 records 73,396 for that
+count, taken on the local stamp, which loses 16 pairs to the autumn fold —
+`analysis/training_dataset/README.md` has the reconciliation. Nothing else in the evidence
+moves.) The buoy oscillates between 4.5 m
 and 13.8 m hour to hour while the independent Hindcast decays smoothly through the same hours,
 and it reports intermittently across all three days. Significant Wave Height is a sea-state
 statistic over tens of minutes and cannot do that.

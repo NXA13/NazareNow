@@ -130,7 +130,13 @@ would not have gone unremarked.
 Significant Wave Height is a sea-state statistic over tens of minutes, so it cannot double and
 halve within an hour. Over the 73,412 consecutive-hour pairs in the record the median change is
 0.103 m and the 99th percentile 0.791 m; the largest the buoy has ever legitimately recorded is
-2.33 m, on 2014-12-11, and the 2026-01 cluster's smallest excursion is 4.17 m. There is a clean
+2.33 m, on 2014-12-11, and the 2026-01 cluster's smallest excursion is 4.17 m.
+
+> #145 records this count as **73,396**, and that figure was taken on `at_local`. Pairing on
+> the local stamp loses exactly 16 pairs to the autumn fold, where 00:00 and 01:00 UTC both
+> render as 01:00 local — the trap this file's own join rule exists to avoid. Keyed on
+> `at_utc`, which is unique by construction, it is **73,412**. The median, the 99th percentile
+> and all seven excursion dates reproduce identically either way; only the denominator moves. There is a clean
 gap between the two, and `CONTINUITY_BREAK_M_PER_HOUR` sits in the middle of it rather than at
 either edge. The ratio on its own flags 248 hours across 77 days, including long *smooth*
 stretches in 2018 and 2020 where the sea was small and the ratio simply unstable — it is not a

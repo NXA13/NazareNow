@@ -212,8 +212,12 @@ RANGE_RESTS_ON = (
 """The evidence behind the table, stated where the table is rather than at the foot of a page.
 
 Same README, same section. The hours are correlated, the span is one winter, and the only Gold
-Day inside it is 2025-12-13. A reader who takes "1,593 hours" as the sample size has been told
+Day inside it is 2025-12-13. A reader who takes "1,586 hours" as the sample size has been told
 the flattering half of a two-part fact — the same failure `TierRow` exists to prevent.
+
+The count is pinned against the table in `--check`, because this docstring and the sentence
+above it have already drifted apart once: #145 withheld seven hours, the sentence was updated
+to 1,586, and this paragraph went on quoting 1,593 one line below it.
 """
 
 RANGE_LOSES_ITS_SLACK_AT = {"all_hours": None, "big_swell": 7}
@@ -225,8 +229,8 @@ Measured, not chosen, and **no longer the same number for both subsets**. In
 widening factor under 1.0, seven days included; `big_swell` does so out to six and neither at
 seven. Until #145 this was a single `7` covering all four combinations, and it was honest
 about the data it had: the Proxy Target then carried seven hours of instrument fault, all of
-them above 8 m and all inside this 1,593-hour window, which inflated the measured error at
-every Lead Time and pushed the all-hours far end just under its claim. With those hours
+them above 8 m and all inside the window this range is scored over, which inflated the measured
+error at every Lead Time and pushed the all-hours far end just under its claim. With those hours
 withheld the two subsets part company, and a constant that cannot say so would publish the
 big-swell shape as though it were both.
 
@@ -1054,6 +1058,22 @@ def check() -> int:
         "who is given two different numbers for one window has been told the page is careless",
     )
 
+    #     A subset with no boundary never enters the branch above, so nothing there pins the
+    #     clause describing it. That clause is the more dangerous one — it is the flattering
+    #     half — so it is pinned twice instead: the sentence must name the subset, and the far
+    #     end below must stay inside the same two-sided tolerance the boundary subsets get.
+    for subset, boundary in RANGE_LOSES_ITS_SLACK_AT.items():
+        if boundary is not None:
+            continue
+        published_name = next(name for name, key in RANGE_SUBSETS.items() if key == subset)
+        expect(
+            published_name in RANGE_UNDERSTATES_BECAUSE,
+            f"{subset} runs wide at every Lead Time scored, and RANGE_UNDERSTATES_BECAUSE "
+            f"never says so — it does not mention {published_name!r}. A subset with no "
+            "boundary is the stronger claim of the two, and an unnamed one reads as though "
+            "the sentence described both",
+        )
+
     for lead in leads:
         for subset in RANGE_SUBSETS.values():
             measured = lead[subset]
@@ -1086,15 +1106,25 @@ def check() -> int:
                     "measured; a far end running wide again makes that the flattering half of "
                     "a two-part fact",
                 )
-                expect(
-                    abs(claim - measured["covered"]) <= FAR_END_COVERAGE_TOLERANCE,
-                    f"{lead['lead_days']} d {subset}: the range held "
-                    f"{measured['covered']:.1%} against the {claim:.0%} it claims, "
-                    f"{abs(claim - measured['covered']):.1%} away from it and past the "
-                    f"{FAR_END_COVERAGE_TOLERANCE:.0%} this page calls 'a shade under'. Under "
-                    "by more than that is a finding that belongs in the body of the page; over "
-                    "at all and the sentence is wrong in the reader's favour",
-                )
+    #     The far end is pinned two-sided for **every** subset, boundary or not. The published
+    #     sentence calls the seven-day figures a shade over or a shade under, and a shade is a
+    #     magnitude. A subset with no boundary never reaches the branch above, leaving it held
+    #     only by `covered >= claim`, which is unbounded upward: coverage could reach 96% at
+    #     seven days with a widening factor still under 1.0, every assertion above would pass,
+    #     and the page would go on calling it a shade. That is #147's one-sided bound again,
+    #     one branch along, and it is the reason this loop is separate from the one above.
+    far_end = leads[-1]
+    for subset in RANGE_SUBSETS.values():
+        measured = far_end[subset]
+        expect(
+            abs(claim - measured["covered"]) <= FAR_END_COVERAGE_TOLERANCE,
+            f"{far_end['lead_days']} d {subset}: the range held {measured['covered']:.1%} "
+            f"against the {claim:.0%} it claims, {abs(claim - measured['covered']):.1%} away "
+            f"from it and past the {FAR_END_COVERAGE_TOLERANCE:.0%} this page calls 'a shade'. "
+            "Under by more than that is a finding that belongs in the body of the page; over "
+            "by more than that and the sentence is wrong in the reader's favour",
+        )
+
     for subset in RANGE_SUBSETS.values():
         expect(
             leads[-1][subset]["widening_factor"] > leads[0][subset]["widening_factor"],
