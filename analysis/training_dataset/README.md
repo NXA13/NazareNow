@@ -61,7 +61,9 @@ One hour, keyed by UTC and carrying its Nazaré local stamp, local day and Big-W
 | `hindcast_combined_sea_height_m` | IBI's own Combined Sea at the node — see the first limitation below before fitting on it |
 | `wind_speed_kmh`, `wind_direction_deg` | ERA5 wind, with `wind_present` |
 | `offshore_observed_*` | Monican01, the **Offshore Observation** — measured, 55 km out, an input and never a target — with `offshore_observation_present` |
-| `proxy_target_height_m` | The target |
+| `proxy_target_height_m` | The target. Empty when the reading was withheld — see below |
+| `proxy_target_suspect` | Whether this hour's target was withheld as an instrument fault |
+| `proxy_target_raw_m` | The withheld reading itself, on the hours where there is one |
 
 **Only Hs comes from Monican02.** Its peak period and direction are real measurements, and
 they are measurements *of the target*, taken at the instant the model is asked to predict.
@@ -113,6 +115,42 @@ stops 2026-04-21. `output/coverage_by_season.csv` reports it per season, with th
 hours from each source beside the paired count — so a season where the two sources never
 overlap reads differently from one where neither had anything.
 
+## One instrument fault is withheld, and says so
+
+Withholding a reading because it disagrees with a model is a step this project takes
+deliberately and records, so this section is the record. #145 is the ticket.
+
+Across **2026-01-24, 25 and 26** Monican02 read 14.00 m against a 4.98 m offshore analysis,
+13.76 m against 5.00 m, and 11.51 m against 6.79 m — rejoining the Hindcast on either side of
+each excursion, and reporting intermittently throughout, which is what a mooring in trouble
+looks like. No Gold Day is recorded on any of those dates; a genuine 14 m Hs at the canyon head
+would not have gone unremarked.
+
+**Continuity is the decisive test, and the ratio to the Hindcast cannot replace it.**
+Significant Wave Height is a sea-state statistic over tens of minutes, so it cannot double and
+halve within an hour. Over the 73,412 consecutive-hour pairs in the record the median change is
+0.103 m and the 99th percentile 0.791 m; the largest the buoy has ever legitimately recorded is
+2.33 m, on 2014-12-11, and the 2026-01 cluster's smallest excursion is 4.17 m. There is a clean
+gap between the two, and `CONTINUITY_BREAK_M_PER_HOUR` sits in the middle of it rather than at
+either edge. The ratio on its own flags 248 hours across 77 days, including long *smooth*
+stretches in 2018 and 2020 where the sea was small and the ratio simply unstable — it is not a
+spike detector and is never used as one.
+
+So the rule has two legs: continuity names the day the instrument was in trouble, and the ratio
+names which hours inside that day to withhold. **Seven hours are withheld.** The other 39 hours
+on those three days are kept — the 24th is a genuine 7 m swell tracking the Hindcast at a ratio
+of 0.91 to 1.21 all day with one bad hour in it, and this record is too short of big-sea hours
+to throw away real ones for tidiness.
+
+**Nothing is deleted.** The hour keeps its row, because the Hindcast and the wind on it are
+still perfectly good — one instrument failed, not the hour. The target goes empty, so every
+consumer's existing "is it present?" test drops it without being taught anything new;
+`proxy_target_suspect` records that the emptiness was a decision rather than an outage; and
+`proxy_target_raw_m` carries the reading, so the judgement stays reviewable and reversible by
+whoever reads this file next. The count is reported per season in
+`output/coverage_by_season.csv` as `target_withheld`, beside where the gap rule's losses are
+reported, and printed with its dates on every build.
+
 ## What the record actually holds
 
 Two of the seventeen seasons contribute nothing at all, and a third contributes nothing
@@ -129,13 +167,18 @@ So **14 seasons carry Big-Wave Season rows**, and 53.5% of the dataset falls ins
 
 | Proxy Target | Rows | |
 |---|---|---|
-| ≥ 2 m | 34,765 | 47.2% |
-| ≥ 3 m | 14,845 | 20.2% |
-| ≥ 4 m | 5,696 | 7.7% |
-| ≥ 5 m | 2,020 | 2.7% |
-| ≥ 6 m | 740 | 1.0% |
-| ≥ 7 m | 283 | 0.4% |
-| ≥ 8 m | 85 | 0.1% |
+| ≥ 2 m | 34,758 | 47.2% |
+| ≥ 3 m | 14,838 | 20.2% |
+| ≥ 4 m | 5,689 | 7.7% |
+| ≥ 5 m | 2,013 | 2.7% |
+| ≥ 6 m | 733 | 1.0% |
+| ≥ 7 m | 276 | 0.4% |
+| ≥ 8 m | 78 | 0.1% |
+
+Every band is seven rows lighter than it was before #145, because all seven withheld readings
+were above 8 m. Put the other way round: **seven of the eighty-five hours this record used to
+hold at or above 8 m were one instrument failing over three days in January 2026**, and they
+were the seven largest hourly changes in fourteen years.
 
 Reported as bands rather than as a count above one bar, deliberately. The obvious bar to reach
 for is the Heuristic Baseline's `minimum_significant_wave_height_m`, and it is the wrong
