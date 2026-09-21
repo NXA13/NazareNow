@@ -21,6 +21,7 @@
 import { Bathymetry } from './Bathymetry';
 import { WindLegend } from './Wind';
 import type { ConditionsGrid } from './api';
+import { formatTimestamp } from './format';
 import type { Swell } from './refraction';
 
 interface MapSlotProps {
@@ -43,6 +44,13 @@ export function MapSlot({ swell, grid, windUnavailable }: MapSlotProps) {
   const haveWind = grid !== null && grid.points.length > 0;
   const sayMissing = windUnavailable || (grid !== null && !haveWind);
 
+  /**
+   * **Only over wind that was actually drawn.** Calling a picture out of date is qualifying
+   * the picture, and where there are no darts the sentence below covers it instead — one
+   * caveat per thing gone wrong, never two describing the same absence.
+   */
+  const sayOld = haveWind && (grid.stale || grid.refresh_failed);
+
   return (
     <aside className="map-slot" aria-label="Map">
       <Bathymetry swell={swell} grid={haveWind ? grid : null} />
@@ -58,6 +66,42 @@ export function MapSlot({ swell, grid, windUnavailable }: MapSlotProps) {
         <p className="map-slot-note map-slot-note-missing">
           <strong>Wind unavailable.</strong> The map is showing the sea floor and the swell only —
           not a calm.
+        </p>
+      ) : null}
+      {/* **The gap #139 filed, closed at the end a reader stands at.**
+
+          The grid is dated by its own fetch rather than by the run that finished last, so the
+          wind here can be two cycles older than the forecast in the column beside it and the
+          two stamps are both honest. That is right, and it left this map drawing six-hour-old
+          darts with nothing on it to say so.
+
+          **Two clauses, because they are two facts and they can disagree.** `stale` is the
+          backend's arithmetic on `fetched_at` against six hours — two whole cycles, so that a
+          single provider hiccup is not dressed up as a warning. `refresh_failed` is not
+          arithmetic at all: the run that tried and lost recorded the endpoint and the failure
+          kind the instant it happened, and this is that record reaching a human. It can be true
+          while `stale` is still false, which is how a reader learns inside one cycle rather than
+          two — and the reason folding them into one sentence would throw the fix away. ADR 0018.
+
+          **The heading claims no age, and that is deliberate.** `refresh_failed` fires on a
+          single lost run, and ADR 0018's reason for keeping the six-hour threshold where it is
+          is that "one missed run is a blip ... and calling that stale would train users to
+          ignore the warning". A bolded "out of date" over one blip does that in the one place
+          the decision was trying to protect. What is true in both cases is that this is not the
+          current picture — the phrase the conditions banner already uses one column over — and
+          the age claim is left to the clause that has the evidence for it.
+
+          `role="status"` rather than `alert`: this qualifies a picture already on the page, and
+          it does not interrupt. */}
+      {sayOld ? (
+        <p role="status" className="map-slot-note map-slot-note-old">
+          <strong>This wind is not the current picture.</strong> It arrived{' '}
+          <time dateTime={grid.fetched_at}>{formatTimestamp(grid.fetched_at)}</time>.
+          {grid.stale
+            ? ` Nothing newer has arrived for at least ${grid.stale_after_hours} hours.`
+            : ''}
+          {grid.refresh_failed ? ' A refresh since then failed.' : ''} The darts are the last wind
+          we received, not the current one.
         </p>
       ) : null}
       {/* Outside the figure, and saying the things a reader could otherwise get wrong: where

@@ -52,6 +52,7 @@ export const currentConditions: CurrentConditions = {
 export const conditionsGrid = {
   observed_at: '2026-02-13T09:00',
   fetched_at: '2026-02-13T09:04:11.221000+00:00',
+  refresh_failed: false,
   stale: false,
   stale_after_hours: 6,
   points: Array.from({ length: 25 }, (_, index) => {

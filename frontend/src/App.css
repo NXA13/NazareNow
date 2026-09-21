@@ -484,6 +484,28 @@ footer p {
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  /* **One row, exactly this container's height — and without it the columns are not capped at
+     all.** `min-height: 0` above lets `.home` shrink to the space the chrome leaves, but the
+     row inside it defaults to `auto`, which sizes to its content and overflows the box that
+     was just capped. Measured at 1440x900 before this line: `.home` 818px with both columns
+     832px inside it. The 14px of overflow was invisible — it fitted under the fold with 11px
+     to spare — and it meant `.map-slot`, which is `height: 100%` of a column, was resolving
+     against a column that grew rather than one that held.
+
+     So the map never shrank. #139's note is the paragraph that made that visible: it pushed
+     the columns to 919px and put the caption 76px below the fold, with every test green.
+     `minmax(0, 1fr)` pins the row to the container, `.map-slot` inherits a real height, and
+     `.bathymetry` — the `flex: 1` in it — finally absorbs what the prose below always claimed
+     it did. Map at 1440x900: 639px normally, 573px with a lost refresh, 552px with both
+     clauses.
+
+     **Every figure above was measured at #139 and none of them is pinned.** They date this
+     paragraph rather than defining behaviour, and they will drift the next time anything in
+     the column changes size. What is pinned is the direction, in two browser tests that write
+     no pixel figure down at all: neither column exceeds the box capping them, and the note is
+     paid for out of the map. Re-measure before believing these; do not tune anything to
+     them. */
+  grid-template-rows: minmax(0, 1fr);
   gap: var(--space-6);
   /* Both columns to the height of the taller, which is what "equal height" is. It is the grid
      default and is stated anyway, because it is a promise this page is tested against rather
@@ -762,6 +784,25 @@ footer p {
   color: var(--ink-muted);
 }
 
+/* The wind on the map is older than the map claims, and this says so (#139).
+ *
+ * **Louder than the caption under it, not quieter.** #116's rule is that a limit is never set
+ * below the figure it qualifies, and the caption below is already at full ink for that reason.
+ * This one qualifies a picture that is *wrong about now*, so it takes the same bold left edge
+ * the conditions banner takes above the forecast — the treatment a reader already reads as
+ * "before you trust what is beside this".
+ *
+ * It costs the map height rather than the page — but only since `.home` was given a row that
+ * holds. That is written up on `grid-template-rows` above, and it was this note that exposed
+ * it: `.map-slot` is a flex column of the column's height and `.bathymetry` is the `flex: 1`
+ * in it, so a paragraph appearing here shrinks the drawing rather than pushing the column past
+ * the no-scroll promise (#132). `layout.spec.ts` measures that in a browser, which is the only
+ * place it can be measured. */
+.map-slot-note-old {
+  border-left: var(--edge-bold) solid var(--ink-text);
+  background: var(--ink-panel);
+}
+
 /* Where the map goes. It held a placeholder from #115 until #121 and refused to resemble a map
    for all of it; `MapSlot.tsx` records why. There is a real one in it now. */
 .map-slot {
@@ -815,6 +856,14 @@ footer p {
 @media (max-width: 60rem) {
   .home {
     grid-template-columns: minmax(0, 1fr);
+    /* **And the row cap is released, explicitly.** Stacked, this grid has two rows rather than
+       one, and `minmax(0, 1fr)` above would name only the first — leaving the map in an
+       implicit `auto` row beneath a forecast told to take everything. It happens to render
+       correctly today because the page is allowed to scroll here, so the container's height is
+       indefinite and `1fr` resolves to content. Depending on that is the same implicit
+       dependency that hid the 14px overflow above. Below this breakpoint the page scrolls and
+       both rows take their content, which is what `auto` says. */
+    grid-template-rows: auto;
   }
 }
 

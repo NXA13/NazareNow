@@ -65,15 +65,24 @@
  * fields holding them, so a reading whose *unit* alone went unread would pass everything here.
  * That is the next hole, and it is named rather than left to be found.
  *
- * **The "not read" arm carries as much weight as the other.** Fourteen fields are declared
+ * **The "not read" arm carries as much weight as the other.** Twenty-three fields are declared
  * unread and every one states why: five on `ForecastHour`, whose Combined Sea and temperatures
  * belong to the panel above the forecast; `Forecast.stale` and `stale_after_hours`, which the
  * page reads once from `CurrentConditions` instead; five of `Calibration`'s eight, which are the
  * provenance of the fit rather than its size; `TierRecord.precision_lower_bound`, whose
  * complement is printed instead because the page would rather be judged on the unkind number;
- * and `DeliveryRecord.maximum_m`, the one figure of three that flatters. Both arms are verified
- * in both directions — rendering a field declared unread fails its test, and ceasing to render
- * one declared read fails its own, each alone.
+ * `DeliveryRecord.maximum_m`, the one figure of three that flatters; eight of `GridPoint`'s
+ * twelve, which are the grid endpoint serving the same shape the single point does while the
+ * map draws one swell over the whole frame; and `ConditionsGrid.observed_at`, because the map's
+ * note dates the wind by when it arrived rather than by the oldest observation inside it. Both
+ * arms are verified in both directions — rendering a field declared unread fails its test, and
+ * ceasing to render one declared read fails its own, each alone.
+ *
+ * **That count is checked, not remembered.** It was fourteen until #122 and #123 added the two
+ * map registries without moving it, and #139 moved it again by turning four of the grid's five
+ * entries read. A number in a comment beside the thing it counts is the drift this repo has
+ * been bitten by elsewhere; `grep -c 'read: false'` less the three mentions of it in this
+ * file's prose — this line and two below — is the way to settle it. Twenty-six less three.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -1869,34 +1878,59 @@ async function mapFor(grid: ConditionsGrid): Promise<string> {
 
 const GRID = conditionsGrid as unknown as ConditionsGrid;
 
+/**
+ * **A baseline built to enter the branch the shipped fixture never enters (#104, #139).**
+ *
+ * `handlers.ts` serves a healthy grid — `stale: false`, `refresh_failed: false` — and the map
+ * says nothing at all about a healthy grid, by design. Mutating either flag off that fixture
+ * would move the page in one direction only, and mutating `stale_after_hours` would not move it
+ * at all: the figure lives inside a sentence the healthy grid never prints. So this file would
+ * have certified a rendered field as unread, which is the exact lie it exists to prevent.
+ *
+ * It is a response the backend could produce, and the most ordinary one of its kind: a grid that
+ * last arrived over six hours ago, whose refreshes since have been failing. The failures are
+ * usually *why* it is stale. Both flags are on because they are separate facts printed as
+ * separate clauses, and a baseline with only one of them on would let the other's mutation be
+ * swallowed by the clause that was already there.
+ */
+const OUT_OF_DATE: ConditionsGrid = { ...GRID, stale: true, refresh_failed: true };
+
 describe('ConditionsGrid', () => {
   /**
-   * **Four of these five are not read, and that is the state #139 describes rather than an
-   * oversight.** The grid carries its own stamps and its own staleness verdict, and the map
-   * draws darts without saying how old they are — so a grid that failed to refresh presents as
-   * current for up to six hours. That gap is filed, decided and labelled `ready-for-agent`; the
-   * decision is to surface the *known* refresh failure rather than to move a threshold. When
-   * that lands, these entries become `read: true` and this note goes.
+   * **Four of these six are read, and #139 is why the count moved.** The grid is dated by its
+   * own fetch rather than by the run that finished last, so the wind on the map can be two
+   * cycles older than the forecast beside it — and until #142 and this, nothing said so. The
+   * map now carries one stamp and two clauses: how old, and whether the last attempt failed.
+   *
+   * **`observed_at` stays unread, and that is a decision rather than a leftover.** The reader's
+   * sentence — this wind arrived at 09:04 and a refresh since then failed — needs the stamp the
+   * failure is measured against, which is `fetched_at`. A second stamp beside it in a caption
+   * under a picture is a second thing to reconcile, and #142 ruled against carrying two.
    */
   const fields: Registry<ConditionsGrid> = {
     observed_at: {
       read: false,
-      note: 'the map draws no stamp of its own; #139 is where that is decided',
+      note: 'the note dates the wind by when it arrived, not by the oldest observation in it',
       other: (at) => shiftHours(at, 3),
     },
     fetched_at: {
-      read: false,
-      note: 'as above — the map says nothing yet about when its wind arrived',
+      read: true,
+      note: 'the stamp in the note — when the wind being drawn arrived',
       other: (at) => shiftHours(at, 3),
     },
+    refresh_failed: {
+      read: true,
+      note: 'the clause that says a refresh was attempted and lost',
+      other: (failed) => !failed,
+    },
     stale: {
-      read: false,
-      note: 'the map shows no staleness of its own (#139)',
+      read: true,
+      note: 'the clause that says nothing newer has arrived',
       other: (stale) => !stale,
     },
     stale_after_hours: {
-      read: false,
-      note: 'the figure the banner would be built around, and there is no banner yet (#139)',
+      read: true,
+      note: 'the number of hours that clause names, served rather than copied',
       other: (hours) => hours + 3,
     },
     points: {
@@ -1908,17 +1942,17 @@ describe('ConditionsGrid', () => {
 
   for (const [name, spec] of decisions(fields)) {
     it(`${name} is ${spec.read ? 'read' : 'not read'} — ${spec.note}`, async () => {
-      const baseline = await mapFor(GRID);
-      const changed = replace(GRID, name, spec.other);
+      const baseline = await mapFor(OUT_OF_DATE);
+      const changed = replace(OUT_OF_DATE, name, spec.other);
 
-      await holdToVerdict(spec, GRID, changed, () => mapFor(changed), baseline);
+      await holdToVerdict(spec, OUT_OF_DATE, changed, () => mapFor(changed), baseline);
     });
   }
 });
 
 describe('GridPoint', () => {
   /**
-   * **The map reads four of these eleven**, and the other seven are the grid endpoint serving
+   * **The map reads four of these twelve**, and the other eight are the grid endpoint serving
    * the same shape the single point does. They are not dropped from the wire: the pipeline
    * fetches and unit-checks a whole wave field per point, and #122 draws the crests from
    * `/api/conditions/current` instead — one swell over the whole frame rather than one per

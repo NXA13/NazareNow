@@ -541,6 +541,17 @@ export interface ConditionsGrid {
   observed_at: string;
   /** When the grid itself last arrived — not when the last run finished. */
   fetched_at: string;
+  /**
+   * Whether a refresh has been attempted and lost since this grid arrived (#139).
+   *
+   * **A different question from `stale`, and kept beside it rather than folded into it.**
+   * `stale` asks how old this is and answers by arithmetic on `fetched_at` against a six-hour
+   * threshold — deliberately two whole cycles, because one missed run is a blip. This asks
+   * whether the last attempt *failed*, which the run recorded the instant it happened. So it
+   * can be true while `stale` is still false, which is the entire point of it: it is how a
+   * reader learns inside one cycle rather than two. ADR 0018.
+   */
+  refresh_failed: boolean;
   stale: boolean;
   stale_after_hours: number;
   points: GridPoint[];
