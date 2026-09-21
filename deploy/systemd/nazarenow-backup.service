@@ -1,0 +1,18 @@
+[Unit]
+Description=Snapshot the NazareNow store and copy it off the host
+Documentation=https://github.com/NXA13/NazareNow/blob/main/deploy/README.md
+
+[Service]
+Type=oneshot
+User=nazarenow
+Group=nazarenow
+EnvironmentFile=/etc/nazarenow/nazarenow.env
+ExecStart=/opt/nazarenow/deploy/bin/backup-store.sh
+
+# The snapshot directory and the store's own directory, because sqlite3's .backup writes
+# beside the source while it works.
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+ReadWritePaths=/mnt/ssd/nazarenow

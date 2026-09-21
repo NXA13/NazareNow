@@ -324,6 +324,27 @@ This is enforced rather than asserted, in both suites:
   particularly the distinction between wave *face height* and *significant wave height*.
 - [`docs/adr/`](./docs/adr/) — architecture decision records covering why the system is shaped
   the way it is, including the alternatives that were rejected and why.
+- [`deploy/README.md`](./deploy/README.md) — how to put this on a host, how to deploy it
+  again, how to back the store up, and how to restore it. Read ADR 0007 alongside it: the
+  deployment exists for the record the store accumulates, not for the audience.
+
+## Deploying
+
+The host is a Raspberry Pi 5 with an SSD, serving `www.nazarenow.com` behind a password.
+Full instructions are in [`deploy/README.md`](./deploy/README.md); the short forms are:
+
+```bash
+# On the Pi, to deploy a new version
+cd /opt/nazarenow && sudo -u nazarenow git pull && ./deploy/bin/deploy.sh
+
+# To put a snapshot back — asks before touching the live store
+./deploy/bin/restore-store.sh /mnt/ssd/nazarenow/backups/nazarenow-<stamp>.db.gz
+```
+
+The store is the thing being protected, not the site. It accumulates the only unbiased
+record of what this system predicted on days nobody wrote about, and no forecast archive
+can reconstruct it — so backups are the reason the deployment matters rather than
+housekeeping around it.
 
 ## Status
 
